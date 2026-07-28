@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SightScore — 視奏隨機題目生成器</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%8E%BC%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="src/app/styles.css">
+  <script src="node_modules/opensheetmusicdisplay/build/opensheetmusicdisplay.min.js"></script>
+</head>
+<body>
+  <header>
+    <h1>SightScore</h1>
+    <p class="tagline">ABRSM 鋼琴視奏 · 規則生成 · 每次都是新題目</p>
+  </header>
+
+  <section class="controls">
+    <label class="control">
+      <span>級數</span>
+      <select id="grade">
+        <option value="1">Grade 1</option>
+        <option value="2">Grade 2</option>
+        <option value="3">Grade 3</option>
+        <option value="4">Grade 4</option>
+        <option value="5">Grade 5</option>
+        <option value="6">Grade 6</option>
+        <option value="7">Grade 7</option>
+        <option value="8">Grade 8</option>
+      </select>
+    </label>
+
+    <button id="generate" class="primary">產生新題目</button>
+    <button id="prepare">開始 30 秒準備</button>
+    <button id="play" disabled>播放正確版本</button>
+    <button id="download" disabled>下載 MusicXML</button>
+  </section>
+
+  <section id="status" class="status" hidden>
+    <div class="countdown" id="countdown">
+      <span id="countdown-value">30</span><span class="unit">秒</span>
+    </div>
+    <dl class="meta" id="meta"></dl>
+  </section>
+
+  <main>
+    <div id="score" class="score"></div>
+    <p id="message" class="message">選擇級數，按「產生新題目」開始。</p>
+  </main>
+
+  <footer>
+    <span id="history-info">本機已記錄 0 題</span>
+    <button id="clear-history" class="link">清除出題紀錄</button>
+    <span class="spacer"></span>
+    <span id="confidence" class="badge" hidden></span>
+  </footer>
+
+  <script type="module" src="src/app/app.js"></script>
+</body>
+</html>

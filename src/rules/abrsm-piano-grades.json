@@ -3,6 +3,7 @@
   "instrument": "piano",
   "syllabusRef": "Practical Grades Piano 2025 & 2026 (sight-reading parameters unchanged in 2027 & 2028)",
   "note": "confidence 欄位說明資料來源強度：verified = 有多個公開來源一致佐證；partial = 主要參數有佐證但細節（如小節數）為推估；inferred = 依既有級數趨勢與範例集觀察推得，需以官方大綱 p.16 表格核對後修正。",
+  "rangeSemantics": "range 是「該手可能落在的音域範圍」，不是單一題目的跨度。在 fiveFingerPosition = true 的級數（G1、G2），生成器會在此範圍內選一個五音位置，該位置必須包含主音——所以範圍必須容納所有允許調的把位（例如 G1 的 a 小調把位在 A2–E3，若左手範圍只寫 C3–G3 就放不下）。",
   "exam": {
     "preparationSeconds": 30,
     "marks": 21,
@@ -41,8 +42,8 @@
         "handAlternation": "hands alternate by phrase; only one hand sounds at a time"
       },
       "range": {
-        "rightHand": { "minMidi": 60, "maxMidi": 67, "label": "C4–G4" },
-        "leftHand": { "minMidi": 48, "maxMidi": 55, "label": "C3–G3" },
+        "rightHand": { "minMidi": 60, "maxMidi": 76, "label": "C4–E5", "positionSpan": 5 },
+        "leftHand": { "minMidi": 41, "maxMidi": 57, "label": "F2–A3", "positionSpan": 5 },
         "legerLines": 0
       },
       "rhythm": {
@@ -104,8 +105,8 @@
         "handAlternation": "hands sound together, mostly note-against-note or melody + sustained bass"
       },
       "range": {
-        "rightHand": { "minMidi": 60, "maxMidi": 72, "label": "C4–C5" },
-        "leftHand": { "minMidi": 43, "maxMidi": 60, "label": "G2–C4" },
+        "rightHand": { "minMidi": 60, "maxMidi": 79, "label": "C4–G5", "positionSpan": 5 },
+        "leftHand": { "minMidi": 38, "maxMidi": 60, "label": "D2–C4", "positionSpan": 5 },
         "legerLines": 1
       },
       "rhythm": {

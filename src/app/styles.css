@@ -1,0 +1,152 @@
+:root {
+  --bg: #fbfaf8;
+  --panel: #ffffff;
+  --ink: #1c1b19;
+  --muted: #6b6862;
+  --line: #e3ded6;
+  --accent: #7a5c3e;
+  --accent-ink: #ffffff;
+  --warn: #a4682a;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16151a;
+    --panel: #201f26;
+    --ink: #ece9e4;
+    --muted: #9a958d;
+    --line: #33313b;
+    --accent: #c9a074;
+    --accent-ink: #211a12;
+    --warn: #d3a05f;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 2rem 1.25rem 3rem;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.6 "Helvetica Neue", "PingFang TC", "Noto Sans TC", system-ui, sans-serif;
+  max-width: 62rem;
+  margin-inline: auto;
+}
+
+header { margin-bottom: 1.5rem; }
+h1 { margin: 0; font-size: 1.6rem; letter-spacing: 0.02em; }
+.tagline { margin: 0.25rem 0 0; color: var(--muted); font-size: 0.92rem; }
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+  padding: 0.9rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 0.7rem;
+}
+
+.control { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; color: var(--muted); }
+
+select, button {
+  font: inherit;
+  padding: 0.45rem 0.85rem;
+  border-radius: 0.45rem;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+button.primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+button.link {
+  background: none;
+  border: none;
+  color: var(--muted);
+  text-decoration: underline;
+  padding: 0;
+  font-size: 0.85rem;
+}
+
+.status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  align-items: center;
+  margin: 1.25rem 0 0.5rem;
+}
+
+.countdown {
+  font-variant-numeric: tabular-nums;
+  font-size: 2.4rem;
+  font-weight: 600;
+  min-width: 5rem;
+}
+.countdown .unit { font-size: 1rem; font-weight: 400; color: var(--muted); margin-left: 0.15rem; }
+.countdown.running { color: var(--accent); }
+.countdown.done { color: var(--warn); }
+
+.meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+  gap: 0.35rem 1.25rem;
+  margin: 0;
+  flex: 1;
+  min-width: 16rem;
+  font-size: 0.85rem;
+}
+.meta div { display: flex; flex-direction: column; }
+.meta dt { color: var(--muted); font-size: 0.75rem; }
+.meta dd { margin: 0; font-weight: 600; }
+
+.score {
+  margin-top: 1rem;
+  padding: 1rem 0.5rem;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 0.7rem;
+  overflow-x: auto;
+  min-height: 8rem;
+}
+
+/*
+ * The container must keep a real width at all times: OSMD measures it when
+ * render() is called, and a display:none (or zero-width) parent makes it lay
+ * the staves out backwards into negative x.
+ */
+.score[hidden] { display: block; visibility: hidden; }
+
+.message { color: var(--muted); font-size: 0.9rem; }
+
+footer {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.spacer { flex: 1; }
+
+.badge {
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--warn);
+  color: var(--warn);
+  font-size: 0.75rem;
+}
