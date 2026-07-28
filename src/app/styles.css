@@ -212,6 +212,7 @@ button.link:hover { color: var(--gold); }
 /* ---------- score ---------- */
 
 .score-frame {
+  position: relative;
   margin-top: 10px;
   padding: 22px 16px;
   background: #FFFDF6; /* ScrollScore 的 --stage-glow：樂譜台面比頁面再亮一階 */
@@ -221,6 +222,76 @@ button.link:hover { color: var(--gold); }
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
+
+/* Fullscreen shows the whole test at once, so nothing may scroll or clip. */
+.score-frame.is-fullscreen {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  padding: 32px 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.score-frame.is-fullscreen .stage { width: 100%; }
+.score-frame.is-fullscreen .score { min-width: 0; }
+
+.frame-action {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 6;
+  background: rgba(255, 253, 246, .92);
+}
+
+/* ---------- playback follow view ---------- */
+
+.stage { position: relative; }
+
+/*
+ * While following, the stage is a window exactly two systems tall and the
+ * score slides under it, so the line being played and the one after it are
+ * both readable.
+ */
+.stage.following {
+  overflow: hidden;
+  transition: height .25s ease;
+}
+
+.scroller {
+  position: relative;
+  will-change: transform;
+  transition: transform .35s cubic-bezier(.4, 0, .2, 1);
+}
+
+/* The bar being played, tinted behind the notes rather than over them. */
+.measure-highlight {
+  position: absolute;
+  display: none;
+  background: var(--gold);
+  opacity: .16;
+  border-radius: 3px;
+  pointer-events: none;
+  z-index: 0;
+  transition: left .12s linear, width .12s linear, top .25s ease;
+}
+
+.playline {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 2px;
+  display: none;
+  background: linear-gradient(to bottom, transparent, var(--gold-bright) 12%, var(--gold-bright) 88%, transparent);
+  box-shadow: 0 0 14px 2px rgba(133, 100, 24, .45);
+  pointer-events: none;
+  z-index: 5;
+}
+
+.score { position: relative; z-index: 1; }
 
 /*
  * OSMD lays the music out to fit this element's width, so on a phone it would
@@ -290,4 +361,20 @@ footer {
   .btn { width: 38px; padding: 0; }
   .countdown { font-size: 34px; min-width: 60px; }
   .score-frame { padding: 14px 10px; }
+}
+
+/* Preparation checklist, shown only while the 30 seconds are running. */
+.checklist {
+  margin: 10px 4px 0;
+  padding-left: 1.4em;
+  color: var(--muted-bright);
+  font-size: var(--fs-sm);
+  columns: 2;
+  column-gap: 28px;
+}
+
+.checklist li { margin-bottom: 2px; break-inside: avoid; }
+
+@media (max-width: 560px) {
+  .checklist { columns: 1; }
 }

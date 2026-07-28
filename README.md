@@ -27,6 +27,7 @@ Pages 只要指向含有 `index.html` 的分支根目錄即可。注意兩件事
 | 路徑 | 說明 |
 |---|---|
 | [`docs/abrsm-sight-reading-analysis.md`](docs/abrsm-sight-reading-analysis.md) | ABRSM 鋼琴 Grade 1–8 視奏內容分析：調性、音域、小節數、節奏、articulation |
+| [`docs/abrsm-sight-reading-knowledge-base.md`](docs/abrsm-sight-reading-knowledge-base.md) | 視奏知識庫：評分向度、30 秒準備清單、各級語法特徵、記譜合法性規則 |
 | [`src/rules/abrsm-piano-grades.json`](src/rules/abrsm-piano-grades.json) | Grade 1–8 規則表。改參數只要動這份 |
 | `src/generator/theory.js` | 以「音級（diatonic step）」為單位的音高拼寫，確保 d 小調的升七級寫成 C♯ 而不是 D♭ |
 | `src/generator/rhythm.js` | 節奏細胞庫。以「拍」為單位抽細胞，小節長度、連桿分組自動正確 |
@@ -34,7 +35,8 @@ Pages 只要指向含有 `index.html` 的分支根目錄即可。注意兩件事
 | `src/generator/melody.js` | 音高選擇：和弦音、級進比例、跳進上限、把位限制 |
 | `src/generator/musicxml.js` | MusicXML 4.0 大譜表序列化 |
 | `src/generator/fingerprint.js` | 題目指紋與出題紀錄，避免短期重複 |
-| `src/app/` | 瀏覽器介面：OSMD 渲染、30 秒倒數、Web Audio 播放 |
+| `src/app/` | 瀏覽器介面：OSMD 渲染、30 秒倒數、取樣鋼琴播放 |
+| `src/app/stage.js` | 播放跟譜：小節色塊、播放軸、兩行捲動視窗、全螢幕 |
 
 ## 已完成
 

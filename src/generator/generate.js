@@ -10,7 +10,7 @@
 import { createRandom, randomSeed } from './random.js';
 import { createKey, dstepRange, degreeOf } from './theory.js';
 import { buildProgression } from './harmony.js';
-import { assignPitches, stackChordTones } from './melody.js';
+import { assignPitches, stackChordTones, soundingTimeline, harmoniseLeadingNotes } from './melody.js';
 import { DIVISIONS, cellsFor, fillBar, wholeBarRest } from './rhythm.js';
 import { meterInfo, rescaleCells } from './meter.js';
 
@@ -35,7 +35,7 @@ export function generateTest(rulesTable, options) {
   const rng = createRandom(seed);
 
   const key = createKey(pickKey(rng, rules));
-  const meter = meterInfo(rng.pick(rules.timeSignatures));
+  const meter = meterInfo(pickTimeSignature(rng, rules, rulesTable));
   const barCount = pickBarCount(rng, rules, meter.text);
   const progression = buildProgression(rng, barCount, { simple: grade <= 3 });
 
@@ -46,8 +46,18 @@ export function generateTest(rulesTable, options) {
     ? splitBarsBetweenHands(barCount, rng)
     : { rightHand: new Set(), leftHand: new Set() };
 
-  const rightHand = buildStaff({ rng, rules, meter, barCount, hand: 'rightHand', progression, key, silentBars: silence.rightHand });
-  const leftHand = buildStaff({ rng, rules, meter, barCount, hand: 'leftHand', progression, key, silentBars: silence.leftHand });
+  // The left hand is written first and becomes the bass the right hand is
+  // checked against; writing them independently is what produced clashes.
+  const leftHand = buildStaff({
+    rng, rules, meter, barCount, hand: 'leftHand', progression, key,
+    silentBars: silence.leftHand,
+  });
+  const rightHand = buildStaff({
+    rng, rules, meter, barCount, hand: 'rightHand', progression, key,
+    silentBars: silence.rightHand,
+    against: soundingTimeline(leftHand, meter.barDuration),
+  });
+  harmoniseLeadingNotes([rightHand, leftHand], key, meter.barDuration);
 
   const tempoTerm = rng.pick(rules.tempoTerms);
   const score = {
@@ -70,12 +80,20 @@ export function generateTest(rulesTable, options) {
   return score;
 }
 
+/** Weighted so the staple metres dominate and the rarities stay rare. */
+function pickTimeSignature(rng, rules, rulesTable) {
+  const weights = rulesTable.timeSignatureWeights ?? {};
+  const candidates = rules.timeSignatures.map((text) => ({ text, weight: weights[text] ?? 1 }));
+  return rng.weighted(candidates).text;
+}
+
 function pickKey(rng, rules) {
   if (rules.keys.allKeys) {
     // Grade 8: every key up to six accidentals.
     const majors = ['C', 'G', 'D', 'A', 'E', 'B', 'F#', 'F', 'Bb', 'Eb', 'Ab', 'Db', 'Gb'];
     const fifthsFor = { C: 0, G: 1, D: 2, A: 3, E: 4, B: 5, 'F#': 6, F: -1, Bb: -2, Eb: -3, Ab: -4, Db: -5, Gb: -6 };
-    const minors = { A: 0, E: 1, B: 2, 'F#': 3, 'C#': 4, 'G#': 5, D: -1, G: -2, C: -3, F: -4, Bb: -5, Eb: -6 };
+    // g#/d#/a# minor are left out: their leading notes need double sharps.
+    const minors = { A: 0, E: 1, B: 2, 'F#': 3, 'C#': 4, D: -1, G: -2, C: -3, F: -4, Bb: -5, Eb: -6 };
     if (rng.chance(0.6)) {
       const tonic = rng.pick(majors);
       return { tonic, mode: 'major', fifths: fifthsFor[tonic] };
@@ -99,10 +117,16 @@ function pickBarCount(rng, rules, timeSignature) {
   return count % 2 === 0 ? count : Math.min(count + 1, max % 2 === 0 ? max : max - 1) || min;
 }
 
-function buildStaff({ rng, rules, meter, barCount, hand, progression, key, silentBars = new Set() }) {
+function buildStaff({ rng, rules, meter, barCount, hand, progression, key, silentBars = new Set(), against = null }) {
   const isLeft = hand === 'leftHand';
+  const activity = rules.generatorHints.activity ?? 0.4;
   const cells = rescaleCells(
-    cellsFor(rules, { compound: meter.compound, calmOnly: isLeft }),
+    cellsFor(rules, {
+      compound: meter.compound,
+      // From Grade 4 the hands have independent rhythms, so the left hand is
+      // no longer limited to long values.
+      calmOnly: isLeft && rules.grade < 4,
+    }),
     meter.scale,
     rules,
   );
@@ -121,12 +145,18 @@ function buildStaff({ rng, rules, meter, barCount, hand, progression, key, silen
     } else if (isFinalBar || (silentBars.size && silentBars.has(barIndex + 1))) {
       // Cadence bar: end on a long note rather than a busy figure.
       const calm = cells.filter((cell) => cell.calm && !cell.rests);
-      events = fillBar(rng, calm.length ? calm : cells, meter.cellBeats, { restBudget: 0 }).events;
+      events = fillBar(rng, calm.length ? calm : cells, meter.cellBeats, {
+        restBudget: 0,
+        activity: activity * 0.4,
+      }).events;
     } else if (barIndex >= 2 && bank[barIndex % 2] && rng.chance(0.55)) {
       // Motif reuse: bars 3–4 restate the rhythm of bars 1–2.
       events = bank[barIndex % 2].map((event) => ({ ...event }));
     } else {
-      const filled = fillBar(rng, cells, meter.cellBeats, { restBudget });
+      const filled = fillBar(rng, cells, meter.cellBeats, {
+        restBudget,
+        activity: isLeft ? activity * 0.7 : activity,
+      });
       events = filled.events;
       if (barIndex < 2) bank[barIndex] = events.map((event) => ({ ...event }));
     }
@@ -153,7 +183,9 @@ function buildStaff({ rng, rules, meter, barCount, hand, progression, key, silen
         : rules.generatorHints.maxLeapSemitones,
       chordToneOnly: isLeft,
       endOnTonic: true,
+      barDuration: meter.barDuration,
     },
+    against,
   });
 
   if (isLeft && rules.texture.maxNotesPerChord >= 2) {

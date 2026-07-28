@@ -37,11 +37,11 @@ const triplet = () => ({
 const SIMPLE_CELLS = [
   { id: 'q', beats: 1, weight: 5, calm: true, requires: [], events: [note('quarter', Q)] },
   { id: 'ee', beats: 1, weight: 4, requires: ['eighth'], events: [note('eighth', E), note('eighth', E)] },
-  { id: 'ssss', beats: 1, weight: 1.5, requires: ['sixteenth'], events: [note('16th', S), note('16th', S), note('16th', S), note('16th', S)] },
+  { id: 'ssss', beats: 1, weight: 0.9, requires: ['sixteenth'], events: [note('16th', S), note('16th', S), note('16th', S), note('16th', S)] },
   { id: 'ess', beats: 1, weight: 2, requires: ['sixteenth'], events: [note('eighth', E), note('16th', S), note('16th', S)] },
   { id: 'sse', beats: 1, weight: 1.5, requires: ['sixteenth'], events: [note('16th', S), note('16th', S), note('eighth', E)] },
   { id: 'de_s', beats: 1, weight: 1.5, requires: ['dottedEighth'], events: [dotted('eighth', E + S), note('16th', S)] },
-  { id: 'trip', beats: 1, weight: 1.5, requires: ['triplet'], events: [triplet(), triplet(), triplet()] },
+  { id: 'trip', beats: 1, weight: 0.45, requires: ['triplet'], events: [triplet(), triplet(), triplet()] },
   { id: 'qr', beats: 1, weight: 0.9, calm: true, rests: 1, requires: [], events: [rest('quarter', Q)] },
   { id: 'e_er', beats: 1, weight: 0.8, rests: 1, requires: ['eighthRest'], events: [note('eighth', E), rest('eighth', E)] },
 
@@ -57,7 +57,7 @@ const SIMPLE_CELLS = [
 /** Cells for compound time. One `beat` is a dotted quarter. */
 const COMPOUND_CELLS = [
   { id: 'c_dq', beats: 1, weight: 4, calm: true, requires: ['dottedQuarter'], events: [dotted('quarter', Q + E)] },
-  { id: 'c_eee', beats: 1, weight: 4, requires: ['eighth'], events: [note('eighth', E), note('eighth', E), note('eighth', E)] },
+  { id: 'c_eee', beats: 1, weight: 3, requires: ['eighth'], events: [note('eighth', E), note('eighth', E), note('eighth', E)] },
   { id: 'c_q_e', beats: 1, weight: 3, requires: ['eighth'], events: [note('quarter', Q), note('eighth', E)] },
   { id: 'c_e_q', beats: 1, weight: 1.5, requires: ['syncopation'], events: [note('eighth', E), note('quarter', Q)] },
   { id: 'c_e_ss_e', beats: 1, weight: 1.2, requires: ['sixteenth'], events: [note('eighth', E), note('16th', S), note('16th', S), note('eighth', E)] },
@@ -97,14 +97,22 @@ export function cellsFor(gradeRules, { compound, calmOnly = false }) {
 
 /**
  * Fill one bar with cells.
+ *
+ * `activity` (0–1) tilts the draw toward busier or sparser cells. Without it
+ * every grade lands on much the same note count, and Grade 8 reads no harder
+ * than Grade 3 — the vocabulary widens but nothing actually uses it.
+ *
  * @param {ReturnType<import('./random.js').createRandom>} rng
  * @param {Array} cells
  * @param {number} beatsPerBar in cell-beat units
- * @param {{restBudget?: number}} [options]
+ * @param {{restBudget?: number, activity?: number}} [options]
  * @returns {{cellIds: string[], events: object[]}}
  */
 export function fillBar(rng, cells, beatsPerBar, options = {}) {
   const restBudget = options.restBudget ?? 1;
+  // Notes per beat, raised to an exponent that runs from about -0.5 (favour
+  // long values) to +1.2 (favour short ones).
+  const exponent = -0.5 + 1.7 * (options.activity ?? 0.4);
   const cellIds = [];
   const events = [];
   let remaining = beatsPerBar;
@@ -117,7 +125,11 @@ export function fillBar(rng, cells, beatsPerBar, options = {}) {
     if (!candidates.length) {
       throw new Error(`no rhythm cell fits ${remaining} remaining beat(s)`);
     }
-    const cell = rng.weighted(candidates);
+    const weighted = candidates.map((cell) => ({
+      cell,
+      weight: (cell.weight ?? 1) * (cell.events.length / cell.beats) ** exponent,
+    }));
+    const cell = rng.weighted(weighted).cell;
     cellIds.push(cell.id);
     for (const event of cell.events) events.push({ ...event });
     restsUsed += cell.rests ?? 0;

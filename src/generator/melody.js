@@ -1,15 +1,27 @@
 /**
  * Pitch selection.
  *
- * Every note is scored against the bar's chord, the previous note and the
- * grade's contour constraints, then drawn from the weighted candidates. The
- * result stays inside the grade's range (and, at Grades 1–2, inside one
- * five-finger position) while still sounding like a phrase rather than a
- * scale exercise.
+ * Two things keep the result tonal rather than merely legal:
+ *
+ *  1. The hands are not written independently. The left hand goes first and
+ *     becomes a sounding-bass timeline; every right-hand candidate is then
+ *     checked against whatever is actually sounding underneath it, so seconds,
+ *     sevenths and tritones cannot simply fall out of two separate walks.
+ *  2. A non-chord note has to behave like one — approached by step and left by
+ *     step. Anything leaping into or out of a dissonance is repaired to the
+ *     nearest chord tone afterwards.
  */
 
 import { chordDegrees, degreeOf, pitchAt } from './theory.js';
 import { raisesSeventh } from './harmony.js';
+
+/**
+ * Interval classes that read as dissonant against the bass. A second, tritone
+ * or minor seventh can pass off the beat; a semitone or major seventh between
+ * the hands never can, at any of these grades.
+ */
+const HARSH_INTERVALS = new Set([1, 2, 6, 10, 11]);
+const NEVER_INTERVALS = new Set([1, 11]);
 
 /**
  * @param {object} params
@@ -19,13 +31,16 @@ import { raisesSeventh } from './harmony.js';
  * @param {string[]} params.progression roman numeral per bar
  * @param {{low: number, high: number}} params.window allowed dstep window
  * @param {object} params.options
+ * @param {Array<{start: number, end: number, midis: number[]}>} [params.against]
+ *        sounding notes of the other hand, in absolute divisions
  */
-export function assignPitches({ rng, key, bars, progression, window, options }) {
+export function assignPitches({ rng, key, bars, progression, window, options, against }) {
   const {
     stepwiseBias = 0.7,
     maxLeapSemitones = 7,
     chordToneOnly = false,
     endOnTonic = true,
+    barDuration = 0,
   } = options;
 
   const centre = (window.low + window.high) / 2;
@@ -54,6 +69,8 @@ export function assignPitches({ rng, key, bars, progression, window, options }) 
         return;
       }
 
+      const absolute = barIndex * barDuration + offset;
+      const sounding = soundingAt(against, absolute, event.dur);
       const onBeat = offset % bar.beatDuration === 0;
       const isDownbeat = offset === 0;
       const isFinalNote = event === finalEvent;
@@ -62,7 +79,6 @@ export function assignPitches({ rng, key, bars, progression, window, options }) 
       if (isFinalNote && endOnTonic) {
         chosen = nearestWithDegree(allSteps, key, 0, previous ?? centre);
       } else if (previous === null) {
-        // Open on a chord tone, near the middle of the hand's range.
         const openings = allSteps.filter((dstep) => tones.includes(degreeOf(dstep, key)));
         chosen = leastDistant(openings.length ? openings : allSteps, centre);
       } else {
@@ -80,6 +96,7 @@ export function assignPitches({ rng, key, bars, progression, window, options }) 
           stepwiseBias,
           maxLeapSemitones,
           chordToneOnly,
+          sounding,
         });
       }
 
@@ -90,28 +107,64 @@ export function assignPitches({ rng, key, bars, progression, window, options }) 
 
       event.dstep = chosen;
       event.raiseSeventh = raiseSeventh && degreeOf(chosen, key) === 6;
+      event.chordDegrees = tones;
       event.pitch = pitchAt(chosen, key, { raiseSeventh: event.raiseSeventh });
       offset += event.dur;
     });
   });
 
+  repairNonChordTones(bars, key, window);
   fixAugmentedSeconds(bars, key);
+  // Both repairs move pitches after the vertical check, so verify once more.
+  resolveClashes({ bars, key, window, against, barDuration, finalEvent: endOnTonic ? finalEvent : null });
   return bars;
+}
+
+/** Absolute-time index of one hand's sounding notes, for vertical checks. */
+export function soundingTimeline(bars, barDuration) {
+  const timeline = [];
+  bars.forEach((bar, barIndex) => {
+    let offset = 0;
+    for (const event of bar.events) {
+      if (!event.rest && event.pitch) {
+        const start = barIndex * barDuration + offset;
+        timeline.push({
+          start,
+          end: start + event.dur,
+          midis: [event.pitch.midi, ...(event.chord ?? []).map((p) => p.midi)],
+        });
+      }
+      offset += event.dur;
+    }
+  });
+  return timeline;
+}
+
+function soundingAt(timeline, start, duration) {
+  if (!timeline?.length) return [];
+  const end = start + duration;
+  const midis = [];
+  for (const entry of timeline) {
+    if (entry.start < end && entry.end > start) midis.push(...entry.midis);
+  }
+  return midis;
 }
 
 function pickWeighted(ctx) {
   const {
     rng, key, allSteps, previous, previousLeap, repeatRun, tones,
-    onBeat, isDownbeat, centre, stepwiseBias, maxLeapSemitones, chordToneOnly,
+    onBeat, isDownbeat, centre, stepwiseBias, maxLeapSemitones, chordToneOnly, sounding,
   } = ctx;
 
   const previousMidi = pitchAt(previous, key).midi;
+  const ceiling = sounding.length ? Math.max(...sounding) : null;
   const candidates = [];
 
   for (const dstep of allSteps) {
     const interval = dstep - previous;
     const distance = Math.abs(interval);
-    const semitones = Math.abs(pitchAt(dstep, key).midi - previousMidi);
+    const midi = pitchAt(dstep, key).midi;
+    const semitones = Math.abs(midi - previousMidi);
     if (semitones > maxLeapSemitones) continue;
 
     const isChordTone = tones.includes(degreeOf(dstep, key));
@@ -121,27 +174,118 @@ function pickWeighted(ctx) {
     if (isDownbeat && !isChordTone) continue;
     if (distance === 0 && repeatRun >= 1) continue;
 
+    // Vertical check against whatever the other hand is holding.
+    let clash = false;
+    let forbidden = false;
+    for (const other of sounding) {
+      const vertical = Math.abs(midi - other) % 12;
+      if (NEVER_INTERVALS.has(vertical)) { forbidden = true; break; }
+      if (HARSH_INTERVALS.has(vertical)) clash = true;
+    }
+    if (forbidden) continue;
+    // A milder dissonance is only tolerable off the beat, as a step.
+    if (clash && (onBeat || distance !== 1)) continue;
+    // Keep the hands out of each other's way: the melody stays above
+    // everything the left hand is holding, not just its lowest note.
+    if (ceiling !== null && midi < ceiling) continue;
+
     let weight;
     if (distance === 0) weight = 0.5;
     else if (distance === 1) weight = 10 * stepwiseBias;
     else weight = (10 * (1 - stepwiseBias)) / (distance - 1);
 
     if (isChordTone) weight *= onBeat ? 2.2 : 1.3;
-    // After a leap, prefer a step back the other way.
+    if (clash) weight *= 0.25;
     if (Math.abs(previousLeap) >= 3) {
       weight *= Math.sign(interval) === -Math.sign(previousLeap) ? 2.5 : 0.4;
     }
-    // Gentle pull back toward the middle of the range.
     weight *= 1 / (1 + Math.abs(dstep - centre) * 0.12);
 
     candidates.push({ dstep, weight });
   }
 
   if (!candidates.length) {
-    // Nothing legal: fall back to the nearest chord tone.
     return nearestWithDegreeSet(allSteps, key, tones, previous);
   }
   return rng.weighted(candidates).dstep;
+}
+
+/**
+ * Final vertical sweep. The non-chord-tone and augmented-second repairs both
+ * move notes after candidates were scored, so a semitone against the other
+ * hand can reappear. Anything still clashing is moved to the nearest pitch
+ * that does not.
+ */
+function resolveClashes({ bars, key, window, against, barDuration, finalEvent }) {
+  if (!against?.length) return;
+
+  bars.forEach((bar, barIndex) => {
+    let offset = 0;
+    for (const event of bar.events) {
+      if (event.rest) { offset += event.dur; continue; }
+
+      const absolute = barIndex * barDuration + offset;
+      const sounding = soundingAt(against, absolute, event.dur);
+      offset += event.dur;
+      // The melody must clear the other hand's top note as well as avoid
+      // semitone clashes; both repairs above can undo either.
+      const ceiling = sounding.length ? Math.max(...sounding) : null;
+      const wrong = (midi) => clashesWith(midi, sounding)
+        || (ceiling !== null && midi < ceiling);
+      if (!wrong(event.pitch.midi)) continue;
+
+      // The cadence note stays on the tonic whatever else has to move.
+      const tones = event === finalEvent ? [0] : (event.chordDegrees ?? []);
+      let replacement = null;
+      let bestDistance = Infinity;
+      for (let dstep = window.low; dstep <= window.high; dstep++) {
+        if (tones.length && !tones.includes(degreeOf(dstep, key))) continue;
+        const candidate = pitchAt(dstep, key, { raiseSeventh: false });
+        if (wrong(candidate.midi)) continue;
+        const distance = Math.abs(dstep - event.dstep);
+        if (distance < bestDistance) { bestDistance = distance; replacement = { dstep, pitch: candidate }; }
+      }
+      if (replacement) {
+        event.dstep = replacement.dstep;
+        event.raiseSeventh = false;
+        event.pitch = replacement.pitch;
+      }
+    }
+  });
+}
+
+function clashesWith(midi, sounding) {
+  return sounding.some((other) => NEVER_INTERVALS.has(Math.abs(midi - other) % 12));
+}
+
+/**
+ * A passing note that leaps in or out is not a passing note, it is a wrong
+ * note. Replace those with the nearest chord tone.
+ */
+function repairNonChordTones(bars, key, window) {
+  const notes = bars.flatMap((bar) => bar.events.filter((event) => !event.rest));
+
+  notes.forEach((note, index) => {
+    if (!note.chordDegrees) return;
+    if (note.chordDegrees.includes(degreeOf(note.dstep, key))) return;
+
+    const previous = notes[index - 1];
+    const next = notes[index + 1];
+    const steppedInto = !previous || Math.abs(note.dstep - previous.dstep) === 1;
+    const steppedOut = !next || Math.abs(next.dstep - note.dstep) === 1;
+    if (steppedInto && steppedOut) return;
+
+    const options = [];
+    for (let dstep = window.low; dstep <= window.high; dstep++) {
+      if (note.chordDegrees.includes(degreeOf(dstep, key))) options.push(dstep);
+    }
+    if (!options.length) return;
+
+    const replacement = leastDistant(options, note.dstep);
+    note.dstep = replacement;
+    note.raiseSeventh = note.raiseSeventh && degreeOf(replacement, key) === 6;
+    note.pitch = pitchAt(replacement, key, { raiseSeventh: note.raiseSeventh });
+  });
 }
 
 function leastDistant(steps, target) {
@@ -174,9 +318,13 @@ function fixAugmentedSeconds(bars, key) {
     const next = notes[i + 1];
     const previous = notes[i - 1];
     const resolvesUp = next && next.dstep === current.dstep + 1;
-    const touchesSixth = (previous && degreeOf(previous.dstep, key) === 5)
-      || (next && degreeOf(next.dstep, key) === 5);
-    if (touchesSixth && !resolvesUp) {
+    const approachedFromSixth = previous && degreeOf(previous.dstep, key) === 5
+      && Math.abs(current.dstep - previous.dstep) === 1;
+    const leavesToSixth = next && degreeOf(next.dstep, key) === 5
+      && Math.abs(next.dstep - current.dstep) === 1;
+    // Stepping to or from the natural 6th makes the augmented 2nd either way;
+    // resolving upward afterwards does not undo the approach.
+    if (approachedFromSixth || (leavesToSixth && !resolvesUp)) {
       current.raiseSeventh = false;
       current.pitch = pitchAt(current.dstep, key, { raiseSeventh: false });
     }
@@ -207,4 +355,45 @@ export function stackChordTones({ bars, key, progression, maxNotes, rng, window,
     });
   });
   return bars;
+}
+
+/**
+ * Both hands must agree about the leading note. Repairing augmented seconds
+ * per hand can leave one hand raising the 7th while the other does not, and
+ * the two sounding together is a false relation — the harshest thing the
+ * generator can produce.
+ */
+export function harmoniseLeadingNotes(staves, key, barDuration) {
+  if (!key.isMinor) return;
+  const timelines = staves.map((bars) => soundingTimelineWithEvents(bars, barDuration));
+
+  for (const entry of timelines[0]) {
+    for (const other of timelines[1]) {
+      if (entry.start >= other.end || entry.end <= other.start) continue;
+      const a = entry.event;
+      const b = other.event;
+      if (degreeOf(a.dstep, key) !== 6 || degreeOf(b.dstep, key) !== 6) continue;
+      if (a.raiseSeventh === b.raiseSeventh) continue;
+      // Follow the natural form: it is always available, the raised one is not.
+      for (const note of [a, b]) {
+        note.raiseSeventh = false;
+        note.pitch = pitchAt(note.dstep, key, { raiseSeventh: false });
+      }
+    }
+  }
+}
+
+function soundingTimelineWithEvents(bars, barDuration) {
+  const timeline = [];
+  bars.forEach((bar, barIndex) => {
+    let offset = 0;
+    for (const event of bar.events) {
+      if (!event.rest && event.pitch) {
+        const start = barIndex * barDuration + offset;
+        timeline.push({ start, end: start + event.dur, event });
+      }
+      offset += event.dur;
+    }
+  });
+  return timeline;
 }

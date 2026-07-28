@@ -245,3 +245,86 @@ function tonicPitchClassOf(key) {
   const accidental = key.tonic.includes('#') ? 1 : key.tonic.includes('b') ? -1 : 0;
   return (base[key.tonic[0]] + accidental + 12) % 12;
 }
+
+test('simultaneous intervals stay consonant', () => {
+  // Before the hands were written against each other, roughly 18% of
+  // simultaneous intervals were seconds, sevenths or tritones. What is left
+  // should only be off-beat passing dissonance.
+  const HARSH = new Set([1, 2, 6, 10, 11]);
+
+  for (const grade of GRADES) {
+    let harsh = 0;
+    let total = 0;
+
+    for (const seed of SEEDS) {
+      const score = generateTest(rules, { grade, seed });
+      const right = soundingTimeline(score, 1);
+      const left = soundingTimeline(score, 2);
+
+      for (const above of right) {
+        for (const below of left) {
+          if (above.start >= below.end || above.end <= below.start) continue;
+          for (const a of above.midis) {
+            for (const b of below.midis) {
+              total += 1;
+              if (HARSH.has(Math.abs(a - b) % 12)) harsh += 1;
+            }
+          }
+        }
+      }
+    }
+
+    if (!total) continue; // Grade 1 alternates, so nothing ever sounds together
+    const rate = harsh / total;
+    assert.ok(
+      rate <= 0.06,
+      `grade ${grade}: ${(rate * 100).toFixed(1)}% of simultaneous intervals are harsh`,
+    );
+  }
+});
+
+test('no false relations between the hands', () => {
+  for (const grade of GRADES) {
+    for (const seed of SEEDS) {
+      const score = generateTest(rules, { grade, seed });
+      if (score.key.mode !== 'minor') continue;
+      const right = soundingTimeline(score, 1);
+      const left = soundingTimeline(score, 2);
+
+      for (const above of right) {
+        for (const below of left) {
+          if (above.start >= below.end || above.end <= below.start) continue;
+          for (const a of above.midis) {
+            for (const b of below.midis) {
+              // Same letter sounding both natural and raised at once.
+              assert.notEqual(
+                Math.abs(a - b) % 12, 1,
+                `grade ${grade} seed ${seed}: semitone clash between the hands (${a} vs ${b})`,
+              );
+            }
+          }
+        }
+      }
+    }
+  }
+});
+
+/** Absolute-time sounding notes of one staff. */
+function soundingTimeline(score, staffNumber) {
+  const timeline = [];
+  score.staves[staffNumber].forEach((bar, barIndex) => {
+    let offset = 0;
+    for (const event of bar.events) {
+      if (!event.rest) {
+        const start = barIndex * score.barDuration + offset;
+        timeline.push({
+          start,
+          end: start + event.dur,
+          midis: [event.pitch.midi, ...(event.chord ?? []).map((p) => p.midi)],
+        });
+      }
+      offset += event.dur;
+    }
+  });
+  return timeline;
+}

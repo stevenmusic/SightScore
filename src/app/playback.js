@@ -49,6 +49,8 @@ export function createPlayer({ onStatus } = {}) {
   let downloads = null;
   let voices = [];
   let stopTimer = null;
+  /** AudioContext time of musical position zero, for visual sync. */
+  let startTime = null;
 
   const download = () => {
     downloads ??= SAMPLE_LIST.map(([letter, octave]) => {
@@ -130,6 +132,7 @@ export function createPlayer({ onStatus } = {}) {
       }
     }
     voices = [];
+    startTime = null;
     clearTimeout(stopTimer);
     stopTimer = null;
   };
@@ -137,6 +140,11 @@ export function createPlayer({ onStatus } = {}) {
   return {
     get playing() {
       return voices.length > 0;
+    },
+    /** Seconds since the first note, or null when not playing. */
+    get elapsed() {
+      if (startTime === null || !context) return null;
+      return context.currentTime - startTime;
     },
     /** Start fetching the samples before anyone presses play. */
     preload: download,
@@ -153,6 +161,7 @@ export function createPlayer({ onStatus } = {}) {
       const bpm = score.tempoBpm * (options.tempoScale ?? 1);
       const secondsPerDivision = 60 / bpm / score.divisions;
       const start = context.currentTime + 0.15;
+      startTime = start;
       let end = start;
 
       for (const staffNumber of [1, 2]) {
