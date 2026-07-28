@@ -10,6 +10,8 @@ const elements = {
   generate: document.getElementById('generate'),
   prepare: document.getElementById('prepare'),
   play: document.getElementById('play'),
+  playIcon: document.getElementById('playIcon'),
+  stop: document.getElementById('stop'),
   download: document.getElementById('download'),
   status: document.getElementById('status'),
   countdown: document.getElementById('countdown'),
@@ -22,7 +24,14 @@ const elements = {
   confidence: document.getElementById('confidence'),
 };
 
-const player = createPlayer();
+/* ScrollScore's icon paths, so the two apps show the same glyphs. */
+const PLAY_ICON_D = 'M8 5v14l11-7z';
+const PAUSE_ICON_D = 'M6 5h4v14H6zM14 5h4v14h-4z';
+
+const player = createPlayer({
+  // Only loading progress and failures; play() reports the rest.
+  onStatus: (text) => { if (text) say(text); },
+});
 const history = createHistory({
   capacity: 60,
   load: () => JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]'),
@@ -41,6 +50,12 @@ const CONFIDENCE_LABEL = {
 };
 
 init();
+
+/** Ordinary status text, clearing any error styling left behind. */
+function say(text) {
+  elements.message.className = 'message';
+  elements.message.textContent = text;
+}
 
 /** Surface failures on the page — a blank screen tells the user nothing. */
 function fail(text, detail) {
@@ -88,6 +103,10 @@ async function init() {
   elements.generate.addEventListener('click', newTest);
   elements.prepare.addEventListener('click', startCountdown);
   elements.play.addEventListener('click', togglePlayback);
+  elements.stop.addEventListener('click', () => {
+    player.stop();
+    setPlayState(false);
+  });
   elements.download.addEventListener('click', downloadXml);
   elements.clearHistory.addEventListener('click', () => {
     history.clear();
@@ -103,24 +122,30 @@ async function init() {
 async function newTest() {
   stopCountdown();
   player.stop();
+  setPlayState(false);
+
+  // Start fetching the piano samples now, so the first press of play is
+  // immediate — same moment ScrollScore loads them, once there is a score.
+  player.preload();
 
   const grade = Number(elements.grade.value);
   const { score } = generateUnique(() => generateTest(rules, { grade }), history);
   current = { score, xml: toMusicXml(score) };
 
-  elements.message.textContent = '渲染中…';
+  say('渲染中…');
   try {
     await osmd.load(current.xml);
     osmd.render();
-    elements.message.textContent = '按「開始 30 秒準備」模擬考試流程。';
+    say('按「開始 30 秒準備」模擬考試流程。');
   } catch (error) {
-    elements.message.textContent = `渲染失敗：${error.message}`;
+    fail('渲染失敗', error.message);
     return;
   }
 
   showMeta(score);
   elements.status.hidden = false;
   elements.play.disabled = false;
+  elements.stop.disabled = false;
   elements.download.disabled = false;
   elements.countdownValue.textContent = String(rules.exam.preparationSeconds);
   elements.countdown.className = 'countdown';
@@ -150,7 +175,7 @@ function startCountdown() {
   let remaining = rules.exam.preparationSeconds;
   elements.countdownValue.textContent = String(remaining);
   elements.countdown.className = 'countdown running';
-  elements.message.textContent = '準備時間：看調號、拍號、速度術語，找出把位與難處。';
+  say('準備時間：看調號、拍號、速度術語，找出把位與難處。');
 
   countdownTimer = setInterval(() => {
     remaining -= 1;
@@ -158,7 +183,7 @@ function startCountdown() {
     if (remaining <= 0) {
       stopCountdown();
       elements.countdown.className = 'countdown done';
-      elements.message.textContent = '時間到——請不間斷地彈完，再按「播放正確版本」比對。';
+      say('時間到——請不間斷地彈完，再按「播放正確版本」比對。');
     }
   }, 1000);
 }
@@ -168,19 +193,25 @@ function stopCountdown() {
   countdownTimer = null;
 }
 
+function setPlayState(playing) {
+  elements.play.classList.toggle('is-active', playing);
+  elements.playIcon.setAttribute('d', playing ? PAUSE_ICON_D : PLAY_ICON_D);
+  const label = playing ? '停止' : '播放';
+  elements.play.setAttribute('aria-label', label);
+  elements.play.title = playing ? '停止播放' : '播放正確版本';
+}
+
 function togglePlayback() {
   if (!current) return;
   if (player.playing) {
     player.stop();
-    elements.play.textContent = '播放正確版本';
+    setPlayState(false);
     return;
   }
-  elements.play.textContent = '停止播放';
-  player.play(current.score, {
-    onEnd: () => {
-      elements.play.textContent = '播放正確版本';
-    },
-  });
+  setPlayState(true);
+  player.play(current.score, { onEnd: () => setPlayState(false) })
+    .then(() => { if (player.playing) say('播放中——真實鋼琴取樣，含空間感。'); })
+    .catch((error) => fail('播放失敗', error.message));
 }
 
 function downloadXml() {
