@@ -12,7 +12,16 @@
  * once per staff, so the union of both is the bar's full height.
  */
 
-const SYSTEM_GAP = 16;
+/** Breathing room under the lower system so descending stems stay whole. */
+const BOTTOM_ALLOWANCE = 10;
+/**
+ * Room above a system for text that sits over it — the tempo word, rehearsal
+ * numbers. Bar boxes do not include those, so scrolling to a bar's own top
+ * cut "Lento" in half.
+ */
+const TEXT_ALLOWANCE = 30;
+/** Distance from the top of the window to that allowance. */
+const TOP_INSET = 8;
 
 export function createStage(elements) {
   const { frame, stage, scroller, score, playline, highlight, fullscreen } = elements;
@@ -64,21 +73,40 @@ export function createStage(elements) {
       for (const number of system.bars) boxes.get(number).system = index;
     });
 
+    /*
+     * A bar's box covers its notes, but slurs, hairpins and dynamics are drawn
+     * outside it and can hang well below the staff. Grow each system to cover
+     * every staff group it overlaps, or the window clips those.
+     */
+    for (const staffline of svg.querySelectorAll('g.staffline')) {
+      const box = toRect(staffline.getBBox());
+      const middle = (box.top + box.bottom) / 2;
+      const system = systems.find((candidate) => middle >= candidate.top && middle <= candidate.bottom)
+        ?? systems.find((candidate) => box.top < candidate.bottom && box.bottom > candidate.top);
+      if (!system) continue;
+      system.top = Math.min(system.top, box.top);
+      system.bottom = Math.max(system.bottom, box.bottom);
+    }
+
     layout = { bars: boxes, systems, scale };
     return layout;
   }
 
-  /** Height of the tallest pair of adjacent systems, so the frame never jumps. */
-  function windowHeight() {
+  /**
+   * Height of the window showing system `index` and the one after it, from the
+   * top of the first to the bottom of the second.
+   *
+   * Sizing to the tallest pair in the piece instead leaves slack on shorter
+   * pairs, and the system after next then peeks in at the bottom edge, which
+   * reads exactly like a row with its stems cut off.
+   */
+  function windowHeight(index = 0) {
     const { systems, scale } = layout;
     if (!systems.length) return 0;
-    let tallest = 0;
-    for (let i = 0; i < systems.length; i++) {
-      const first = systems[i].bottom - systems[i].top;
-      const second = systems[i + 1] ? systems[i + 1].bottom - systems[i + 1].top : 0;
-      tallest = Math.max(tallest, second ? first + SYSTEM_GAP + second : first);
-    }
-    return tallest * scale;
+    const first = systems[Math.min(index, systems.length - 1)];
+    const second = systems[index + 1];
+    const span = second ? second.bottom - first.top : first.bottom - first.top;
+    return span * scale + BOTTOM_ALLOWANCE + TEXT_ALLOWANCE + TOP_INSET;
   }
 
   function begin() {
@@ -87,7 +115,7 @@ export function createStage(elements) {
     following = true;
     currentSystem = -1;
     stage.classList.add('following');
-    stage.style.height = `${windowHeight() + 24}px`;
+    stage.style.height = `${windowHeight(0)}px`;
     playline.style.display = 'block';
     highlight.style.display = 'block';
     return true;
@@ -116,8 +144,10 @@ export function createStage(elements) {
 
     if (box.system !== currentSystem) {
       currentSystem = box.system;
-      // Put the current system at the top; the next one sits below it.
-      scroller.style.transform = `translateY(${-system.top * scale + 12}px)`;
+      // Put the current system at the top; the next one sits below it, and the
+      // window is resized to that exact pair so nothing else shows through.
+      scroller.style.transform = `translateY(${-system.top * scale + TOP_INSET + TEXT_ALLOWANCE}px)`;
+      stage.style.height = `${windowHeight(box.system)}px`;
     }
 
     const left = box.left * scale;
@@ -131,7 +161,7 @@ export function createStage(elements) {
     highlight.style.height = `${height}px`;
 
     const x = left + width * Math.min(Math.max(progress, 0), 1);
-    playline.style.transform = `translateX(${x}px) translateY(${top - system.top * scale + 12}px)`;
+    playline.style.transform = `translateX(${x}px) translateY(${top - system.top * scale + TOP_INSET + TEXT_ALLOWANCE}px)`;
     playline.style.height = `${height}px`;
   }
 
