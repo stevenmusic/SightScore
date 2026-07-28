@@ -6,7 +6,12 @@
   <title>SightScore — 視奏隨機題目生成器</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%8E%BC%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="src/app/styles.css">
-  <script src="node_modules/opensheetmusicdisplay/build/opensheetmusicdisplay.min.js"></script>
+  <!--
+    Loaded from vendor/ rather than node_modules/ so the page works as a plain
+    static site (GitHub Pages) with no build step and no npm install.
+    See vendor/README.md for how to update it.
+  -->
+  <script src="vendor/opensheetmusicdisplay.min.js"></script>
 </head>
 <body>
   <header>
@@ -43,7 +48,9 @@
   </section>
 
   <main>
-    <div id="score" class="score"></div>
+    <div class="score-frame">
+      <div id="score" class="score"></div>
+    </div>
     <p id="message" class="message">選擇級數，按「產生新題目」開始。</p>
   </main>
 

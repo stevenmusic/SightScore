@@ -11,6 +11,17 @@ npm run sample -- --grade 3 --seed 42 --out test.musicxml
 node scripts/smoke.js --screenshot app.png   # 用瀏覽器實際渲染每個級數
 ```
 
+## 部署（GitHub Pages）
+
+網站是**純靜態**的，沒有 build step：OSMD 已經放進 `vendor/`（見 [`vendor/README.md`](vendor/README.md)），
+`node_modules/` 不需要、也不該進版控。
+
+Pages 只要指向含有 `index.html` 的分支根目錄即可。注意兩件事：
+
+1. **Pages 服務的分支必須有 `index.html`。** 若分支上只有 `README.md`，Pages 會改用 Jekyll 把 README
+   渲染成一個標題加一條底線的頁面 —— 看起來就像「一片空白」。
+2. 倉庫根目錄有 `.nojekyll`，讓 Pages 直接原樣提供檔案，不經過 Jekyll 處理。
+
 ## 結構
 
 | 路徑 | 說明 |

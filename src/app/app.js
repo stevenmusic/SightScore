@@ -42,21 +42,47 @@ const CONFIDENCE_LABEL = {
 
 init();
 
+/** Surface failures on the page — a blank screen tells the user nothing. */
+function fail(text, detail) {
+  elements.message.className = 'message error';
+  elements.message.textContent = detail ? `${text}（${detail}）` : text;
+  elements.generate.disabled = true;
+}
+
+window.addEventListener('error', (event) => fail('發生錯誤', event.message));
+window.addEventListener('unhandledrejection', (event) => fail('發生錯誤', String(event.reason)));
+
 async function init() {
   elements.generate.disabled = true;
-  try {
-    rules = await (await fetch('src/rules/abrsm-piano-grades.json')).json();
-  } catch (error) {
-    elements.message.textContent = `無法載入規則表：${error.message}`;
+
+  if (typeof opensheetmusicdisplay === 'undefined') {
+    fail(
+      '找不到樂譜渲染函式庫 OSMD（vendor/opensheetmusicdisplay.min.js 未載入）。'
+      + '請確認該檔案存在，並透過 http 開啟頁面（直接以 file:// 開啟不會運作）',
+    );
     return;
   }
 
-  osmd = new opensheetmusicdisplay.OpenSheetMusicDisplay(elements.score, {
-    autoResize: true,
-    drawTitle: false,
-    drawPartNames: false,
-    drawingParameters: 'default',
-  });
+  try {
+    const response = await fetch(new URL('../rules/abrsm-piano-grades.json', import.meta.url));
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    rules = await response.json();
+  } catch (error) {
+    fail('無法載入規則表', error.message);
+    return;
+  }
+
+  try {
+    osmd = new opensheetmusicdisplay.OpenSheetMusicDisplay(elements.score, {
+      autoResize: true,
+      drawTitle: false,
+      drawPartNames: false,
+      drawingParameters: 'default',
+    });
+  } catch (error) {
+    fail('無法初始化樂譜渲染器', error.message);
+    return;
+  }
 
   elements.generate.disabled = false;
   elements.generate.addEventListener('click', newTest);

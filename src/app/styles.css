@@ -202,7 +202,7 @@ button.link:hover:not(:disabled) { background: none; color: var(--accent); }
 
 /* ---------- score ---------- */
 
-.score {
+.score-frame {
   margin-top: 0.75rem;
   padding: 1.5rem 1rem;
   background: var(--panel);
@@ -210,11 +210,22 @@ button.link:hover:not(:disabled) { background: none; color: var(--accent); }
   border-radius: var(--radius);
   box-shadow: 0 1px 3px rgb(28 25 20 / 5%);
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/*
+ * OSMD lays the music out to fit this element's width, so on a phone it would
+ * otherwise wrap to one bar per system and the test becomes a long column.
+ * Holding a minimum engraving width and letting the frame scroll sideways
+ * keeps two or three bars per system, closer to a printed test.
+ */
+.score {
+  min-width: 34rem;
   min-height: 10rem;
 }
 
 /*
- * The container must keep a real width at all times: OSMD measures it when
+ * The element must keep a real width at all times: OSMD measures it when
  * render() is called, and a display:none (or zero-width) parent makes it lay
  * the staves out backwards into negative x.
  */
@@ -224,6 +235,15 @@ button.link:hover:not(:disabled) { background: none; color: var(--accent); }
   margin: 0.85rem 0.25rem 0;
   color: var(--muted);
   font-size: 0.88rem;
+}
+
+/* Failures must be visible on the page: a phone has no dev console. */
+.message.error {
+  color: #8f2f1d;
+  background: #fdf1ee;
+  border: 1px solid #e8c4ba;
+  border-radius: var(--radius-sm);
+  padding: 0.7rem 0.9rem;
 }
 
 /* ---------- footer ---------- */
@@ -257,4 +277,5 @@ footer {
   .controls { gap: 0.5rem; }
   .controls button { flex: 1 1 auto; }
   .countdown { font-size: 2rem; }
+  .score-frame { padding: 1rem 0.75rem; }
 }
