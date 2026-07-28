@@ -2,6 +2,7 @@ import { generateTest } from '../generator/generate.js';
 import { toMusicXml } from '../generator/musicxml.js';
 import { createHistory, generateUnique } from '../generator/fingerprint.js';
 import { createPlayer } from './playback.js';
+import { createStage, barTimings } from './stage.js';
 
 const STORAGE_KEY = 'sightscore.history.v1';
 
@@ -18,7 +19,14 @@ const elements = {
   countdownValue: document.getElementById('countdown-value'),
   meta: document.getElementById('meta'),
   score: document.getElementById('score'),
+  frame: document.getElementById('score-frame'),
+  stage: document.getElementById('stage'),
+  scroller: document.getElementById('scroller'),
+  playline: document.getElementById('playline'),
+  highlight: document.getElementById('measure-highlight'),
+  fullscreen: document.getElementById('fullscreen'),
   message: document.getElementById('message'),
+  checklist: document.getElementById('checklist'),
   historyInfo: document.getElementById('history-info'),
   clearHistory: document.getElementById('clear-history'),
   confidence: document.getElementById('confidence'),
@@ -40,8 +48,12 @@ const history = createHistory({
 
 let rules = null;
 let osmd = null;
+let stage = null;
 let current = null;
 let countdownTimer = null;
+let followFrame = null;
+/** Zoom chosen for the normal view, restored when leaving fullscreen. */
+const BASE_ZOOM = 1;
 
 const CONFIDENCE_LABEL = {
   verified: null,
@@ -98,6 +110,18 @@ async function init() {
     fail('無法初始化樂譜渲染器', error.message);
     return;
   }
+  window.__osmd = osmd; // debugging hook, also used by scripts/smoke.js
+
+  stage = createStage({
+    frame: elements.frame,
+    stage: elements.stage,
+    scroller: elements.scroller,
+    score: elements.score,
+    playline: elements.playline,
+    highlight: elements.highlight,
+    fullscreen: elements.fullscreen,
+    onFullscreenChange: fitScore,
+  });
 
   elements.generate.disabled = false;
   elements.generate.addEventListener('click', newTest);
@@ -105,6 +129,7 @@ async function init() {
   elements.play.addEventListener('click', togglePlayback);
   elements.stop.addEventListener('click', () => {
     player.stop();
+    stopFollowing();
     setPlayState(false);
   });
   elements.download.addEventListener('click', downloadXml);
@@ -122,6 +147,7 @@ async function init() {
 async function newTest() {
   stopCountdown();
   player.stop();
+  stopFollowing();
   setPlayState(false);
 
   // Start fetching the piano samples now, so the first press of play is
@@ -142,6 +168,7 @@ async function newTest() {
     return;
   }
 
+  stage.measure();
   showMeta(score);
   elements.status.hidden = false;
   elements.play.disabled = false;
@@ -149,6 +176,7 @@ async function newTest() {
   elements.download.disabled = false;
   elements.countdownValue.textContent = String(rules.exam.preparationSeconds);
   elements.countdown.className = 'countdown';
+  elements.checklist.hidden = true;
   updateHistoryInfo();
 }
 
@@ -159,7 +187,6 @@ function showMeta(score) {
     ['拍號', score.timeSignature.text],
     ['小節', `${score.barCount} 小節`],
     ['速度', `${score.tempoTerm} (♩≈${score.tempoBpm})`],
-    ['種子', String(score.seed)],
   ];
   elements.meta.innerHTML = rows
     .map(([term, value]) => `<div><dt>${term}</dt><dd>${escapeHtml(value)}</dd></div>`)
@@ -170,12 +197,29 @@ function showMeta(score) {
   if (warning) elements.confidence.textContent = warning;
 }
 
+/*
+ * The standard preparation order from the knowledge base. Reading it beats
+ * staring at bar 1: the tempo should be set by the busiest bar, not the first.
+ */
+const PREPARATION_STEPS = [
+  '調號 — 幾個升降記號？主音在哪？',
+  '拍號 — 幾拍子？複拍子用大拍感覺（6/8 是兩大拍）',
+  '速度術語 — 決定起頭速度',
+  '把位 — 兩手從哪裡開始，中途換不換',
+  '掃描難點 — 臨時記號、最密的一小節、最大的跳進',
+  '用最難的那一小節決定速度，然後心裡數一小節',
+];
+
 function startCountdown() {
   stopCountdown();
   let remaining = rules.exam.preparationSeconds;
   elements.countdownValue.textContent = String(remaining);
   elements.countdown.className = 'countdown running';
-  say('準備時間：看調號、拍號、速度術語，找出把位與難處。');
+  elements.checklist.hidden = false;
+  elements.checklist.innerHTML = PREPARATION_STEPS
+    .map((step) => `<li>${escapeHtml(step)}</li>`)
+    .join('');
+  say('準備時間：照下面的順序看譜。');
 
   countdownTimer = setInterval(() => {
     remaining -= 1;
@@ -183,7 +227,10 @@ function startCountdown() {
     if (remaining <= 0) {
       stopCountdown();
       elements.countdown.className = 'countdown done';
-      say('時間到——請不間斷地彈完，再按「播放正確版本」比對。');
+      elements.checklist.hidden = true;
+      // Continuity outscores accuracy: going back to fix a slip is counted as
+      // a second mistake.
+      say('時間到——不要停、不要回頭改，彈完再按播放比對。');
     }
   }, 1000);
 }
@@ -201,16 +248,89 @@ function setPlayState(playing) {
   elements.play.title = playing ? '停止播放' : '播放正確版本';
 }
 
+/**
+ * Fit the whole test on screen. In fullscreen the point is to read it in one
+ * go, so the engraving is scaled down until it fits both ways.
+ */
+async function fitScore(isFullscreen) {
+  if (!current || !osmd) return;
+  osmd.zoom = BASE_ZOOM;
+  osmd.render();
+
+  if (isFullscreen) {
+    const style = getComputedStyle(elements.frame);
+    const availableHeight = elements.frame.clientHeight
+      - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+
+    let low = 0.35;
+    let high = 1.6;
+    let best = null;
+    for (let pass = 0; pass < 6 && high - low > 0.04; pass++) {
+      const zoom = (low + high) / 2;
+      osmd.zoom = zoom;
+      osmd.render();
+      const box = elements.score.querySelector('svg')?.getBoundingClientRect();
+      if (box && box.height <= availableHeight) {
+        best = zoom;
+        low = zoom;
+      } else {
+        high = zoom;
+      }
+    }
+    if (best !== null && osmd.zoom !== best) {
+      osmd.zoom = best;
+      osmd.render();
+    }
+  }
+  stage.measure();
+}
+
+function startFollowing() {
+  if (!current || !stage.begin()) return;
+  const { secondsPerBar } = barTimings(current.score);
+
+  const step = () => {
+    const elapsed = player.elapsed;
+    if (elapsed === null) {
+      stopFollowing();
+      return;
+    }
+    if (elapsed >= 0) {
+      const position = elapsed / secondsPerBar;
+      const bar = Math.min(Math.floor(position) + 1, current.score.barCount);
+      stage.update(bar, position - Math.floor(position));
+    }
+    followFrame = requestAnimationFrame(step);
+  };
+  followFrame = requestAnimationFrame(step);
+}
+
+function stopFollowing() {
+  cancelAnimationFrame(followFrame);
+  followFrame = null;
+  stage?.end();
+}
+
 function togglePlayback() {
   if (!current) return;
   if (player.playing) {
     player.stop();
+    stopFollowing();
     setPlayState(false);
     return;
   }
   setPlayState(true);
-  player.play(current.score, { onEnd: () => setPlayState(false) })
-    .then(() => { if (player.playing) say('播放中——真實鋼琴取樣，含空間感。'); })
+  player.play(current.score, {
+    onEnd: () => {
+      stopFollowing();
+      setPlayState(false);
+    },
+  })
+    .then(() => {
+      if (!player.playing) return;
+      say('播放中——目前小節以色塊標示，同時顯示下一行。');
+      startFollowing();
+    })
     .catch((error) => fail('播放失敗', error.message));
 }
 

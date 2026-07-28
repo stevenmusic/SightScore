@@ -54,7 +54,16 @@ export function scaleCell(cell, scale) {
       const index = TYPE_LADDER.indexOf(event.type);
       const scaledType = TYPE_LADDER[index + shift];
       if (!scaledType) throw new Error(`cannot rescale note type ${event.type}`);
-      return { ...event, type: scaledType, dur: event.dur * scale };
+      const scaled = { ...event, type: scaledType, dur: event.dur * scale };
+      if (event.timeModification) {
+        // The tuplet's reference value scales with everything else, or the
+        // engraving claims a triplet of quavers while printing semiquavers.
+        const normalIndex = TYPE_LADDER.indexOf(event.timeModification.normalType);
+        const normalType = TYPE_LADDER[normalIndex + shift];
+        if (!normalType) throw new Error(`cannot rescale tuplet type ${event.timeModification.normalType}`);
+        scaled.timeModification = { ...event.timeModification, normalType };
+      }
+      return scaled;
     }),
   };
 }
