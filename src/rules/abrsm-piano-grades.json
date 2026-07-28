@@ -1,0 +1,570 @@
+{
+  "board": "ABRSM",
+  "instrument": "piano",
+  "syllabusRef": "Practical Grades Piano 2025 & 2026 (sight-reading parameters unchanged in 2027 & 2028)",
+  "note": "confidence 欄位說明資料來源強度：verified = 有多個公開來源一致佐證；partial = 主要參數有佐證但細節（如小節數）為推估；inferred = 依既有級數趨勢與範例集觀察推得，需以官方大綱 p.16 表格核對後修正。",
+  "rangeSemantics": "range 是「該手可能落在的音域範圍」，不是單一題目的跨度。在 fiveFingerPosition = true 的級數（G1、G2），生成器會在此範圍內選一個五音位置，該位置必須包含主音——所以範圍必須容納所有允許調的把位（例如 G1 的 a 小調把位在 A2–E3，若左手範圍只寫 C3–G3 就放不下）。",
+  "exam": {
+    "preparationSeconds": 30,
+    "marks": 21,
+    "totalMarks": 150,
+    "passMark": 100,
+    "meritMark": 120,
+    "distinctionMark": 130,
+    "assessedOn": ["pitch accuracy", "rhythm accuracy", "continuity / fluency", "musical detail (dynamics, articulation, character)"],
+    "staves": 2,
+    "clefs": ["G", "F"],
+    "cumulativeParameters": true
+  },
+  "grades": {
+    "1": {
+      "grade": 1,
+      "confidence": "verified",
+      "lengthBars": { "2/4": [6, 6], "3/4": [4, 4], "4/4": [4, 4] },
+      "timeSignatures": ["2/4", "3/4", "4/4"],
+      "keys": {
+        "maxAccidentals": 1,
+        "major": [
+          { "tonic": "C", "fifths": 0 },
+          { "tonic": "G", "fifths": 1 },
+          { "tonic": "F", "fifths": -1 }
+        ],
+        "minor": [
+          { "tonic": "A", "fifths": 0 },
+          { "tonic": "D", "fifths": -1 }
+        ]
+      },
+      "texture": {
+        "handsPlayTogether": false,
+        "fiveFingerPosition": true,
+        "positionShifts": false,
+        "maxNotesPerChord": 1,
+        "handAlternation": "hands alternate by phrase; only one hand sounds at a time"
+      },
+      "range": {
+        "rightHand": { "minMidi": 60, "maxMidi": 76, "label": "C4–E5", "positionSpan": 5 },
+        "leftHand": { "minMidi": 41, "maxMidi": 57, "label": "F2–A3", "positionSpan": 5 },
+        "legerLines": 0
+      },
+      "rhythm": {
+        "noteValues": ["whole", "half", "quarter", "eighth"],
+        "dottedValues": ["half"],
+        "rests": ["whole", "half", "quarter"],
+        "smallestDivision": 8,
+        "ties": false,
+        "triplets": false,
+        "syncopation": false,
+        "upbeat": false,
+        "eighthsBeamedInPairs": true,
+        "eighthsOnBeatOnly": true
+      },
+      "harmony": {
+        "chromaticNotes": false,
+        "raisedSeventhInMinor": true
+      },
+      "articulations": ["slur", "staccato"],
+      "dynamics": ["p", "mp", "mf", "f"],
+      "dynamicFeatures": ["crescendo", "diminuendo"],
+      "otherFeatures": ["tempo/character word at start", "phrase marks"],
+      "tempoTerms": ["Moderato", "Andante", "Allegretto", "Allegro moderato"],
+      "newAtThisGrade": ["整份測驗的基礎參數：五指位置、雙手輪流、C/G/F 大調與 a/d 小調"],
+      "generatorHints": {
+        "stepwiseBiasPercent": 75,
+        "maxLeapSemitones": 4,
+        "startOnChordTone": true,
+        "endOnTonic": true,
+        "motifRepeatBars": [1, 2],
+        "restDensityPercent": 10
+      }
+    },
+    "2": {
+      "grade": 2,
+      "confidence": "verified",
+      "lengthBars": { "2/4": [6, 8], "3/4": [4, 6], "4/4": [4, 6] },
+      "timeSignatures": ["2/4", "3/4", "4/4"],
+      "keys": {
+        "maxAccidentals": 2,
+        "major": [
+          { "tonic": "C", "fifths": 0 },
+          { "tonic": "G", "fifths": 1 },
+          { "tonic": "D", "fifths": 2 },
+          { "tonic": "F", "fifths": -1 }
+        ],
+        "minor": [
+          { "tonic": "A", "fifths": 0 },
+          { "tonic": "E", "fifths": 1 },
+          { "tonic": "D", "fifths": -1 },
+          { "tonic": "G", "fifths": -2 }
+        ]
+      },
+      "texture": {
+        "handsPlayTogether": true,
+        "fiveFingerPosition": true,
+        "positionShifts": false,
+        "maxNotesPerChord": 1,
+        "handAlternation": "hands sound together, mostly note-against-note or melody + sustained bass"
+      },
+      "range": {
+        "rightHand": { "minMidi": 60, "maxMidi": 79, "label": "C4–G5", "positionSpan": 5 },
+        "leftHand": { "minMidi": 38, "maxMidi": 60, "label": "D2–C4", "positionSpan": 5 },
+        "legerLines": 1
+      },
+      "rhythm": {
+        "noteValues": ["whole", "half", "quarter", "eighth"],
+        "dottedValues": ["half", "quarter"],
+        "rests": ["whole", "half", "quarter"],
+        "smallestDivision": 8,
+        "ties": true,
+        "triplets": false,
+        "syncopation": false,
+        "upbeat": true,
+        "eighthsBeamedInPairs": true,
+        "eighthsOnBeatOnly": false
+      },
+      "harmony": {
+        "chromaticNotes": false,
+        "raisedSeventhInMinor": true
+      },
+      "articulations": ["slur", "staccato", "accent"],
+      "dynamics": ["pp", "p", "mp", "mf", "f"],
+      "dynamicFeatures": ["crescendo", "diminuendo"],
+      "otherFeatures": ["ties across barlines", "dotted crotchet + quaver rhythm"],
+      "tempoTerms": ["Moderato", "Andante", "Allegretto", "Allegro", "Andantino"],
+      "newAtThisGrade": ["雙手同時演奏", "D 大調、e 小調、g 小調", "附點四分音符節奏", "連結線（tie）", "pp"],
+      "generatorHints": {
+        "stepwiseBiasPercent": 72,
+        "maxLeapSemitones": 5,
+        "startOnChordTone": true,
+        "endOnTonic": true,
+        "motifRepeatBars": [1, 2],
+        "restDensityPercent": 12
+      }
+    },
+    "3": {
+      "grade": 3,
+      "confidence": "verified",
+      "lengthBars": { "2/4": [8, 8], "3/4": [6, 8], "4/4": [6, 8], "3/8": [8, 8] },
+      "timeSignatures": ["2/4", "3/4", "4/4", "3/8"],
+      "keys": {
+        "maxAccidentals": 3,
+        "major": [
+          { "tonic": "C", "fifths": 0 },
+          { "tonic": "G", "fifths": 1 },
+          { "tonic": "D", "fifths": 2 },
+          { "tonic": "A", "fifths": 3 },
+          { "tonic": "F", "fifths": -1 },
+          { "tonic": "Bb", "fifths": -2 },
+          { "tonic": "Eb", "fifths": -3 }
+        ],
+        "minor": [
+          { "tonic": "A", "fifths": 0 },
+          { "tonic": "E", "fifths": 1 },
+          { "tonic": "B", "fifths": 2 },
+          { "tonic": "D", "fifths": -1 },
+          { "tonic": "G", "fifths": -2 }
+        ]
+      },
+      "texture": {
+        "handsPlayTogether": true,
+        "fiveFingerPosition": false,
+        "positionShifts": true,
+        "maxNotesPerChord": 2,
+        "handAlternation": "hands together, occasional 2-note chords in either hand"
+      },
+      "range": {
+        "rightHand": { "minMidi": 59, "maxMidi": 79, "label": "B3–G5" },
+        "leftHand": { "minMidi": 41, "maxMidi": 60, "label": "F2–C4" },
+        "legerLines": 2
+      },
+      "rhythm": {
+        "noteValues": ["whole", "half", "quarter", "eighth", "16th"],
+        "dottedValues": ["half", "quarter"],
+        "rests": ["whole", "half", "quarter", "eighth", "dotted-quarter"],
+        "smallestDivision": 16,
+        "ties": true,
+        "triplets": false,
+        "syncopation": false,
+        "upbeat": true,
+        "eighthsBeamedInPairs": true,
+        "sixteenthPatterns": ["two 16ths + eighth", "eighth + two 16ths", "four 16ths", "dotted eighth + 16th"]
+      },
+      "harmony": {
+        "chromaticNotes": false,
+        "raisedSeventhInMinor": true
+      },
+      "articulations": ["slur", "staccato", "accent"],
+      "dynamics": ["pp", "p", "mp", "mf", "f", "ff"],
+      "dynamicFeatures": ["crescendo", "diminuendo"],
+      "otherFeatures": ["hands leave the five-finger position", "two-note chords", "quaver rest", "dotted crotchet rest"],
+      "tempoTerms": ["Moderato", "Andante", "Allegretto", "Allegro", "Vivace", "Adagio"],
+      "newAtThisGrade": ["十六分音符", "3/8 拍", "A、Bb、Eb 大調與 b 小調", "離開五指位置（換把位）", "兩音和弦", "八分休止符與附點四分休止符"],
+      "generatorHints": {
+        "stepwiseBiasPercent": 68,
+        "maxLeapSemitones": 7,
+        "startOnChordTone": true,
+        "endOnTonic": true,
+        "motifRepeatBars": [1, 2],
+        "restDensityPercent": 12
+      }
+    },
+    "4": {
+      "grade": 4,
+      "confidence": "verified",
+      "lengthBars": { "2/4": [8, 8], "3/4": [8, 8], "4/4": [6, 8], "3/8": [8, 8], "6/8": [6, 8] },
+      "timeSignatures": ["2/4", "3/4", "4/4", "3/8", "6/8"],
+      "keys": {
+        "maxAccidentals": 3,
+        "major": [
+          { "tonic": "C", "fifths": 0 },
+          { "tonic": "G", "fifths": 1 },
+          { "tonic": "D", "fifths": 2 },
+          { "tonic": "A", "fifths": 3 },
+          { "tonic": "F", "fifths": -1 },
+          { "tonic": "Bb", "fifths": -2 },
+          { "tonic": "Eb", "fifths": -3 }
+        ],
+        "minor": [
+          { "tonic": "A", "fifths": 0 },
+          { "tonic": "E", "fifths": 1 },
+          { "tonic": "B", "fifths": 2 },
+          { "tonic": "D", "fifths": -1 },
+          { "tonic": "G", "fifths": -2 }
+        ]
+      },
+      "texture": {
+        "handsPlayTogether": true,
+        "fiveFingerPosition": false,
+        "positionShifts": true,
+        "maxNotesPerChord": 2,
+        "handAlternation": "hands together; independent rhythms between hands begin to appear"
+      },
+      "range": {
+        "rightHand": { "minMidi": 57, "maxMidi": 81, "label": "A3–A5" },
+        "leftHand": { "minMidi": 38, "maxMidi": 62, "label": "D2–D4" },
+        "legerLines": 3
+      },
+      "rhythm": {
+        "noteValues": ["whole", "half", "quarter", "eighth", "16th"],
+        "dottedValues": ["half", "quarter", "eighth"],
+        "rests": ["whole", "half", "quarter", "eighth", "dotted-quarter"],
+        "smallestDivision": 16,
+        "ties": true,
+        "triplets": false,
+        "syncopation": false,
+        "upbeat": true,
+        "compoundTimeGroupings": ["three eighths per beat", "quarter + eighth", "dotted quarter"]
+      },
+      "harmony": {
+        "chromaticNotes": true,
+        "raisedSeventhInMinor": true,
+        "chromaticUsage": "passing / neighbour chromatic notes only, no modulation"
+      },
+      "articulations": ["slur", "staccato", "accent", "tenuto"],
+      "dynamics": ["pp", "p", "mp", "mf", "f", "ff"],
+      "dynamicFeatures": ["crescendo", "diminuendo"],
+      "otherFeatures": ["fermata / pause", "wider range of Italian tempo & character words"],
+      "tempoTerms": ["Moderato", "Andante", "Andante cantabile", "Allegretto", "Allegro", "Vivace", "Adagio", "Grazioso", "Con moto"],
+      "newAtThisGrade": ["6/8 拍（複拍子）", "半音（chromatic notes）", "tenuto", "延長記號 fermata", "更廣的速度/性格術語"],
+      "generatorHints": {
+        "stepwiseBiasPercent": 65,
+        "maxLeapSemitones": 9,
+        "startOnChordTone": true,
+        "endOnTonic": true,
+        "motifRepeatBars": [1, 2],
+        "restDensityPercent": 12
+      }
+    },
+    "5": {
+      "grade": 5,
+      "confidence": "partial",
+      "lengthBars": { "2/4": [8, 12], "3/4": [8, 12], "4/4": [8, 12], "3/8": [8, 12], "6/8": [8, 12] },
+      "timeSignatures": ["2/4", "3/4", "4/4", "3/8", "6/8"],
+      "keys": {
+        "maxAccidentals": 4,
+        "major": [
+          { "tonic": "C", "fifths": 0 },
+          { "tonic": "G", "fifths": 1 },
+          { "tonic": "D", "fifths": 2 },
+          { "tonic": "A", "fifths": 3 },
+          { "tonic": "E", "fifths": 4 },
+          { "tonic": "F", "fifths": -1 },
+          { "tonic": "Bb", "fifths": -2 },
+          { "tonic": "Eb", "fifths": -3 },
+          { "tonic": "Ab", "fifths": -4 }
+        ],
+        "minor": [
+          { "tonic": "A", "fifths": 0 },
+          { "tonic": "E", "fifths": 1 },
+          { "tonic": "B", "fifths": 2 },
+          { "tonic": "F#", "fifths": 3 },
+          { "tonic": "D", "fifths": -1 },
+          { "tonic": "G", "fifths": -2 },
+          { "tonic": "C", "fifths": -3 }
+        ],
+        "excluded": ["C# minor"]
+      },
+      "texture": {
+        "handsPlayTogether": true,
+        "fiveFingerPosition": false,
+        "positionShifts": true,
+        "maxNotesPerChord": 2,
+        "maxNotesTotal": 4,
+        "handAlternation": "four-part chords with a maximum of two notes per hand"
+      },
+      "range": {
+        "rightHand": { "minMidi": 55, "maxMidi": 84, "label": "G3–C6" },
+        "leftHand": { "minMidi": 36, "maxMidi": 64, "label": "C2–E4" },
+        "legerLines": 3
+      },
+      "rhythm": {
+        "noteValues": ["whole", "half", "quarter", "eighth", "16th"],
+        "dottedValues": ["half", "quarter", "eighth"],
+        "rests": ["whole", "half", "quarter", "eighth", "16th", "dotted-quarter"],
+        "smallestDivision": 16,
+        "ties": true,
+        "triplets": true,
+        "syncopation": true,
+        "upbeat": true,
+        "syncopationLevel": "simple (off-beat entries, tied over the beat)"
+      },
+      "harmony": {
+        "chromaticNotes": true,
+        "raisedSeventhInMinor": true,
+        "chromaticUsage": "chromatic passing notes and simple chromatic inflections"
+      },
+      "articulations": ["slur", "staccato", "accent", "tenuto"],
+      "dynamics": ["pp", "p", "mp", "mf", "f", "ff"],
+      "dynamicFeatures": ["crescendo", "diminuendo", "sf"],
+      "otherFeatures": ["sustaining pedal markings", "rall. / rit. at the end", "a tempo"],
+      "tempoTerms": ["Moderato", "Andante", "Allegretto", "Allegro", "Vivace", "Adagio", "Lento", "Cantabile", "Con moto", "Maestoso"],
+      "newAtThisGrade": ["E、Ab 大調與 f# 、c 小調（最多 4 個升降記號）", "三連音", "切分音", "四部和弦（每手最多兩音）", "踏板記號", "結尾漸慢"],
+      "generatorHints": {
+        "stepwiseBiasPercent": 62,
+        "maxLeapSemitones": 12,
+        "startOnChordTone": true,
+        "endOnTonic": true,
+        "motifRepeatBars": [1, 2],
+        "restDensityPercent": 12
+      }
+    },
+    "6": {
+      "grade": 6,
+      "confidence": "inferred",
+      "lengthBars": { "default": [10, 14] },
+      "timeSignatures": ["2/4", "3/4", "4/4", "3/8", "6/8", "9/8", "12/8", "2/2"],
+      "changingTimeSignatures": {
+        "allowed": true,
+        "constraint": "拍號可變，但脈動（pulse）必須維持不變"
+      },
+      "keys": {
+        "maxAccidentals": 5,
+        "major": [
+          { "tonic": "C", "fifths": 0 },
+          { "tonic": "G", "fifths": 1 },
+          { "tonic": "D", "fifths": 2 },
+          { "tonic": "A", "fifths": 3 },
+          { "tonic": "E", "fifths": 4 },
+          { "tonic": "B", "fifths": 5 },
+          { "tonic": "F", "fifths": -1 },
+          { "tonic": "Bb", "fifths": -2 },
+          { "tonic": "Eb", "fifths": -3 },
+          { "tonic": "Ab", "fifths": -4 },
+          { "tonic": "Db", "fifths": -5 }
+        ],
+        "minor": [
+          { "tonic": "A", "fifths": 0 },
+          { "tonic": "E", "fifths": 1 },
+          { "tonic": "B", "fifths": 2 },
+          { "tonic": "F#", "fifths": 3 },
+          { "tonic": "C#", "fifths": 4 },
+          { "tonic": "D", "fifths": -1 },
+          { "tonic": "G", "fifths": -2 },
+          { "tonic": "C", "fifths": -3 },
+          { "tonic": "F", "fifths": -4 }
+        ]
+      },
+      "texture": {
+        "handsPlayTogether": true,
+        "fiveFingerPosition": false,
+        "positionShifts": true,
+        "maxNotesPerChord": 3,
+        "maxNotesTotal": 5,
+        "handAlternation": "獨立聲部與內聲部開始出現；兩手節奏可完全不同"
+      },
+      "range": {
+        "rightHand": { "minMidi": 53, "maxMidi": 86, "label": "F3–D6" },
+        "leftHand": { "minMidi": 33, "maxMidi": 65, "label": "A1–F4" },
+        "legerLines": 4
+      },
+      "rhythm": {
+        "noteValues": ["whole", "half", "quarter", "eighth", "16th"],
+        "dottedValues": ["half", "quarter", "eighth"],
+        "rests": ["whole", "half", "quarter", "eighth", "16th"],
+        "smallestDivision": 16,
+        "ties": true,
+        "triplets": true,
+        "syncopation": true,
+        "upbeat": true,
+        "crossRhythm": "limited (2 against 3 只在極簡形式出現)"
+      },
+      "harmony": {
+        "chromaticNotes": true,
+        "raisedSeventhInMinor": true,
+        "chromaticUsage": "半音經過音與短暫離調"
+      },
+      "articulations": ["slur", "staccato", "accent", "tenuto", "staccatissimo"],
+      "dynamics": ["pp", "p", "mp", "mf", "f", "ff"],
+      "dynamicFeatures": ["crescendo", "diminuendo", "sf", "fp"],
+      "otherFeatures": ["變換拍號（脈動不變）", "踏板", "更長的樂句與樂段結構", "rall. / accel."],
+      "tempoTerms": ["Moderato", "Andante", "Allegro", "Allegro con brio", "Vivace", "Adagio", "Largo", "Cantabile", "Scherzando", "Maestoso"],
+      "newAtThisGrade": ["變換拍號（pulse 不變）", "9/8、12/8、2/2 等拍號", "最多 5 個升降記號的調", "三音和弦與內聲部"],
+      "generatorHints": {
+        "stepwiseBiasPercent": 58,
+        "maxLeapSemitones": 12,
+        "startOnChordTone": true,
+        "endOnTonic": true,
+        "motifRepeatBars": [1, 2],
+        "restDensityPercent": 10
+      }
+    },
+    "7": {
+      "grade": 7,
+      "confidence": "inferred",
+      "lengthBars": { "default": [12, 16] },
+      "timeSignatures": ["2/4", "3/4", "4/4", "3/8", "6/8", "9/8", "12/8", "2/2", "5/4"],
+      "changingTimeSignatures": { "allowed": true, "constraint": "脈動維持不變" },
+      "keys": {
+        "maxAccidentals": 6,
+        "major": [
+          { "tonic": "C", "fifths": 0 },
+          { "tonic": "G", "fifths": 1 },
+          { "tonic": "D", "fifths": 2 },
+          { "tonic": "A", "fifths": 3 },
+          { "tonic": "E", "fifths": 4 },
+          { "tonic": "B", "fifths": 5 },
+          { "tonic": "F#", "fifths": 6 },
+          { "tonic": "F", "fifths": -1 },
+          { "tonic": "Bb", "fifths": -2 },
+          { "tonic": "Eb", "fifths": -3 },
+          { "tonic": "Ab", "fifths": -4 },
+          { "tonic": "Db", "fifths": -5 },
+          { "tonic": "Gb", "fifths": -6 }
+        ],
+        "minor": [
+          { "tonic": "A", "fifths": 0 },
+          { "tonic": "E", "fifths": 1 },
+          { "tonic": "B", "fifths": 2 },
+          { "tonic": "F#", "fifths": 3 },
+          { "tonic": "C#", "fifths": 4 },
+          { "tonic": "G#", "fifths": 5 },
+          { "tonic": "D", "fifths": -1 },
+          { "tonic": "G", "fifths": -2 },
+          { "tonic": "C", "fifths": -3 },
+          { "tonic": "F", "fifths": -4 },
+          { "tonic": "Bb", "fifths": -5 }
+        ]
+      },
+      "texture": {
+        "handsPlayTogether": true,
+        "fiveFingerPosition": false,
+        "positionShifts": true,
+        "maxNotesPerChord": 3,
+        "maxNotesTotal": 6,
+        "handAlternation": "多聲部織體；同一譜表上可能出現兩個聲部"
+      },
+      "range": {
+        "rightHand": { "minMidi": 50, "maxMidi": 88, "label": "D3–E6" },
+        "leftHand": { "minMidi": 31, "maxMidi": 67, "label": "G1–G4" },
+        "legerLines": 4
+      },
+      "rhythm": {
+        "noteValues": ["whole", "half", "quarter", "eighth", "16th", "32nd"],
+        "dottedValues": ["half", "quarter", "eighth", "16th"],
+        "rests": ["whole", "half", "quarter", "eighth", "16th"],
+        "smallestDivision": 32,
+        "ties": true,
+        "triplets": true,
+        "duplets": true,
+        "syncopation": true,
+        "upbeat": true,
+        "crossRhythm": "2 against 3 可出現"
+      },
+      "harmony": {
+        "chromaticNotes": true,
+        "raisedSeventhInMinor": true,
+        "chromaticUsage": "半音和聲、離調與短暫轉調"
+      },
+      "articulations": ["slur", "staccato", "accent", "tenuto", "staccatissimo", "marcato"],
+      "dynamics": ["ppp", "pp", "p", "mp", "mf", "f", "ff"],
+      "dynamicFeatures": ["crescendo", "diminuendo", "sf", "sfz", "fp"],
+      "otherFeatures": ["裝飾音（acciaccatura / 簡單裝飾音）", "譜號變換（左手上行進入高音譜號）", "踏板", "accel. / rall. / rubato 標示"],
+      "tempoTerms": ["Moderato", "Andante", "Allegro", "Allegro vivace", "Adagio", "Largo", "Cantabile", "Espressivo", "Scherzando", "Maestoso", "Grave"],
+      "newAtThisGrade": ["裝飾音", "譜號變換", "更複雜的節奏交錯（2 對 3）", "最多 6 個升降記號的調", "更長篇幅（12–16 小節）"],
+      "generatorHints": {
+        "stepwiseBiasPercent": 55,
+        "maxLeapSemitones": 16,
+        "startOnChordTone": true,
+        "endOnTonic": true,
+        "motifRepeatBars": [1, 2],
+        "restDensityPercent": 10
+      }
+    },
+    "8": {
+      "grade": 8,
+      "confidence": "inferred",
+      "lengthBars": { "default": [12, 16] },
+      "timeSignatures": ["2/4", "3/4", "4/4", "3/8", "6/8", "9/8", "12/8", "2/2", "5/4", "7/8"],
+      "changingTimeSignatures": { "allowed": true, "constraint": "脈動維持不變" },
+      "keys": {
+        "maxAccidentals": 6,
+        "allKeys": true,
+        "comment": "所有大小調（最多 6 個升降記號），並可能在曲中轉調"
+      },
+      "texture": {
+        "handsPlayTogether": true,
+        "fiveFingerPosition": false,
+        "positionShifts": true,
+        "maxNotesPerChord": 4,
+        "maxNotesTotal": 8,
+        "handAlternation": "完整鋼琴織體：和弦群、分解音型、多聲部；相當於 Grade 5 程度的短曲"
+      },
+      "range": {
+        "rightHand": { "minMidi": 48, "maxMidi": 91, "label": "C3–G6" },
+        "leftHand": { "minMidi": 28, "maxMidi": 69, "label": "E1–A4" },
+        "legerLines": 5
+      },
+      "rhythm": {
+        "noteValues": ["whole", "half", "quarter", "eighth", "16th", "32nd"],
+        "dottedValues": ["half", "quarter", "eighth", "16th"],
+        "rests": ["whole", "half", "quarter", "eighth", "16th", "32nd"],
+        "smallestDivision": 32,
+        "ties": true,
+        "triplets": true,
+        "duplets": true,
+        "tuplets": ["quintuplet", "sextuplet"],
+        "syncopation": true,
+        "upbeat": true,
+        "crossRhythm": "2 against 3、3 against 4"
+      },
+      "harmony": {
+        "chromaticNotes": true,
+        "raisedSeventhInMinor": true,
+        "chromaticUsage": "半音音群（chromatic clusters）、轉調"
+      },
+      "articulations": ["slur", "staccato", "accent", "tenuto", "staccatissimo", "marcato"],
+      "dynamics": ["ppp", "pp", "p", "mp", "mf", "f", "ff", "fff"],
+      "dynamicFeatures": ["crescendo", "diminuendo", "sf", "sfz", "fp"],
+      "otherFeatures": ["曲中轉調", "半音音群", "踏板記號", "複雜的速度與表情變化", "跨譜表寫作"],
+      "tempoTerms": ["Moderato", "Andante", "Allegro", "Allegro agitato", "Adagio", "Largo", "Cantabile", "Espressivo", "Appassionato", "Maestoso", "Grave", "Presto"],
+      "newAtThisGrade": ["曲中轉調", "半音音群", "更複雜的複拍子與節奏交錯", "整體難度約等同 Grade 5 程度的完整短曲"],
+      "generatorHints": {
+        "stepwiseBiasPercent": 52,
+        "maxLeapSemitones": 19,
+        "startOnChordTone": true,
+        "endOnTonic": true,
+        "motifRepeatBars": [1, 2],
+        "restDensityPercent": 10
+      }
+    }
+  }
+}
