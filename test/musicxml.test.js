@@ -115,6 +115,22 @@ test('slurs and ties are balanced', () => {
         `grade ${context.grade} seed ${context.seed}: ${starts} ${tag} starts vs ${stops} stops`,
       );
     }
+
+    // Each slur number must open and close within its own staff, otherwise
+    // the renderer joins a right-hand start to a left-hand stop.
+    const slurs = [...xml.matchAll(/<slur type="(start|stop)" number="(\d+)"/g)];
+    const open = new Map();
+    for (const [, type, number] of slurs) {
+      const depth = open.get(number) ?? 0;
+      open.set(number, type === 'start' ? depth + 1 : depth - 1);
+      assert.ok(
+        open.get(number) >= 0 && open.get(number) <= 1,
+        `grade ${context.grade} seed ${context.seed}: slur number ${number} overlaps itself`,
+      );
+    }
+    for (const [number, depth] of open) {
+      assert.equal(depth, 0, `slur number ${number} left open`);
+    }
     const wedgeStarts = countMatches(xml, /<wedge type="(crescendo|diminuendo)"/g);
     const wedgeStops = countMatches(xml, /<wedge type="stop"/g);
     assert.equal(wedgeStarts, wedgeStops, 'unbalanced wedge');

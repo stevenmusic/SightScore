@@ -252,10 +252,17 @@ function applyExpression(rng, rules, score) {
       const pair = [staff[barIndex], staff[barIndex + 1]].filter(Boolean);
       const sounding = pair.flatMap((bar) => bar.events.filter((event) => !event.rest));
       if (sounding.length < 2) continue;
+      // Don't slur across a bar the hand sits out (Grade 1 alternation).
+      const unbroken = pair.every((bar) => bar.events.some((event) => !event.rest));
 
-      if (canSlur && rng.chance(staffNumber === 1 ? 0.75 : 0.35)) {
+      if (canSlur && unbroken && rng.chance(staffNumber === 1 ? 0.75 : 0.35)) {
         sounding[0].slur = 'start';
         sounding[sounding.length - 1].slur = 'stop';
+        // Concurrent slurs in one part must not share a number, or the
+        // renderer pairs a right-hand start with a left-hand stop and draws
+        // a curve straight across the grand staff.
+        sounding[0].slurNumber = staffNumber;
+        sounding[sounding.length - 1].slurNumber = staffNumber;
       } else if (canStaccato && rng.chance(0.4)) {
         for (const event of sounding) {
           if (event.type === 'quarter' || event.type === 'eighth') {

@@ -1,69 +1,123 @@
+/*
+ * SightScore — single light theme.
+ *
+ * The engraved score is always black on white, so the whole interface is
+ * built around that rather than switching with the OS: a warm off-white page,
+ * one white card for the music, and a single font stack shared by the title,
+ * the controls and the data readouts.
+ */
+
 :root {
-  --bg: #fbfaf8;
+  --font-ui: "Helvetica Neue", Helvetica, "PingFang TC", "Noto Sans TC",
+    "Microsoft JhengHei", system-ui, sans-serif;
+
+  --bg: #faf9f7;
   --panel: #ffffff;
-  --ink: #1c1b19;
-  --muted: #6b6862;
-  --line: #e3ded6;
+  --ink: #1b1a18;
+  --ink-soft: #4a4640;
+  --muted: #7c766d;
+  --line: #e6e1d8;
+  --line-strong: #d6cfc2;
   --accent: #7a5c3e;
+  --accent-soft: #f1ebe2;
   --accent-ink: #ffffff;
   --warn: #a4682a;
-  color-scheme: light dark;
-}
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #16151a;
-    --panel: #201f26;
-    --ink: #ece9e4;
-    --muted: #9a958d;
-    --line: #33313b;
-    --accent: #c9a074;
-    --accent-ink: #211a12;
-    --warn: #d3a05f;
-  }
+  --radius: 0.7rem;
+  --radius-sm: 0.45rem;
+
+  color-scheme: light;
 }
 
 * { box-sizing: border-box; }
 
+html { -webkit-text-size-adjust: 100%; }
+
 body {
-  margin: 0;
-  padding: 2rem 1.25rem 3rem;
+  margin: 0 auto;
+  padding: 2.5rem 1.25rem 3rem;
+  max-width: 64rem;
   background: var(--bg);
   color: var(--ink);
-  font: 16px/1.6 "Helvetica Neue", "PingFang TC", "Noto Sans TC", system-ui, sans-serif;
-  max-width: 62rem;
-  margin-inline: auto;
+  font-family: var(--font-ui);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
 }
 
-header { margin-bottom: 1.5rem; }
-h1 { margin: 0; font-size: 1.6rem; letter-spacing: 0.02em; }
-.tagline { margin: 0.25rem 0 0; color: var(--muted); font-size: 0.92rem; }
+/* ---------- header ---------- */
+
+header { margin-bottom: 1.75rem; }
+
+h1 {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--ink);
+}
+
+.tagline {
+  margin: 0.3rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  letter-spacing: 0.01em;
+}
+
+/* ---------- controls ---------- */
 
 .controls {
   display: flex;
   flex-wrap: wrap;
   gap: 0.6rem;
   align-items: center;
-  padding: 0.9rem;
+  padding: 0.9rem 1rem;
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 0.7rem;
+  border-radius: var(--radius);
+  box-shadow: 0 1px 2px rgb(28 25 20 / 4%);
 }
 
-.control { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; color: var(--muted); }
+.control {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
 
-select, button {
-  font: inherit;
-  padding: 0.45rem 0.85rem;
-  border-radius: 0.45rem;
-  border: 1px solid var(--line);
+select,
+button {
+  font-family: var(--font-ui);
+  font-size: 0.95rem;
+  padding: 0.45rem 0.9rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-strong);
   background: var(--panel);
-  color: var(--ink);
+  color: var(--ink-soft);
   cursor: pointer;
+  transition: border-color 0.12s ease, background-color 0.12s ease, color 0.12s ease;
 }
 
-button:hover:not(:disabled) { border-color: var(--accent); }
-button:disabled { opacity: 0.45; cursor: not-allowed; }
+select { padding-inline: 0.6rem; }
+
+button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+button:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
 
 button.primary {
   background: var(--accent);
@@ -72,54 +126,91 @@ button.primary {
   font-weight: 600;
 }
 
+button.primary:hover:not(:disabled) {
+  background: #67492e;
+  border-color: #67492e;
+  color: var(--accent-ink);
+}
+
 button.link {
   background: none;
   border: none;
-  color: var(--muted);
-  text-decoration: underline;
   padding: 0;
+  color: var(--muted);
   font-size: 0.85rem;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
 }
+
+button.link:hover:not(:disabled) { background: none; color: var(--accent); }
+
+/* ---------- status strip ---------- */
 
 .status {
   display: flex;
   flex-wrap: wrap;
-  gap: 1.5rem;
+  gap: 1.25rem 2rem;
   align-items: center;
-  margin: 1.25rem 0 0.5rem;
+  margin: 1.5rem 0 0.75rem;
+  padding: 0 0.25rem;
 }
 
 .countdown {
   font-variant-numeric: tabular-nums;
-  font-size: 2.4rem;
-  font-weight: 600;
-  min-width: 5rem;
+  font-size: 2.5rem;
+  font-weight: 700;
+  line-height: 1;
+  min-width: 4.5rem;
+  color: var(--ink);
+  transition: color 0.2s ease;
 }
-.countdown .unit { font-size: 1rem; font-weight: 400; color: var(--muted); margin-left: 0.15rem; }
+
+.countdown .unit {
+  font-size: 0.95rem;
+  font-weight: 400;
+  color: var(--muted);
+  margin-left: 0.2rem;
+}
+
 .countdown.running { color: var(--accent); }
 .countdown.done { color: var(--warn); }
 
 .meta {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
-  gap: 0.35rem 1.25rem;
+  grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+  gap: 0.4rem 1.5rem;
   margin: 0;
   flex: 1;
   min-width: 16rem;
-  font-size: 0.85rem;
 }
-.meta div { display: flex; flex-direction: column; }
-.meta dt { color: var(--muted); font-size: 0.75rem; }
-.meta dd { margin: 0; font-weight: 600; }
+
+.meta div { display: flex; flex-direction: column; gap: 0.1rem; }
+
+.meta dt {
+  color: var(--muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+}
+
+.meta dd {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+/* ---------- score ---------- */
 
 .score {
-  margin-top: 1rem;
-  padding: 1rem 0.5rem;
-  background: #ffffff;
+  margin-top: 0.75rem;
+  padding: 1.5rem 1rem;
+  background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 0.7rem;
+  border-radius: var(--radius);
+  box-shadow: 0 1px 3px rgb(28 25 20 / 5%);
   overflow-x: auto;
-  min-height: 8rem;
+  min-height: 10rem;
 }
 
 /*
@@ -129,24 +220,41 @@ button.link {
  */
 .score[hidden] { display: block; visibility: hidden; }
 
-.message { color: var(--muted); font-size: 0.9rem; }
+.message {
+  margin: 0.85rem 0.25rem 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+/* ---------- footer ---------- */
 
 footer {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.8rem;
-  margin-top: 2rem;
+  margin-top: 2.5rem;
   padding-top: 1rem;
   border-top: 1px solid var(--line);
   font-size: 0.85rem;
   color: var(--muted);
 }
+
 .spacer { flex: 1; }
 
 .badge {
-  padding: 0.15rem 0.55rem;
+  padding: 0.2rem 0.6rem;
   border-radius: 999px;
   border: 1px solid var(--warn);
   color: var(--warn);
+  background: #fdf6ec;
   font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+@media (max-width: 34rem) {
+  body { padding: 1.75rem 1rem 2.5rem; }
+  .controls { gap: 0.5rem; }
+  .controls button { flex: 1 1 auto; }
+  .countdown { font-size: 2rem; }
 }

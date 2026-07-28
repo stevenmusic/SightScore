@@ -154,7 +154,9 @@ function renderNote(event, ctx) {
   const notations = [];
   if (event.tie === 'start' || event.tie === 'both') notations.push('          <tied type="start"/>');
   if (event.tie === 'stop' || event.tie === 'both') notations.push('          <tied type="stop"/>');
-  if (event.slur) notations.push(`          <slur type="${event.slur}" number="1"/>`);
+  if (event.slur) {
+    notations.push(`          <slur type="${event.slur}" number="${event.slurNumber ?? 1}"/>`);
+  }
   if (ctx.tuplet) notations.push(`          <tuplet type="${ctx.tuplet}" bracket="yes"/>`);
   if (event.articulations?.length) {
     notations.push('          <articulations>');
