@@ -10,6 +10,7 @@ const elements = {
   generate: document.getElementById('generate'),
   prepare: document.getElementById('prepare'),
   play: document.getElementById('play'),
+  space: document.getElementById('space'),
   download: document.getElementById('download'),
   status: document.getElementById('status'),
   countdown: document.getElementById('countdown'),
@@ -41,6 +42,12 @@ const CONFIDENCE_LABEL = {
 };
 
 init();
+
+/** Ordinary status text, clearing any error styling left behind. */
+function say(text) {
+  elements.message.className = 'message';
+  elements.message.textContent = text;
+}
 
 /** Surface failures on the page — a blank screen tells the user nothing. */
 function fail(text, detail) {
@@ -89,6 +96,10 @@ async function init() {
   elements.prepare.addEventListener('click', startCountdown);
   elements.play.addEventListener('click', togglePlayback);
   elements.download.addEventListener('click', downloadXml);
+  elements.space.addEventListener('change', () => {
+    player.setSpace(elements.space.checked ? 1 : 0);
+  });
+  player.setSpace(elements.space.checked ? 1 : 0);
   elements.clearHistory.addEventListener('click', () => {
     history.clear();
     updateHistoryInfo();
@@ -103,18 +114,19 @@ async function init() {
 async function newTest() {
   stopCountdown();
   player.stop();
+  setPlayState(false);
 
   const grade = Number(elements.grade.value);
   const { score } = generateUnique(() => generateTest(rules, { grade }), history);
   current = { score, xml: toMusicXml(score) };
 
-  elements.message.textContent = '渲染中…';
+  say('渲染中…');
   try {
     await osmd.load(current.xml);
     osmd.render();
-    elements.message.textContent = '按「開始 30 秒準備」模擬考試流程。';
+    say('按「開始 30 秒準備」模擬考試流程。');
   } catch (error) {
-    elements.message.textContent = `渲染失敗：${error.message}`;
+    fail('渲染失敗', error.message);
     return;
   }
 
@@ -150,7 +162,7 @@ function startCountdown() {
   let remaining = rules.exam.preparationSeconds;
   elements.countdownValue.textContent = String(remaining);
   elements.countdown.className = 'countdown running';
-  elements.message.textContent = '準備時間：看調號、拍號、速度術語，找出把位與難處。';
+  say('準備時間：看調號、拍號、速度術語，找出把位與難處。');
 
   countdownTimer = setInterval(() => {
     remaining -= 1;
@@ -158,7 +170,7 @@ function startCountdown() {
     if (remaining <= 0) {
       stopCountdown();
       elements.countdown.className = 'countdown done';
-      elements.message.textContent = '時間到——請不間斷地彈完，再按「播放正確版本」比對。';
+      say('時間到——請不間斷地彈完，再按「播放正確版本」比對。');
     }
   }, 1000);
 }
@@ -168,19 +180,22 @@ function stopCountdown() {
   countdownTimer = null;
 }
 
+function setPlayState(playing) {
+  elements.play.classList.toggle('is-playing', playing);
+  const label = playing ? '停止播放' : '播放正確版本';
+  elements.play.setAttribute('aria-label', label);
+  elements.play.title = label;
+}
+
 function togglePlayback() {
   if (!current) return;
   if (player.playing) {
     player.stop();
-    elements.play.textContent = '播放正確版本';
+    setPlayState(false);
     return;
   }
-  elements.play.textContent = '停止播放';
-  player.play(current.score, {
-    onEnd: () => {
-      elements.play.textContent = '播放正確版本';
-    },
-  });
+  setPlayState(true);
+  player.play(current.score, { onEnd: () => setPlayState(false) });
 }
 
 function downloadXml() {

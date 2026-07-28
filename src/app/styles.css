@@ -132,6 +132,49 @@ button.primary:hover:not(:disabled) {
   color: var(--accent-ink);
 }
 
+/* Play / stop: an icon rather than a word, so the control reads at a glance. */
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.6rem;
+  height: 2.6rem;
+  padding: 0;
+  border-radius: 999px;
+}
+
+.icon {
+  width: 1.15rem;
+  height: 1.15rem;
+  fill: currentColor;
+  display: block;
+}
+
+.icon-button .icon-stop,
+.icon-button.is-playing .icon-play { display: none; }
+.icon-button.is-playing .icon-stop { display: block; }
+
+.icon-button.is-playing {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.toggle {
+  gap: 0.35rem;
+  color: var(--ink-soft);
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--accent);
+  cursor: pointer;
+  margin: 0;
+}
+
 button.link {
   background: none;
   border: none;

@@ -36,7 +36,21 @@
 
     <button id="generate" class="primary">產生新題目</button>
     <button id="prepare">開始 30 秒準備</button>
-    <button id="play" disabled>播放正確版本</button>
+
+    <button id="play" class="icon-button" disabled aria-label="播放正確版本" title="播放正確版本">
+      <svg class="icon icon-play" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M8 5.14v13.72a1 1 0 0 0 1.53.85l10.8-6.86a1 1 0 0 0 0-1.7L9.53 4.29A1 1 0 0 0 8 5.14Z"/>
+      </svg>
+      <svg class="icon icon-stop" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <rect x="6" y="6" width="12" height="12" rx="1.5"/>
+      </svg>
+    </button>
+
+    <label class="control toggle" title="為播放加上空間殘響">
+      <input type="checkbox" id="space" checked>
+      <span>空間感</span>
+    </label>
+
     <button id="download" disabled>下載 MusicXML</button>
   </section>
 
