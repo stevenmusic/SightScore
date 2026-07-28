@@ -1,68 +1,76 @@
 /*
- * SightScore — single light theme.
+ * SightScore — styled to match ScrollScore.
  *
- * The engraved score is always black on white, so the whole interface is
- * built around that rather than switching with the OS: a warm off-white page,
- * one white card for the music, and a single font stack shared by the title,
- * the controls and the data readouts.
+ * Same type pairing (Noto Serif TC for the brand, Noto Sans TC for the rest),
+ * the same light-theme palette, the same three-step radius/shadow/type scales,
+ * and the same pill-shaped `.btn`. Values are taken from ScrollScore's
+ * `body.light` block so the two apps read as one family.
  */
 
 :root {
-  --font-ui: "Helvetica Neue", Helvetica, "PingFang TC", "Noto Sans TC",
-    "Microsoft JhengHei", system-ui, sans-serif;
+  --bg: #FBF7EE;
+  --panel: #F4EEE0;
+  --panel-2: #EDE6D4;
+  --gold: #856418;
+  --gold-bright: #6B5115;
+  --ivory: #241E12;  /*名稱沿用 ScrollScore，淺色版實際是主文字色 */
+  --muted: #6F6450;
+  --muted-bright: #544B3B;
+  --line: #D8CDB2;
 
-  --bg: #faf9f7;
-  --panel: #ffffff;
-  --ink: #1b1a18;
-  --ink-soft: #4a4640;
-  --muted: #7c766d;
-  --line: #e6e1d8;
-  --line-strong: #d6cfc2;
-  --accent: #7a5c3e;
-  --accent-soft: #f1ebe2;
-  --accent-ink: #ffffff;
-  --warn: #a4682a;
+  --shadow-sm: 0 4px 14px rgba(90, 72, 30, .10);
+  --shadow-md: 0 10px 26px rgba(90, 72, 30, .14);
+  --shadow-lg: 0 18px 44px rgba(90, 72, 30, .18);
 
-  --radius: 0.7rem;
-  --radius-sm: 0.45rem;
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
+  --radius-pill: 999px;
+
+  --fs-2xs: 11px;
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs-md: 14px;
+  --fs-lg: 16px;
+  --fs-xl: 19px;
+  --fs-2xl: 26px;
 
   color-scheme: light;
 }
 
-* { box-sizing: border-box; }
-
-html { -webkit-text-size-adjust: 100%; }
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
 body {
-  margin: 0 auto;
-  padding: 2.5rem 1.25rem 3rem;
-  max-width: 64rem;
   background: var(--bg);
-  color: var(--ink);
-  font-family: var(--font-ui);
-  font-size: 16px;
+  color: var(--ivory);
+  font-family: "Noto Sans TC", sans-serif;
+  font-size: var(--fs-md);
   line-height: 1.6;
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: 28px 16px 40px;
   -webkit-font-smoothing: antialiased;
 }
 
 /* ---------- header ---------- */
 
-header { margin-bottom: 1.75rem; }
+header { margin-bottom: 20px; }
 
 h1 {
-  margin: 0;
-  font-family: var(--font-ui);
-  font-size: 1.75rem;
+  font-family: "Noto Serif TC", serif;
+  font-size: var(--fs-2xl);
   font-weight: 700;
-  letter-spacing: 0.01em;
-  color: var(--ink);
+  letter-spacing: .06em;
+  color: var(--gold);
+  line-height: 1.2;
 }
 
+h1 span { color: var(--ivory); font-weight: 600; }
+
 .tagline {
-  margin: 0.3rem 0 0;
+  margin-top: 6px;
   color: var(--muted);
-  font-size: 0.9rem;
-  letter-spacing: 0.01em;
+  font-size: var(--fs-sm);
 }
 
 /* ---------- controls ---------- */
@@ -70,188 +78,146 @@ h1 {
 .controls {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.6rem;
   align-items: center;
-  padding: 0.9rem 1rem;
+  gap: 8px 10px;
+  padding: 12px 14px;
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow: 0 1px 2px rgb(28 25 20 / 4%);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
 }
 
 .control {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  font-size: 0.85rem;
+  gap: 8px;
+  font-size: var(--fs-sm);
   color: var(--muted);
+  white-space: nowrap;
 }
 
-select,
-button {
-  font-family: var(--font-ui);
-  font-size: 0.95rem;
-  padding: 0.45rem 0.9rem;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--line-strong);
-  background: var(--panel);
-  color: var(--ink-soft);
-  cursor: pointer;
-  transition: border-color 0.12s ease, background-color 0.12s ease, color 0.12s ease;
-}
-
-select { padding-inline: 0.6rem; }
-
-button:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: var(--accent-soft);
-}
-
-button:focus-visible,
-select:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-button:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-button.primary {
-  background: var(--accent);
-  color: var(--accent-ink);
-  border-color: var(--accent);
-  font-weight: 600;
-}
-
-button.primary:hover:not(:disabled) {
-  background: #67492e;
-  border-color: #67492e;
-  color: var(--accent-ink);
-}
-
-/* Play / stop: an icon rather than a word, so the control reads at a glance. */
-.icon-button {
+/* ScrollScore's button: pill, gold outline, filled when primary or active. */
+.btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 2.6rem;
-  height: 2.6rem;
-  padding: 0;
-  border-radius: 999px;
-}
-
-.icon {
-  width: 1.15rem;
-  height: 1.15rem;
-  fill: currentColor;
-  display: block;
-}
-
-.icon-button .icon-stop,
-.icon-button.is-playing .icon-play { display: none; }
-.icon-button.is-playing .icon-stop { display: block; }
-
-.icon-button.is-playing {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-ink);
-}
-
-.toggle {
-  gap: 0.35rem;
-  color: var(--ink-soft);
+  gap: 6px;
+  line-height: 1;
+  border: 1px solid var(--gold);
+  background: transparent;
+  color: var(--gold);
+  font-family: inherit;
+  font-size: var(--fs-md);
+  font-weight: 500;
+  padding: 8px 16px;
+  height: 38px;
+  border-radius: var(--radius-pill);
   cursor: pointer;
-  user-select: none;
+  transition: background .2s, color .2s;
+  white-space: nowrap;
 }
 
-.toggle input {
-  width: 1rem;
-  height: 1rem;
-  accent-color: var(--accent);
+.btn svg { flex: none; }
+.btn:active { background: var(--gold); color: var(--bg); }
+.btn.primary { background: var(--gold); color: var(--bg); font-weight: 700; }
+.btn:disabled { opacity: .35; cursor: not-allowed; }
+.btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+/* Play and stop carry an icon only — no label at any width. */
+.btn.icon-only { width: 38px; padding: 0; }
+.btn.icon-only.is-active { background: var(--gold); color: var(--bg); }
+
+select {
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  color: var(--ivory);
+  background: rgba(255, 255, 255, .7);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 7px 8px;
   cursor: pointer;
-  margin: 0;
 }
+
+select:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
 
 button.link {
   background: none;
   border: none;
   padding: 0;
   color: var(--muted);
-  font-size: 0.85rem;
+  font-family: inherit;
+  font-size: var(--fs-sm);
   text-decoration: underline;
-  text-underline-offset: 0.2em;
+  text-underline-offset: .2em;
+  cursor: pointer;
 }
 
-button.link:hover:not(:disabled) { background: none; color: var(--accent); }
+button.link:hover { color: var(--gold); }
 
 /* ---------- status strip ---------- */
 
 .status {
   display: flex;
   flex-wrap: wrap;
-  gap: 1.25rem 2rem;
   align-items: center;
-  margin: 1.5rem 0 0.75rem;
-  padding: 0 0.25rem;
+  gap: 14px 28px;
+  margin: 20px 4px 10px;
 }
 
 .countdown {
+  font-family: "Noto Serif TC", serif;
   font-variant-numeric: tabular-nums;
-  font-size: 2.5rem;
+  font-size: 44px;
   font-weight: 700;
   line-height: 1;
-  min-width: 4.5rem;
-  color: var(--ink);
-  transition: color 0.2s ease;
+  min-width: 74px;
+  color: var(--gold);
+  transition: color .2s;
 }
 
 .countdown .unit {
-  font-size: 0.95rem;
+  font-family: "Noto Sans TC", sans-serif;
+  font-size: var(--fs-sm);
   font-weight: 400;
   color: var(--muted);
-  margin-left: 0.2rem;
+  margin-left: 3px;
 }
 
-.countdown.running { color: var(--accent); }
-.countdown.done { color: var(--warn); }
+.countdown.running { color: var(--gold-bright); }
+.countdown.done { color: var(--muted-bright); }
 
 .meta {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
-  gap: 0.4rem 1.5rem;
-  margin: 0;
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+  gap: 6px 24px;
   flex: 1;
-  min-width: 16rem;
+  min-width: 256px;
 }
 
-.meta div { display: flex; flex-direction: column; gap: 0.1rem; }
+.meta div { display: flex; flex-direction: column; gap: 2px; }
 
 .meta dt {
   color: var(--muted);
-  font-size: 0.72rem;
-  letter-spacing: 0.04em;
+  font-size: var(--fs-2xs);
+  letter-spacing: .04em;
 }
 
 .meta dd {
-  margin: 0;
-  font-size: 0.92rem;
-  font-weight: 600;
+  font-size: var(--fs-sm);
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
-  color: var(--ink);
+  color: var(--ivory);
 }
 
 /* ---------- score ---------- */
 
 .score-frame {
-  margin-top: 0.75rem;
-  padding: 1.5rem 1rem;
-  background: var(--panel);
+  margin-top: 10px;
+  padding: 22px 16px;
+  background: #FFFDF6; /* ScrollScore 的 --stage-glow：樂譜台面比頁面再亮一階 */
   border: 1px solid var(--line);
-  border-radius: var(--radius);
-  box-shadow: 0 1px 3px rgb(28 25 20 / 5%);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
@@ -275,18 +241,18 @@ button.link:hover:not(:disabled) { background: none; color: var(--accent); }
 .score[hidden] { display: block; visibility: hidden; }
 
 .message {
-  margin: 0.85rem 0.25rem 0;
+  margin: 12px 4px 0;
   color: var(--muted);
-  font-size: 0.88rem;
+  font-size: var(--fs-sm);
 }
 
 /* Failures must be visible on the page: a phone has no dev console. */
 .message.error {
   color: #8f2f1d;
-  background: #fdf1ee;
-  border: 1px solid #e8c4ba;
+  background: rgba(143, 47, 29, .07);
+  border: 1px solid rgba(143, 47, 29, .28);
   border-radius: var(--radius-sm);
-  padding: 0.7rem 0.9rem;
+  padding: 10px 12px;
 }
 
 /* ---------- footer ---------- */
@@ -295,30 +261,33 @@ footer {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 0.8rem;
-  margin-top: 2.5rem;
-  padding-top: 1rem;
+  gap: 12px;
+  margin-top: 32px;
+  padding-top: 14px;
   border-top: 1px solid var(--line);
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
   color: var(--muted);
 }
 
 .spacer { flex: 1; }
 
 .badge {
-  padding: 0.2rem 0.6rem;
-  border-radius: 999px;
-  border: 1px solid var(--warn);
-  color: var(--warn);
-  background: #fdf6ec;
-  font-size: 0.75rem;
+  border: 1px solid var(--gold);
+  border-radius: var(--radius-pill);
+  padding: 3px 10px;
+  color: var(--gold);
+  background: rgba(133, 100, 24, .05);
+  font-size: var(--fs-2xs);
   white-space: nowrap;
 }
 
-@media (max-width: 34rem) {
-  body { padding: 1.75rem 1rem 2.5rem; }
-  .controls { gap: 0.5rem; }
-  .controls button { flex: 1 1 auto; }
-  .countdown { font-size: 2rem; }
-  .score-frame { padding: 1rem 0.75rem; }
+@media (max-width: 560px) {
+  body { padding: 22px 12px 32px; }
+  h1 { font-size: var(--fs-xl); }
+  .btn { padding: 8px 12px; }
+  /* Same as ScrollScore on narrow screens: labels drop, icons remain. */
+  .btn-label { display: none; }
+  .btn { width: 38px; padding: 0; }
+  .countdown { font-size: 34px; min-width: 60px; }
+  .score-frame { padding: 14px 10px; }
 }

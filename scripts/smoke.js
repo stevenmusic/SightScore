@@ -44,8 +44,18 @@ const browser = await chromium.launch(bundled ? { executablePath: bundled } : {}
 const page = await browser.newPage({ viewport: { width: 1200, height: 900 } });
 const problems = [];
 page.on('pageerror', (error) => problems.push(`page error: ${error.message}`));
+/*
+ * The page pulls two things from other origins at runtime: the Google Fonts
+ * stylesheet and the Salamander piano samples. Neither is reachable from a
+ * sandboxed run and neither affects engraving, so their load failures are not
+ * treated as smoke-test problems.
+ */
+const EXTERNAL = /ERR_TUNNEL_CONNECTION_FAILED|ERR_NAME_NOT_RESOLVED|fonts\.googleapis|fonts\.gstatic|tonejs\.github\.io/;
+
 page.on('console', (message) => {
-  if (message.type() === 'error') problems.push(`console: ${message.text()}`);
+  if (message.type() === 'error' && !EXTERNAL.test(message.text())) {
+    problems.push(`console: ${message.text()}`);
+  }
 });
 
 await page.goto(`http://localhost:${port}/index.html`);

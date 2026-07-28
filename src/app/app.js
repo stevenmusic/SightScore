@@ -10,7 +10,8 @@ const elements = {
   generate: document.getElementById('generate'),
   prepare: document.getElementById('prepare'),
   play: document.getElementById('play'),
-  space: document.getElementById('space'),
+  playIcon: document.getElementById('playIcon'),
+  stop: document.getElementById('stop'),
   download: document.getElementById('download'),
   status: document.getElementById('status'),
   countdown: document.getElementById('countdown'),
@@ -23,7 +24,14 @@ const elements = {
   confidence: document.getElementById('confidence'),
 };
 
-const player = createPlayer();
+/* ScrollScore's icon paths, so the two apps show the same glyphs. */
+const PLAY_ICON_D = 'M8 5v14l11-7z';
+const PAUSE_ICON_D = 'M6 5h4v14H6zM14 5h4v14h-4z';
+
+const player = createPlayer({
+  // Only loading progress and failures; play() reports the rest.
+  onStatus: (text) => { if (text) say(text); },
+});
 const history = createHistory({
   capacity: 60,
   load: () => JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]'),
@@ -95,11 +103,11 @@ async function init() {
   elements.generate.addEventListener('click', newTest);
   elements.prepare.addEventListener('click', startCountdown);
   elements.play.addEventListener('click', togglePlayback);
-  elements.download.addEventListener('click', downloadXml);
-  elements.space.addEventListener('change', () => {
-    player.setSpace(elements.space.checked ? 1 : 0);
+  elements.stop.addEventListener('click', () => {
+    player.stop();
+    setPlayState(false);
   });
-  player.setSpace(elements.space.checked ? 1 : 0);
+  elements.download.addEventListener('click', downloadXml);
   elements.clearHistory.addEventListener('click', () => {
     history.clear();
     updateHistoryInfo();
@@ -115,6 +123,10 @@ async function newTest() {
   stopCountdown();
   player.stop();
   setPlayState(false);
+
+  // Start fetching the piano samples now, so the first press of play is
+  // immediate — same moment ScrollScore loads them, once there is a score.
+  player.preload();
 
   const grade = Number(elements.grade.value);
   const { score } = generateUnique(() => generateTest(rules, { grade }), history);
@@ -133,6 +145,7 @@ async function newTest() {
   showMeta(score);
   elements.status.hidden = false;
   elements.play.disabled = false;
+  elements.stop.disabled = false;
   elements.download.disabled = false;
   elements.countdownValue.textContent = String(rules.exam.preparationSeconds);
   elements.countdown.className = 'countdown';
@@ -181,10 +194,11 @@ function stopCountdown() {
 }
 
 function setPlayState(playing) {
-  elements.play.classList.toggle('is-playing', playing);
-  const label = playing ? '停止播放' : '播放正確版本';
+  elements.play.classList.toggle('is-active', playing);
+  elements.playIcon.setAttribute('d', playing ? PAUSE_ICON_D : PLAY_ICON_D);
+  const label = playing ? '停止' : '播放';
   elements.play.setAttribute('aria-label', label);
-  elements.play.title = label;
+  elements.play.title = playing ? '停止播放' : '播放正確版本';
 }
 
 function togglePlayback() {
@@ -195,7 +209,9 @@ function togglePlayback() {
     return;
   }
   setPlayState(true);
-  player.play(current.score, { onEnd: () => setPlayState(false) });
+  player.play(current.score, { onEnd: () => setPlayState(false) })
+    .then(() => { if (player.playing) say('播放中——真實鋼琴取樣，含空間感。'); })
+    .catch((error) => fail('播放失敗', error.message));
 }
 
 function downloadXml() {
