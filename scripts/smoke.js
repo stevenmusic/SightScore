@@ -47,14 +47,26 @@ page.on('pageerror', (error) => problems.push(`page error: ${error.message}`));
 /*
  * The page pulls two things from other origins at runtime: the Google Fonts
  * stylesheet and the Salamander piano samples. Neither is reachable from a
- * sandboxed run and neither affects engraving, so their load failures are not
- * treated as smoke-test problems.
+ * sandboxed run and neither affects engraving, so only same-origin request
+ * failures count. Console messages for those failures carry no URL, so the
+ * check is done on the request instead.
  */
-const EXTERNAL = /ERR_TUNNEL_CONNECTION_FAILED|ERR_NAME_NOT_RESOLVED|fonts\.googleapis|fonts\.gstatic|tonejs\.github\.io/;
+const sameOrigin = (url) => url.startsWith(`http://localhost:${port}`);
 
+page.on('requestfailed', (request) => {
+  if (sameOrigin(request.url())) {
+    problems.push(`request failed: ${request.url()} (${request.failure()?.errorText})`);
+  }
+});
+page.on('response', (response) => {
+  if (sameOrigin(response.url()) && response.status() >= 400) {
+    problems.push(`HTTP ${response.status()}: ${response.url()}`);
+  }
+});
 page.on('console', (message) => {
-  if (message.type() === 'error' && !EXTERNAL.test(message.text())) {
-    problems.push(`console: ${message.text()}`);
+  const text = message.text();
+  if (message.type() === 'error' && !text.includes('Failed to load resource')) {
+    problems.push(`console: ${text}`);
   }
 });
 
