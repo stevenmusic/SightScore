@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="src/app/styles.css">
+  <link rel="stylesheet" href="src/app/styles.css?v=4">
   <!--
     Loaded from vendor/ rather than node_modules/ so the page works as a plain
     static site (GitHub Pages) with no build step and no npm install.
@@ -84,6 +84,7 @@
       </div>
     </div>
     <p id="message" class="message">選擇級數，按「產生新題目」開始。</p>
+    <p class="rotate-hint">畫面較窄時樂譜可左右滑動；橫向或全螢幕比較適合視譜。</p>
     <ol class="checklist" id="checklist" hidden></ol>
   </main>
 
@@ -94,6 +95,6 @@
     <span id="confidence" class="badge" hidden></span>
   </footer>
 
-  <script type="module" src="src/app/app.js"></script>
+  <script type="module" src="src/app/app.js?v=4"></script>
 </body>
 </html>

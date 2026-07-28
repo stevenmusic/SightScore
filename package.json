@@ -7,7 +7,9 @@
   "scripts": {
     "test": "node --test \"test/*.test.js\"",
     "serve": "node scripts/serve.js",
-    "sample": "node scripts/sample.js"
+    "sample": "node scripts/sample.js",
+    "devices": "node scripts/devices.js",
+    "smoke": "node scripts/smoke.js"
   },
   "dependencies": {
     "opensheetmusicdisplay": "^2.1.0"

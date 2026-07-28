@@ -187,19 +187,25 @@ button.link:hover { color: var(--gold); }
 .countdown.done { color: var(--muted-bright); }
 
 .meta {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
-  gap: 6px 24px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
   flex: 1;
-  min-width: 256px;
+  min-width: 0;
 }
 
-.meta div { display: flex; flex-direction: column; gap: 2px; }
+.meta div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
 
 .meta dt {
   color: var(--muted);
   font-size: var(--fs-2xs);
   letter-spacing: .04em;
+  white-space: nowrap;
 }
 
 .meta dd {
@@ -207,6 +213,7 @@ button.link:hover { color: var(--gold); }
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--ivory);
+  white-space: nowrap;
 }
 
 /* ---------- score ---------- */
@@ -353,14 +360,49 @@ footer {
 }
 
 @media (max-width: 560px) {
-  body { padding: 22px 12px 32px; }
+  body { padding: 20px 12px 28px; }
   h1 { font-size: var(--fs-xl); }
-  .btn { padding: 8px 12px; }
-  /* Same as ScrollScore on narrow screens: labels drop, icons remain. */
-  .btn-label { display: none; }
+
+  .controls { padding: 10px; gap: 8px; }
+  /* Labels drop from the secondary buttons; the primary action keeps its. */
   .btn { width: 38px; padding: 0; }
-  .countdown { font-size: 34px; min-width: 60px; }
-  .score-frame { padding: 14px 10px; }
+  .btn .btn-label { display: none; }
+  .btn.primary { width: auto; padding: 8px 14px; }
+  .btn.primary .btn-label { display: inline; }
+
+  .status { gap: 10px 18px; margin: 14px 2px 8px; }
+  .countdown { font-size: 32px; min-width: 52px; }
+  .meta { gap: 6px 16px; }
+
+  .score-frame { padding: 12px 8px; }
+  .frame-action { top: 8px; right: 8px; }
+  .message { font-size: var(--fs-xs); }
+}
+
+/*
+ * A phone is too narrow to engrave a readable test, so the score keeps its
+ * minimum width and the frame scrolls sideways. Say so once, rather than
+ * letting the reader wonder why the music runs off the edge.
+ */
+.rotate-hint { display: none; }
+
+@media (max-width: 560px) {
+  .rotate-hint {
+    display: block;
+    margin: 8px 2px 0;
+    color: var(--muted);
+    font-size: var(--fs-2xs);
+  }
+}
+
+/* Tablets: roomy enough for the full engraving, so give it the width. */
+@media (min-width: 561px) and (max-width: 1024px) {
+  body { padding: 24px 20px 36px; }
+  .score { min-width: 0; }
+}
+
+@media (min-width: 1025px) {
+  .score { min-width: 0; }
 }
 
 /* Preparation checklist, shown only while the 30 seconds are running. */
