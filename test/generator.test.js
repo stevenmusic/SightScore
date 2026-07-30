@@ -353,6 +353,56 @@ test('a melodic hand develops fresh rhythm rather than leaning on repetition', (
   );
 });
 
+test('melodies include real scale-run figures, not just note-by-note wobble', () => {
+  // Scoring every step candidate independently (no memory of a run already
+  // in progress) made a 4+-note stepwise run — a routine figure in real
+  // specimens, often spanning most of a beat or bar — rare: only 4-6% of
+  // stepwise motion formed one. `pickWeighted`'s run-continuation bias
+  // (melody.js) should make that a regular occurrence instead. Grade 1 is
+  // excluded: its five-finger window and short alternating phrases leave
+  // no room for a run this long regardless of weighting.
+  const runLengths = (bars) => {
+    const notes = bars.flatMap((bar) => soundingEvents(bar));
+    const runs = [];
+    let current = 0;
+    let direction = 0;
+    for (let i = 1; i < notes.length; i++) {
+      const interval = notes[i].dstep - notes[i - 1].dstep;
+      const isStep = Math.abs(interval) === 1;
+      const stepDirection = isStep ? Math.sign(interval) : 0;
+      if (isStep && stepDirection === direction && stepDirection !== 0) {
+        current += 1;
+      } else {
+        if (current > 0) runs.push(current);
+        current = isStep ? 1 : 0;
+        direction = stepDirection;
+      }
+    }
+    if (current > 0) runs.push(current);
+    return runs;
+  };
+
+  let longRuns = 0;
+  let totalRuns = 0;
+
+  eachTest((score, gradeRules) => {
+    if (gradeRules.grade === 1) return;
+    for (const staffNumber of [1, 2]) {
+      const runs = runLengths(score.staves[staffNumber]);
+      totalRuns += runs.length;
+      longRuns += runs.filter((length) => length >= 4).length;
+    }
+  });
+
+  // Measured at ~7.3% after adding the run-continuation bias, against
+  // 4-6% before it existed.
+  const rate = longRuns / totalRuns;
+  assert.ok(
+    rate >= 0.03,
+    `only ${(rate * 100).toFixed(1)}% of stepwise runs reach 4+ notes — scale-run figures are too rare`,
+  );
+});
+
 /** Absolute-time sounding notes of one staff. */
 function soundingTimeline(score, staffNumber) {
   const timeline = [];

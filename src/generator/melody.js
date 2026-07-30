@@ -56,6 +56,10 @@ export function assignPitches({ rng, key, bars, progression, window, options, ag
   let previous = null;
   let previousLeap = 0;
   let repeatRun = 0;
+  // Direction and length of the current run of consecutive same-direction
+  // steps — see pickWeighted for why this matters.
+  let runDirection = 0;
+  let runLength = 0;
 
   bars.forEach((bar, barIndex) => {
     const roman = progression[barIndex] ?? 'I';
@@ -98,6 +102,8 @@ export function assignPitches({ rng, key, bars, progression, window, options, ag
           previous,
           previousLeap,
           repeatRun,
+          runDirection,
+          runLength,
           tones,
           onBeat,
           isDownbeat,
@@ -111,6 +117,13 @@ export function assignPitches({ rng, key, bars, progression, window, options, ag
 
       const interval = previous === null ? 0 : chosen - previous;
       repeatRun = interval === 0 ? repeatRun + 1 : 0;
+      const stepDirection = Math.abs(interval) === 1 ? Math.sign(interval) : 0;
+      if (stepDirection !== 0 && stepDirection === runDirection) {
+        runLength += 1;
+      } else {
+        runDirection = stepDirection;
+        runLength = stepDirection !== 0 ? 1 : 0;
+      }
       previousLeap = interval;
       previous = chosen;
 
@@ -161,7 +174,7 @@ function soundingAt(timeline, start, duration) {
 
 function pickWeighted(ctx) {
   const {
-    rng, key, allSteps, previous, previousLeap, repeatRun, tones,
+    rng, key, allSteps, previous, previousLeap, repeatRun, runDirection, runLength, tones,
     onBeat, isDownbeat, centre, stepwiseBias, maxLeapSemitones, chordToneOnly, sounding,
   } = ctx;
 
@@ -225,6 +238,21 @@ function pickWeighted(ctx) {
     if (!previousWasChordTone && distance === 1 && Math.sign(interval) === Math.sign(previousLeap)) {
       weight *= 3;
     }
+    /*
+     * A real scale passage keeps going in the same direction for several
+     * notes, not just one — measured at only 4-6% of stepwise motion
+     * forming a run of 4+ consecutive same-direction steps, against
+     * real specimens where a scale run spanning most of a beat or bar is a
+     * routine figure. Scoring every step independently on a roughly 50/50
+     * up-or-down basis (once a direction isn't forced) is why: nothing
+     * carried a run's momentum forward from one note to the next. This
+     * boosts continuing the run, growing with how long it has already run
+     * and capped so it tapers off rather than producing an unbroken
+     * octave-plus scale every time.
+     */
+    if (distance === 1 && runDirection !== 0 && Math.sign(interval) === runDirection) {
+      weight *= 1 + Math.min(runLength, 4) * 0.6;
+    }
     if (clash) weight *= 0.3;
     if (Math.abs(previousLeap) >= 3) {
       weight *= Math.sign(interval) === -Math.sign(previousLeap) ? 2.5 : 0.4;
@@ -275,8 +303,13 @@ function pickWeighted(ctx) {
    * configured stepwiseBias of 62-65%. Deciding the category first is what
    * actually makes stepwiseBias mean "this fraction of moves are steps."
    */
+  // A run in progress should also make "keep stepping" itself more likely,
+  // not just which direction to step in once that category is chosen —
+  // otherwise a run this same weighting just made attractive within the
+  // step category could still get cut short by an unrelated leap roll.
+  const runBoost = runDirection !== 0 ? 1 + Math.min(runLength, 4) * 0.5 : 1;
   const categories = [];
-  if (steps.length) categories.push({ items: steps, weight: 10 * stepwiseBias });
+  if (steps.length) categories.push({ items: steps, weight: 10 * stepwiseBias * runBoost });
   if (leaps.length) categories.push({ items: leaps, weight: 10 * (1 - stepwiseBias) });
   if (repeats.length) categories.push({ items: repeats, weight: 1 });
   return rng.weighted(rng.weighted(categories).items).dstep;
