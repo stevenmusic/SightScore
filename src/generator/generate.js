@@ -20,6 +20,39 @@ const TEMPO_BPM = {
   Allegretto: 112, 'Con moto': 112, Grazioso: 96, Scherzando: 126, Espressivo: 76,
   Allegro: 132, 'Allegro con brio': 138, 'Allegro vivace': 144, 'Allegro agitato': 138,
   Vivace: 152, Presto: 168, Maestoso: 80, Appassionato: 108,
+
+  // English/Italian character words and dance-form titles that real ABRSM
+  // sight-reading specimens print at least as often as a plain tempo word
+  // (confirmed against the Grade 1-5 specimen books) — the fallback below
+  // silently defaulted every one of these to 96bpm before they had entries.
+  March: 100, Gently: 76, Fanfare: 108, Sadly: 66, Lively: 116, Dancing: 108,
+  Delicately: 84, Grandly: 92, Smoothly: 84, Waltz: 126, Happily: 108,
+  'Slowly and smoothly': 66, Dance: 108, 'Sadly and gently': 66,
+  'Gently rocking': 72, 'Sadly and slowly': 60,
+  Minuet: 108, 'Moderato espressivo': 92, Lullaby: 60, Flowing: 92,
+  'Lively and strong': 120, 'Gently and expressively': 72, 'Sad waltz': 108,
+  'Tempo di minuetto': 108,
+  Leggiero: 116, Grandioso: 84, 'Rather sadly': 66, Playfully: 112,
+  'Alla marcia': 104, 'Poco allegretto': 108, Tenderly: 72, Gracefully: 88,
+  'Allegretto cantabile': 104, 'Andante grazioso': 80, 'Allegretto semplice': 108,
+  'Allegro giocoso': 132, 'Valse lente': 126, 'Andante espressivo': 76,
+  Steadily: 92, 'Allegretto capriccioso': 116, Slowly: 60,
+  'Andantino espressivo': 80, 'Tempo di tango': 112, 'Allegretto ritmico': 116,
+  Rhythmically: 100, 'Leggiero allegretto': 116, 'Adagio espressivo': 58,
+  Lilting: 92, 'Molto moderato': 84, 'Allegretto grazioso': 108, Giocoso: 132,
+  'Cantabile ed espressivo': 72, 'Moderato leggiero': 100, Mesto: 60,
+  'Con brio': 138, 'Andantino leggiero': 88, Gigue: 144, Tango: 112,
+  Ritmico: 108, 'Andante maestoso': 84, 'Moderato preciso': 96,
+  'Poco vivace': 144, 'Allegro leggiero': 138, 'Andantino grazioso': 84,
+  Sprightly: 116, 'Gently flowing': 84, 'Allegretto misterioso': 100,
+  'Poco andante': 84, 'Molto andante': 66,
+
+  // Grades 6-8: extrapolated alongside the term additions above (no specimen
+  // PDF available), same conservative treatment as those grades' "inferred"
+  // confidence marker.
+  'Andante sostenuto': 66, Risoluto: 120, Semplice: 88, Dolce: 66,
+  'Molto vivace': 160, 'Allegro appassionato': 132, 'Molto agitato': 144,
+  'Allegro risoluto': 132, Tranquillo: 60,
 };
 
 /**
