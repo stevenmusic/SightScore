@@ -97,6 +97,16 @@ for (const device of DEVICES) {
     problems.push(`${device.name}: metadata value wraps onto two lines — "${value}"`);
   }
 
+  // Track the stage's actual scrollLeft over time, so a "no problem" result
+  // can't be a false negative from scrollLeft simply never having moved.
+  await page.evaluate(() => {
+    window.__sightscoreMaxScrollLeft = 0;
+    window.__sightscoreScrollWatch = setInterval(() => {
+      const stage = document.getElementById('stage');
+      window.__sightscoreMaxScrollLeft = Math.max(window.__sightscoreMaxScrollLeft, stage.scrollLeft);
+    }, 100);
+  });
+
   // The follow window must not clip the lower system's stems. Playback waits
   // on the piano samples, which can take a while (and, in a sandbox with no
   // route to the sample host, waits for every fetch to fail), so poll rather
@@ -131,10 +141,13 @@ for (const device of DEVICES) {
     const texts = [...svg.querySelectorAll('text')].map((t) => t.getBoundingClientRect());
     const above = texts.filter((box) => box.bottom > stageBox.top - 60 && box.top < stageBox.bottom);
     const clippedTop = above.length ? Math.max(...above.map((box) => stageBox.top - box.top)) : 0;
-    // The playhead has to stay inside the frame, or the music stops following it.
-    const frameBox = document.getElementById('score-frame').getBoundingClientRect();
+    // The playhead has to stay inside the stage, or the music stops following
+    // it. `.stage` is the actual horizontal scroll container during
+    // following (see stage.js), not `.score-frame` — checking the frame here
+    // would pass even when the stage never scrolled at all.
+    const stageBounds = stage.getBoundingClientRect();
     const lineBox = document.getElementById('playline').getBoundingClientRect();
-    const playheadOffscreen = lineBox.left < frameBox.left - 1 || lineBox.right > frameBox.right + 1;
+    const playheadOffscreen = lineBox.left < stageBounds.left - 1 || lineBox.right > stageBounds.right + 1;
 
     return {
       clipped: lowest - stageBox.bottom, clippedTop, shift, rows: visible.length, playheadOffscreen,
@@ -148,7 +161,22 @@ for (const device of DEVICES) {
   } else if (follow.clippedTop > 1) {
     problems.push(`${device.name}: follow window clips text above the top system by ${Math.round(follow.clippedTop)}px`);
   } else if (follow.playheadOffscreen) {
-    problems.push(`${device.name}: the playhead is outside the visible frame`);
+    problems.push(`${device.name}: the playhead is outside the visible stage`);
+  }
+
+  // The stage must actually have scrolled sideways at some point during
+  // playback, not just have room to. A wrong ancestor's overflow being
+  // checked (or clipped by a mis-set overflow rule) can leave scrollLeft
+  // stuck at 0 the entire time while still reporting no other problem.
+  const scrolled = await page.evaluate(() => window.__sightscoreMaxScrollLeft > 2);
+  if (follow && follow.rows > 0) {
+    const stageOverflows = await page.evaluate(() => {
+      const stage = document.getElementById('stage');
+      return stage.scrollWidth > stage.clientWidth + 1;
+    });
+    if (stageOverflows && !scrolled) {
+      problems.push(`${device.name}: the stage never actually scrolled sideways during playback`);
+    }
   }
 
   console.log(
@@ -162,6 +190,8 @@ for (const device of DEVICES) {
   if (shots) {
     await page.screenshot({ path: `${shots}/${device.name.replace(/\s+/g, '-')}.png`, fullPage: false });
   }
+
+  await page.evaluate(() => clearInterval(window.__sightscoreScrollWatch));
 
   // Fullscreen, twice: through the API, and through the CSS fallback that iOS
   // Safari needs because it has no Element.requestFullscreen at all.
@@ -186,6 +216,24 @@ for (const device of DEVICES) {
     else if (!state.fits) problems.push(`${device.name}: fullscreen (${mode}) does not fit the whole test`);
     await page.click('#fullscreen');
     await page.waitForTimeout(500);
+  }
+
+  // Pressing "prepare" should go fullscreen on its own (the 30-second look at
+  // the whole test), the same way #fullscreen does, without needing a second
+  // click. Generating a new test should then leave it again.
+  {
+    const before = await page.evaluate(() => document.getElementById('score-frame').classList.contains('is-fullscreen'));
+    await page.click('#prepare');
+    await page.waitForTimeout(700);
+    const duringPrepare = await page.evaluate(() => document.getElementById('score-frame').classList.contains('is-fullscreen'));
+    if (before) problems.push(`${device.name}: fullscreen was already active before testing #prepare`);
+    if (!duringPrepare) problems.push(`${device.name}: #prepare did not enter fullscreen`);
+
+    await page.click('#generate');
+    await page.waitForFunction(() => document.querySelector('#score svg'), { timeout: 20000 });
+    await page.waitForTimeout(400);
+    const afterNewTest = await page.evaluate(() => document.getElementById('score-frame').classList.contains('is-fullscreen'));
+    if (afterNewTest) problems.push(`${device.name}: generating a new test did not leave fullscreen`);
   }
 
   await page.close();

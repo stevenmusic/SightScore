@@ -281,11 +281,24 @@ body.has-fullscreen-frame { overflow: hidden; }
  * While following, the stage is a window exactly two systems tall and the
  * score slides under it, so the line being played and the one after it are
  * both readable.
+ *
+ * overflow-x is `auto`, not `visible`/`hidden`: `.stage` must become the real
+ * horizontal scroll container itself, because a clipped element's box stops
+ * reporting its child's overflow to ITS OWN parent. With `overflow: hidden`
+ * here, `.score-frame` (the outer, auto-scrolling frame) saw no overflow at
+ * all once playback began — its scrollWidth read back equal to its
+ * clientWidth — so scrolling it from JS did nothing. `stage.js` scrolls
+ * `stage.scrollLeft` directly; the scrollbar is hidden below since a visible
+ * native bar here would look wrong stacked under the frame's own scroll area.
  */
 .stage.following {
-  overflow: hidden;
+  overflow-y: hidden;
+  overflow-x: auto;
+  scrollbar-width: none;
   transition: height .25s ease;
 }
+
+.stage.following::-webkit-scrollbar { display: none; }
 
 .scroller {
   position: relative;

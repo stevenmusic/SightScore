@@ -126,6 +126,7 @@ export function createStage(elements) {
     currentSystem = -1;
     stage.classList.remove('following');
     stage.style.height = '';
+    stage.scrollLeft = 0;
     scroller.style.transform = '';
     playline.style.display = '';
     highlight.style.display = '';
@@ -166,15 +167,23 @@ export function createStage(elements) {
 
     /*
      * On a narrow screen the system is wider than the frame, so the playhead
-     * marches off the right edge and the music never follows it. Scroll the
-     * frame so the playhead stays about a third of the way in, which keeps
-     * what is coming next on screen.
+     * marches off the right edge and the music never follows it. Scroll so the
+     * playhead stays about a third of the way in, which keeps what is coming
+     * next on screen.
+     *
+     * This scrolls `stage`, not `frame`. `.stage.following` sets its own
+     * height and clips vertically, and a clipped element's box no longer
+     * reports its child's overflow to its own parent — so once following
+     * began, `frame.scrollWidth` always read back equal to `frame.clientWidth`
+     * (no overflow "visible" to it) and this never actually moved anything.
+     * `stage` is the element that actually clips the wide score, so it has to
+     * be the one that scrolls it.
      */
-    const visible = frame.clientWidth;
-    if (frame.scrollWidth > visible + 1) {
-      const target = Math.max(0, Math.min(x - visible * 0.34, frame.scrollWidth - visible));
+    const visible = stage.clientWidth;
+    if (stage.scrollWidth > visible + 1) {
+      const target = Math.max(0, Math.min(x - visible * 0.34, stage.scrollWidth - visible));
       // Only nudge when it has drifted, so a manual scroll is not fought over.
-      if (Math.abs(frame.scrollLeft - target) > 2) frame.scrollLeft = target;
+      if (Math.abs(stage.scrollLeft - target) > 2) stage.scrollLeft = target;
     }
   }
 
@@ -205,15 +214,8 @@ export function createStage(elements) {
     applyFullscreenState(false, true);
   }
 
-  async function toggleFullscreen() {
-    if (pseudoFullscreen) {
-      exitPseudoFullscreen();
-      return;
-    }
-    if (document.fullscreenElement) {
-      await document.exitFullscreen();
-      return;
-    }
+  async function enterFullscreen() {
+    if (pseudoFullscreen || document.fullscreenElement === frame) return;
     if (typeof frame.requestFullscreen === 'function') {
       try {
         await frame.requestFullscreen({ navigationUI: 'hide' });
@@ -223,6 +225,19 @@ export function createStage(elements) {
       }
     }
     enterPseudoFullscreen();
+  }
+
+  async function exitFullscreen() {
+    if (pseudoFullscreen) {
+      exitPseudoFullscreen();
+      return;
+    }
+    if (document.fullscreenElement === frame) await document.exitFullscreen();
+  }
+
+  async function toggleFullscreen() {
+    if (pseudoFullscreen || document.fullscreenElement === frame) await exitFullscreen();
+    else await enterFullscreen();
   }
 
   document.addEventListener('fullscreenchange', () => {
@@ -245,6 +260,8 @@ export function createStage(elements) {
     begin,
     end,
     update,
+    enterFullscreen,
+    exitFullscreen,
     get following() { return following; },
     get systems() { return layout.systems.length; },
     get isFullscreen() { return pseudoFullscreen || document.fullscreenElement === frame; },
