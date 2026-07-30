@@ -135,8 +135,22 @@ function renderBar(bar, staffNumber, score, keyAlters) {
   return lines;
 }
 
+/** A crushed grace note (acciaccatura) has no <duration> — it borrows its time from the main note. */
+function renderGraceNote(grace, ctx) {
+  const lines = ['      <note>', '        <grace slash="yes"/>'];
+  lines.push(...pitchElement(grace.pitch));
+  lines.push(`        <voice>${ctx.voice}</voice>`);
+  lines.push('        <type>eighth</type>');
+  const accidental = accidentalFor(grace.pitch, ctx.keyAlters);
+  if (accidental) lines.push(`        <accidental>${accidental}</accidental>`);
+  lines.push(`        <staff>${ctx.staffNumber}</staff>`);
+  lines.push('      </note>');
+  return lines;
+}
+
 function renderNote(event, ctx) {
-  const lines = ['      <note>'];
+  const lines = event.grace ? renderGraceNote(event.grace, ctx) : [];
+  lines.push('      <note>');
 
   if (event.rest) {
     lines.push(event.measureRest ? '        <rest measure="yes"/>' : '        <rest/>');

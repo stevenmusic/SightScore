@@ -182,6 +182,9 @@ test('beams never cross a beat boundary', () => {
         for (const note of notes) {
           if (!note.includes(`<staff>${staff}</staff>`)) continue;
           if (note.includes('<chord/>')) continue;
+          // A grace note borrows its time from the note it decorates and
+          // carries no <duration> (and no beam) of its own.
+          if (note.includes('<grace')) continue;
           const duration = Number(note.match(/<duration>(\d+)<\/duration>/)[1]);
           const beams = [...note.matchAll(/<beam number="1">(\w+)<\/beam>/g)].map((m) => m[1]);
 

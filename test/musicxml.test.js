@@ -63,7 +63,12 @@ test('every note carries a staff and a voice', () => {
       const body = note.split('</note>')[0];
       assert.ok(/<staff>[12]<\/staff>/.test(body), 'note without a staff');
       assert.ok(/<voice>[12]<\/voice>/.test(body), 'note without a voice');
-      assert.ok(/<duration>\d+<\/duration>/.test(body), 'note without a duration');
+      // A grace note (acciaccatura) is the one legitimate exception: it
+      // borrows its time from the note it decorates, so MusicXML forbids
+      // <duration> on it.
+      if (!body.includes('<grace')) {
+        assert.ok(/<duration>\d+<\/duration>/.test(body), 'note without a duration');
+      }
     }
   });
 });

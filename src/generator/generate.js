@@ -8,7 +8,7 @@
  */
 
 import { createRandom, randomSeed } from './random.js';
-import { createKey, dstepRange, degreeOf } from './theory.js';
+import { createKey, dstepRange, degreeOf, pitchAt } from './theory.js';
 import { buildProgression } from './harmony.js';
 import { assignPitches, stackChordTones, soundingTimeline, harmoniseLeadingNotes } from './melody.js';
 import { DIVISIONS, cellsFor, fillBar, wholeBarRest } from './rhythm.js';
@@ -372,8 +372,21 @@ function applyExpression(rng, rules, score) {
     }
   }
 
-  if (rules.otherFeatures.some((feature) => feature.includes('踏板'))) {
+  // Grade 5's otherFeatures happen to be written in English ('sustaining
+  // pedal markings') where grade 6-8's are in Chinese ('踏板') — match both,
+  // or grade 5 (which already documents wanting it) would silently never get one.
+  if (rules.otherFeatures.some((feature) => feature.includes('踏板') || /pedal/i.test(feature))) {
     addPedalMarking(rng, score);
+  }
+
+  // Real Grade 6-8 specimens pull the tempo around mid-piece (rit. ... a
+  // tempo), not just at the final cadence the way lower grades' rall. does.
+  if (rules.grade >= 6 && rng.chance(0.4)) {
+    addMidPieceTempoChange(rng, score);
+  }
+
+  if (rules.grade >= 7) {
+    addOrnaments(rng, score);
   }
 }
 
@@ -388,6 +401,45 @@ function addPedalMarking(rng, score) {
   const end = start + span;
   score.staves[2][start].directions.push({ kind: 'pedal', type: 'start' });
   score.staves[2][end].directions.push({ kind: 'pedal', type: 'stop' });
+}
+
+/**
+ * A temporary tempo pull mid-piece (rit. then a tempo a bar or two later),
+ * not just the single final rall. lower grades get — real Grade 6-8
+ * specimens fluctuate tempo within the piece itself.
+ */
+function addMidPieceTempoChange(rng, score) {
+  if (score.barCount < 6) return;
+  const around = Math.floor(score.barCount * 0.5) + rng.int(-1, 1);
+  const bar = Math.max(1, Math.min(score.barCount - 3, around));
+  score.staves[1][bar]?.directions.push({ kind: 'words', value: 'rit.' });
+  score.staves[1][bar + 1]?.directions.push({ kind: 'words', value: 'a tempo' });
+}
+
+/**
+ * A short acciaccatura (crushed grace note, a step above or below) into one
+ * or two melody notes — the rules table already listed ornaments as a
+ * Grade 7+ feature with no generation logic behind it.
+ */
+function addOrnaments(rng, score) {
+  const notes = score.staves[1].flatMap((bar) => bar.events.filter((event) => !event.rest));
+  if (notes.length < 4) return;
+
+  const key = createKey(score.key);
+  const candidates = notes.slice(1, -1).filter((event) => event.type === 'quarter' || event.type === 'eighth');
+  if (!candidates.length) return;
+
+  const shuffled = [...candidates];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = rng.int(0, i);
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+
+  const count = Math.min(shuffled.length, rng.int(1, 2));
+  for (const event of shuffled.slice(0, count)) {
+    const graceDstep = event.dstep + (rng.chance(0.5) ? 1 : -1);
+    event.grace = { pitch: pitchAt(graceDstep, key, { raiseSeventh: false }) };
+  }
 }
 
 const ORDER = ['ppp', 'pp', 'p', 'mp', 'mf', 'f', 'ff', 'fff'];
