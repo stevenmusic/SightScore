@@ -35,6 +35,12 @@
   --fs-xl: 19px;
   --fs-2xl: 26px;
 
+  /* The page's own horizontal inset, kept as a variable so `.topbar` and
+     `.score-frame` can bleed exactly past it to the true viewport edge at
+     every breakpoint (see the comment on `.topbar` below) without
+     duplicating each breakpoint's number. */
+  --body-px: 16px;
+
   color-scheme: light;
 }
 
@@ -48,7 +54,7 @@ body {
   line-height: 1.6;
   max-width: 64rem;
   margin: 0 auto;
-  padding: 28px 16px 40px;
+  padding: 28px var(--body-px) 40px;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -63,6 +69,13 @@ body {
  * depending on fullscreen state, which is exactly the bug reported. There
  * is now exactly one layout definition, so toggling fullscreen can change
  * what's hidden/compacted around it but never where the row itself sits.
+ *
+ * Styled after ScrollScore's own toolbar: a flat full-width band with a
+ * hairline underneath, not a rounded, shadowed card floating with margin
+ * on either side. The negative margin cancels exactly the page's own
+ * `--body-px` inset so the bar reaches the true viewport edge (its own
+ * padding puts the title/controls back at a normal inset); `.score-frame`
+ * below uses the same trick for the same reason.
  */
 .topbar {
   display: flex;
@@ -70,12 +83,12 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 10px 16px;
+  margin-left: calc(-1 * var(--body-px));
+  margin-right: calc(-1 * var(--body-px));
   margin-bottom: 20px;
-  padding: 12px 16px;
+  padding: 12px var(--body-px);
   background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
+  border-bottom: 1px solid var(--line);
 }
 
 .title-block { min-width: 0; }
@@ -99,12 +112,6 @@ h1 {
 }
 
 h1 span { color: var(--ivory); font-weight: 600; }
-
-.tagline {
-  margin-top: 6px;
-  color: var(--muted);
-  font-size: var(--fs-sm);
-}
 
 /* ---------- controls ---------- */
 
@@ -282,14 +289,19 @@ button.link:hover { color: var(--gold); }
 
 /* ---------- score ---------- */
 
+/*
+ * No card here either — matching ScrollScore, the sheet sits directly on
+ * the page's own background with no border, radius or shadow, and (via
+ * the same negative-margin trick as `.topbar`) bleeds to the true
+ * viewport edge instead of stopping at the page's usual inset, so the
+ * score gets as much width as the screen actually has to give it.
+ */
 .score-frame {
   position: relative;
   margin-top: 10px;
-  padding: 56px 16px 22px;
-  background: #FFFDF6; /* ScrollScore 的 --stage-glow：樂譜台面比頁面再亮一階 */
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
+  margin-left: calc(-1 * var(--body-px));
+  margin-right: calc(-1 * var(--body-px));
+  padding: 56px var(--body-px) 22px;
 }
 
 /*
@@ -403,8 +415,8 @@ footer {
  * right-alignment — because two different layouts for the same row is what
  * previously put the buttons in two different places depending on
  * fullscreen state. Fullscreen only hides extra text the view has no room
- * for (tagline, footer, message, checklist) and compacts the status strip;
- * the row holding the title and buttons is untouched, so its position never
+ * for (footer, message, checklist) and compacts the status strip; the row
+ * holding the title and buttons is untouched, so its position never
  * shifts when fullscreen is toggled. `.pseudo-fullscreen` gives browsers
  * with no Element.requestFullscreen (older iOS Safari) the same layout by
  * pinning the page to the viewport instead of asking the browser to go
@@ -439,11 +451,9 @@ body.pseudo-fullscreen {
 html:fullscreen body > footer,
 html:fullscreen #message,
 html:fullscreen #checklist,
-html:fullscreen .tagline,
 body.pseudo-fullscreen > footer,
 body.pseudo-fullscreen #message,
-body.pseudo-fullscreen #checklist,
-body.pseudo-fullscreen .tagline {
+body.pseudo-fullscreen #checklist {
   display: none;
 }
 
@@ -506,7 +516,7 @@ html:fullscreen .score-frame, body.pseudo-fullscreen .score-frame {
 }
 
 @media (max-width: 560px) {
-  body { padding: 20px 12px 28px; }
+  body { --body-px: 12px; padding: 20px var(--body-px) 28px; }
   h1 { font-size: var(--fs-xl); }
 
   .status { gap: 10px 18px; margin: 14px 2px 8px; }
@@ -525,7 +535,7 @@ html:fullscreen .score-frame, body.pseudo-fullscreen .score-frame {
 }
 
 @media (min-width: 561px) and (max-width: 1024px) {
-  body { padding: 24px 20px 36px; }
+  body { --body-px: 20px; padding: 24px var(--body-px) 36px; }
 }
 
 /* Preparation checklist, shown only while the 30 seconds are running. */

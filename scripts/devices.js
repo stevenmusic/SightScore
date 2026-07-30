@@ -295,7 +295,6 @@ for (const device of DEVICES) {
       const totalBars = layout.bars.size;
       return {
         active: window.__isFullscreen(),
-        taglineHidden: isHidden(document.querySelector('.tagline')),
         footerHidden: isHidden(footer),
         messageHidden: isHidden(message),
         countdownVisible: getComputedStyle(document.getElementById('countdown')).display !== 'none',
@@ -323,7 +322,6 @@ for (const device of DEVICES) {
     });
 
     if (!entered.active) problems.push(`${device.name}: fullscreen (${mode}) did not activate`);
-    if (!entered.taglineHidden) problems.push(`${device.name}: fullscreen (${mode}) still shows the tagline`);
     if (!entered.footerHidden) problems.push(`${device.name}: fullscreen (${mode}) still shows the footer`);
     if (!entered.messageHidden) problems.push(`${device.name}: fullscreen (${mode}) still shows the status message`);
     if (!entered.countdownVisible) problems.push(`${device.name}: fullscreen (${mode}) hid the countdown`);
