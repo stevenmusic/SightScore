@@ -230,6 +230,10 @@ for (const device of DEVICES) {
       const controlsBox = controls.getBoundingClientRect();
       const layout = window.__stage.measure();
       const totalBars = layout.bars.size;
+      // Below 680px the meta strip and controls stack onto their own
+      // full-width rows instead of sharing one (see styles.css) — a phone
+      // couldn't fit both a legible meta strip and every button on one line.
+      const stacked = window.innerWidth <= 680;
       return {
         active: window.__isFullscreen(),
         headerHidden: isHidden(header),
@@ -237,15 +241,19 @@ for (const device of DEVICES) {
         messageHidden: isHidden(message),
         countdownVisible: getComputedStyle(document.getElementById('countdown')).display !== 'none',
         controlsVisible: controlsBox.height > 0,
-        // Meta strip and controls must share one row (top bar), not stack.
-        // They're centered within a shared row of differing heights (a 44px
-        // countdown next to 38px buttons), so tops won't match exactly —
-        // check they share a vertical band instead of one sitting above/below.
-        sameRow: Math.min(statusBox.bottom, controlsBox.bottom) - Math.max(statusBox.top, controlsBox.top) > 8,
-        controlsOnRight: controlsBox.right >= statusBox.right,
-        // The score should fill essentially the rest of the viewport.
-        scoreFrameFillsRest: scoreFrame.getBoundingClientRect().height
-          > (window.innerHeight - controlsBox.bottom) * 0.6,
+        stacked,
+        // Wide: share a vertical band (centered within one row of differing
+        // heights, so tops won't match exactly). Narrow: controls sit on
+        // their own row below the meta strip, not overlapping it.
+        rowLayoutOk: stacked
+          ? controlsBox.top >= statusBox.bottom - 1
+          : Math.min(statusBox.bottom, controlsBox.bottom) - Math.max(statusBox.top, controlsBox.top) > 8,
+        controlsOnRight: stacked || controlsBox.right >= statusBox.right,
+        // The score box must size to its own content, not clip to whatever
+        // height <main> has room for — checked by scrolling <main> all the
+        // way down and confirming the box's background still extends to
+        // cover the last system, not just whatever fit in the first screen.
+        scoreFrameBottom: scoreFrame.getBoundingClientRect().bottom,
         reachable,
         pageScrollsY: document.documentElement.scrollHeight > document.documentElement.clientHeight + 1,
         pageScrollsX: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
@@ -259,14 +267,44 @@ for (const device of DEVICES) {
     if (!entered.messageHidden) problems.push(`${device.name}: fullscreen (${mode}) still shows the status message`);
     if (!entered.countdownVisible) problems.push(`${device.name}: fullscreen (${mode}) hid the countdown`);
     if (!entered.controlsVisible) problems.push(`${device.name}: fullscreen (${mode}) hid the controls`);
-    if (!entered.sameRow) problems.push(`${device.name}: fullscreen (${mode}) meta strip and controls aren't on one row`);
+    if (!entered.rowLayoutOk) {
+      problems.push(`${device.name}: fullscreen (${mode}) meta strip/controls layout is wrong (stacked=${entered.stacked})`);
+    }
     if (!entered.controlsOnRight) problems.push(`${device.name}: fullscreen (${mode}) controls aren't on the right`);
-    if (!entered.scoreFrameFillsRest) problems.push(`${device.name}: fullscreen (${mode}) score doesn't fill the rest of the screen`);
     if (!entered.reachable) problems.push(`${device.name}: fullscreen (${mode}) made a control unreachable`);
     if (entered.pageScrollsY) problems.push(`${device.name}: fullscreen (${mode}) page itself scrolls vertically (should be the score only)`);
     if (entered.pageScrollsX) problems.push(`${device.name}: fullscreen (${mode}) scrolls sideways`);
     if (entered.singleBarRows > 0) {
       problems.push(`${device.name}: fullscreen (${mode}) leaves ${entered.singleBarRows} single-bar line(s)`);
+    }
+
+    // The score-frame box must actually cover the whole score, not clip
+    // partway down it — scroll <main> to the bottom and check the box's
+    // own background/border extends at least as far as the last note.
+    const coverage = await page.evaluate(() => {
+      const main = document.querySelector('main');
+      main.scrollTop = main.scrollHeight;
+      const frameBottom = document.getElementById('score-frame').getBoundingClientRect().bottom;
+      const svgs = [...document.querySelectorAll('#score svg')];
+      const contentBottom = Math.max(...svgs.map((svg) => svg.getBoundingClientRect().bottom));
+      main.scrollTop = 0;
+      return { frameBottom, contentBottom };
+    });
+    if (coverage.frameBottom < coverage.contentBottom - 2) {
+      problems.push(`${device.name}: fullscreen (${mode}) score box ends before the score does (box bottom ${Math.round(coverage.frameBottom)} vs content ${Math.round(coverage.contentBottom)})`);
+    }
+
+    // Generating a new test must not shift the button row — different
+    // key/metre/tempo text is a different length, and a height that
+    // depends on that length previously made the controls row bob up and
+    // down on every click instead of staying put.
+    const before = await page.evaluate(() => document.querySelector('.controls').getBoundingClientRect().top);
+    await page.click('#generate');
+    await page.waitForFunction(() => document.getElementById('message').textContent !== '渲染中…', { timeout: 20000 });
+    await page.waitForTimeout(200);
+    const after = await page.evaluate(() => document.querySelector('.controls').getBoundingClientRect().top);
+    if (Math.abs(before - after) > 1) {
+      problems.push(`${device.name}: fullscreen (${mode}) controls row moved after generating a new test (${Math.round(before)} -> ${Math.round(after)})`);
     }
 
     // The 30-second preparation countdown number must still run, but the

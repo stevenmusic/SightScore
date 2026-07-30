@@ -388,14 +388,6 @@ html:fullscreen .controls, body.pseudo-fullscreen .controls {
   align-self: center;
 }
 
-/*
- * The button row alone is already close to a phone's full width, so on a
- * narrow screen the meta strip has nowhere to go but a second line — only
- * the button row is required to stay single-line ("不換行" in the request
- * describes the button row specifically). Dropping the meta strip's labels
- * (dt) and shrinking the countdown still buys back enough room that most
- * widths fit everything on the one line anyway.
- */
 html:fullscreen .meta dt, body.pseudo-fullscreen .meta dt { display: none; }
 html:fullscreen .meta, body.pseudo-fullscreen .meta { gap: 4px 14px; }
 html:fullscreen .meta dd, body.pseudo-fullscreen .meta dd { font-size: var(--fs-xs); white-space: nowrap; }
@@ -404,7 +396,34 @@ html:fullscreen .countdown, body.pseudo-fullscreen .countdown {
   min-width: 0;
 }
 
+/*
+ * The button row alone is already close to a phone's full width, so sharing
+ * it with the meta strip left the meta strip wrapping onto however many
+ * lines its content happened to need — different key/metre/tempo text is a
+ * different length, so that line count (and the row's height) changed on
+ * every new test, and the button row rode up and down with it. Below this
+ * width, give each its own full-width row instead: both then have a height
+ * fixed by font-size alone, never by content, so the controls row's
+ * position stays put — meta becomes a single line that scrolls sideways
+ * on the rare test whose text doesn't fit, rather than wrapping.
+ */
 @media (max-width: 680px) {
+  html:fullscreen body, html:-webkit-full-screen body, body.pseudo-fullscreen {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto 1fr;
+    grid-template-areas:
+      "status"
+      "controls"
+      "main";
+  }
+  html:fullscreen #status, body.pseudo-fullscreen #status {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
+  html:fullscreen .meta, body.pseudo-fullscreen .meta {
+    flex-wrap: nowrap;
+    min-width: 0;
+  }
   html:fullscreen .controls, body.pseudo-fullscreen .controls { gap: 4px; padding: 8px 6px; }
   html:fullscreen .btn, body.pseudo-fullscreen .btn { width: 30px; height: 30px; }
   html:fullscreen select, body.pseudo-fullscreen select { font-size: var(--fs-2xs); padding: 4px 2px; }
@@ -418,9 +437,14 @@ html:fullscreen main, body.pseudo-fullscreen main {
   overflow-y: auto;
 }
 
+/*
+ * No flex:1 here: that would clamp the box to whatever height <main>
+ * happens to have room for, so its rounded-corner background/border ended
+ * a screen-height down while the rest of the (longer) score kept rendering
+ * past it, unstyled. The box has to size to its actual content — the whole
+ * score — and <main>'s overflow-y:auto is what scrolls that into view.
+ */
 html:fullscreen .score-frame, body.pseudo-fullscreen .score-frame {
-  flex: 1;
-  min-height: 0;
   margin-top: 0;
 }
 
