@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="src/app/styles.css?v=6">
+  <link rel="stylesheet" href="src/app/styles.css?v=7">
   <!--
     Loaded from vendor/ rather than node_modules/ so the page works as a plain
     static site (GitHub Pages) with no build step and no npm install.
@@ -18,50 +18,36 @@
   <script src="vendor/opensheetmusicdisplay.min.js"></script>
 </head>
 <body>
-  <header>
-    <h1>Sight<span>Score</span></h1>
-    <p class="tagline">ABRSM 鋼琴視奏 · 規則生成 · 每次都是新題目</p>
+  <header class="topbar">
+    <div class="title-block">
+      <h1>Sight<span>Score</span></h1>
+      <p class="tagline">ABRSM 鋼琴視奏 · 規則生成 · 每次都是新題目</p>
+    </div>
+
+    <section class="controls">
+      <button class="btn primary" id="generate">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+        <span class="btn-label">產生新題目</span>
+      </button>
+
+      <button class="btn" id="prepare">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 1h6"/></svg>
+        <span class="btn-label">開始 30 秒準備</span>
+      </button>
+
+      <button class="btn icon-only" id="play" disabled aria-label="播放" title="播放正確版本">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path id="playIcon" d="M8 5v14l11-7z"/></svg>
+      </button>
+
+      <button class="btn icon-only" id="stop" disabled aria-label="停止" title="停止並回到開頭">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 6h2.6v12H6zm4.4 6l8.6 6V6z"/></svg>
+      </button>
+
+      <button class="btn icon-only" id="fullscreen" disabled aria-label="全螢幕顯示" title="全螢幕顯示">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path id="fullscreenIcon" d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
+      </button>
+    </section>
   </header>
-
-  <section class="controls">
-    <select id="grade" aria-label="級數" title="級數">
-      <option value="1">Grade 1</option>
-      <option value="2">Grade 2</option>
-      <option value="3">Grade 3</option>
-      <option value="4">Grade 4</option>
-      <option value="5">Grade 5</option>
-      <option value="6">Grade 6</option>
-      <option value="7">Grade 7</option>
-      <option value="8">Grade 8</option>
-    </select>
-
-    <button class="btn primary" id="generate">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
-      <span class="btn-label">產生新題目</span>
-    </button>
-
-    <button class="btn" id="prepare">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 1h6"/></svg>
-      <span class="btn-label">開始 30 秒準備</span>
-    </button>
-
-    <button class="btn icon-only" id="play" disabled aria-label="播放" title="播放正確版本">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path id="playIcon" d="M8 5v14l11-7z"/></svg>
-    </button>
-
-    <button class="btn icon-only" id="stop" disabled aria-label="停止" title="停止並回到開頭">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 6h2.6v12H6zm4.4 6l8.6 6V6z"/></svg>
-    </button>
-
-    <button class="btn" id="download" disabled>
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-      <span class="btn-label">下載 MusicXML</span>
-    </button>
-
-    <button class="btn icon-only" id="fullscreen" disabled aria-label="全螢幕顯示" title="全螢幕顯示">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path id="fullscreenIcon" d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
-    </button>
-  </section>
 
   <section id="status" class="status" hidden>
     <div class="countdown" id="countdown">
@@ -72,6 +58,16 @@
 
   <main>
     <div class="score-frame" id="score-frame">
+      <select id="grade" class="grade-select" aria-label="級數" title="級數">
+        <option value="1">Grade 1</option>
+        <option value="2">Grade 2</option>
+        <option value="3">Grade 3</option>
+        <option value="4">Grade 4</option>
+        <option value="5">Grade 5</option>
+        <option value="6">Grade 6</option>
+        <option value="7">Grade 7</option>
+        <option value="8">Grade 8</option>
+      </select>
       <div class="stage" id="stage">
         <div class="measure-highlight" id="measure-highlight"></div>
         <div id="score" class="score"></div>
@@ -89,6 +85,6 @@
     <span id="confidence" class="badge" hidden></span>
   </footer>
 
-  <script type="module" src="src/app/app.js?v=6"></script>
+  <script type="module" src="src/app/app.js?v=7"></script>
 </body>
 </html>

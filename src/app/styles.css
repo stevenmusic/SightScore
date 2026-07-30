@@ -54,7 +54,26 @@ body {
 
 /* ---------- header ---------- */
 
-header { margin-bottom: 20px; }
+/*
+ * Title and controls live in one shared flex row (`.topbar`) — the same
+ * markup and the same CSS in both normal and fullscreen mode. Earlier
+ * versions gave fullscreen its own grid rearrangement of title/controls
+ * (a separate area layout, right-alignment on narrow screens); that meant
+ * two different layouts could put the buttons in two different places
+ * depending on fullscreen state, which is exactly the bug reported. There
+ * is now exactly one layout definition, so toggling fullscreen can change
+ * what's hidden/compacted around it but never where the row itself sits.
+ */
+.topbar {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  margin-bottom: 20px;
+}
+
+.title-block { min-width: 0; }
 
 h1 {
   font-family: "Noto Serif TC", serif;
@@ -63,6 +82,9 @@ h1 {
   letter-spacing: .06em;
   color: var(--gold);
   line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 h1 span { color: var(--ivory); font-weight: 600; }
@@ -71,6 +93,9 @@ h1 span { color: var(--ivory); font-weight: 600; }
   margin-top: 6px;
   color: var(--muted);
   font-size: var(--fs-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ---------- controls ---------- */
@@ -81,6 +106,7 @@ h1 span { color: var(--ivory); font-weight: 600; }
  */
 .controls {
   display: flex;
+  flex: none;
   flex-wrap: nowrap;
   align-items: center;
   gap: 8px 10px;
@@ -225,11 +251,25 @@ button.link:hover { color: var(--gold); }
 .score-frame {
   position: relative;
   margin-top: 10px;
-  padding: 22px 16px;
+  padding: 56px 16px 22px;
   background: #FFFDF6; /* ScrollScore 的 --stage-glow：樂譜台面比頁面再亮一階 */
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
+}
+
+/*
+ * The grade selector lives over the score's own white area rather than in
+ * the controls row — it's a "what to generate next" input, not a playback
+ * control, so it reads more clearly pinned to the paper it's about to fill.
+ * The extra top padding above makes room for it without overlapping the
+ * first system.
+ */
+.grade-select {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+  z-index: 2;
 }
 
 /* ---------- playback highlight + playhead ---------- */
@@ -323,39 +363,35 @@ footer {
 /* ---------- fullscreen ---------- */
 
 /*
- * Fullscreen is a dedicated distraction-free reading view, modelled on
- * ScrollScore's toolbar: a title on the left with the controls to its right
- * on the same row, always the same size — nothing here is fullscreen-
- * specific sizing, it's exactly the controls' normal-mode styling, so
- * toggling fullscreen never makes a button change size or move. The status
- * message, the footer and the preparation checklist's text still disappear
- * (extra text this view has no room for); the countdown/meta strip gets its
- * own row below the title so it can't compete with the controls for width.
- * `.pseudo-fullscreen` gives browsers with no Element.requestFullscreen
- * (older iOS Safari) the same layout by pinning the page to the viewport
- * instead of asking the browser to go fullscreen.
+ * Fullscreen is a dedicated distraction-free reading view. It reuses the
+ * exact same `.topbar` (title left, controls right) as normal mode — no
+ * separate grid rearrangement of title vs. controls, and no fullscreen-only
+ * right-alignment — because two different layouts for the same row is what
+ * previously put the buttons in two different places depending on
+ * fullscreen state. Fullscreen only hides extra text the view has no room
+ * for (tagline, footer, message, checklist) and compacts the status strip;
+ * the row holding the title and buttons is untouched, so its position never
+ * shifts when fullscreen is toggled. `.pseudo-fullscreen` gives browsers
+ * with no Element.requestFullscreen (older iOS Safari) the same layout by
+ * pinning the page to the viewport instead of asking the browser to go
+ * fullscreen.
  */
 html:fullscreen, html:-webkit-full-screen { overflow: hidden; }
 
+/*
+ * No max-width or padding overrides here on purpose — normal mode's
+ * existing max-width/padding rules (and their @media breakpoints) apply
+ * completely unchanged, so the topbar sits at the exact same horizontal
+ * position it does outside fullscreen. Only the height/overflow behaviour
+ * changes: the page itself is pinned to one screen and only <main> scrolls.
+ */
 html:fullscreen body,
 html:-webkit-full-screen body,
 body.pseudo-fullscreen {
-  display: grid;
-  /* minmax(0, 1fr): a bare 1fr won't shrink below its content's min-content
-     width — without it the title could force the row wider than the
-     viewport instead of giving way to `.controls`, which gets priority
-     since its buttons must all stay reachable and unchanged in size. */
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-rows: auto auto 1fr;
-  grid-template-areas:
-    "title controls"
-    "status status"
-    "main main";
-  gap: 6px 10px;
+  display: flex;
+  flex-direction: column;
   height: 100vh;
   height: 100dvh;
-  max-width: none;
-  padding: 12px clamp(12px, 3vw, 32px);
   overflow: hidden;
 }
 
@@ -377,48 +413,18 @@ body.pseudo-fullscreen .tagline {
   display: none;
 }
 
-html:fullscreen body > header, body.pseudo-fullscreen > header {
-  grid-area: title;
-  align-self: center;
-  margin: 0;
-  min-width: 0;
+html:fullscreen .topbar, body.pseudo-fullscreen .topbar {
+  flex: none;
+  margin-bottom: 6px;
 }
+
 html:fullscreen h1, body.pseudo-fullscreen h1 {
   font-size: var(--fs-lg);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/*
- * Same button count as normal mode plus a title genuinely doesn't fit a
- * phone's width (ScrollScore's equivalent toolbar has fewer buttons) — a
- * couple of visible letters before the ellipsis reads as broken, not as a
- * title, so below this width the title steps aside entirely and the
- * controls simply take the full row. The controls themselves are
- * unaffected either way, which is the part that must never change.
- */
-@media (max-width: 680px) {
-  html:fullscreen body > header, body.pseudo-fullscreen > header { display: none; }
-  html:fullscreen body, html:-webkit-full-screen body, body.pseudo-fullscreen {
-    grid-template-columns: 1fr;
-    grid-template-areas:
-      "controls"
-      "status"
-      "main";
-  }
-  html:fullscreen .controls, body.pseudo-fullscreen .controls { justify-self: end; }
-}
-
-html:fullscreen .controls, body.pseudo-fullscreen .controls {
-  grid-area: controls;
-  align-self: center;
 }
 
 html:fullscreen #status, body.pseudo-fullscreen #status {
-  grid-area: status;
-  align-self: center;
-  margin: 0;
+  flex: none;
+  margin: 0 0 6px;
   flex-wrap: nowrap;
   overflow-x: auto;
 }
@@ -431,7 +437,7 @@ html:fullscreen .countdown, body.pseudo-fullscreen .countdown {
 }
 
 html:fullscreen main, body.pseudo-fullscreen main {
-  grid-area: main;
+  flex: 1;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -463,7 +469,7 @@ html:fullscreen .score-frame, body.pseudo-fullscreen .score-frame {
   /* Every button becomes its icon so the row still fits on one line. */
   .btn { width: 36px; height: 36px; padding: 0; }
   .btn .btn-label { display: none; }
-  select { font-size: var(--fs-xs); padding: 6px 4px; }
+  .grade-select { font-size: var(--fs-xs); padding: 6px 4px; }
 }
 
 @media (max-width: 560px) {
@@ -474,7 +480,8 @@ html:fullscreen .score-frame, body.pseudo-fullscreen .score-frame {
   .countdown { font-size: 32px; min-width: 52px; }
   .meta { gap: 6px 16px; }
 
-  .score-frame { padding: 12px 8px; }
+  .score-frame { padding: 48px 8px 12px; }
+  .grade-select { top: 10px; left: 8px; }
   .message { font-size: var(--fs-xs); }
 }
 

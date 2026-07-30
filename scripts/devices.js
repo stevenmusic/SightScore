@@ -69,6 +69,9 @@ for (const device of DEVICES) {
   const idle = await page.evaluate(() => {
     const root = document.documentElement;
     const controls = document.querySelector('.controls');
+    const titleBlock = document.querySelector('.title-block');
+    const scoreFrame = document.getElementById('score-frame');
+    const grade = document.getElementById('grade');
     const meta = document.getElementById('meta');
     const values = [...meta.querySelectorAll('dd')];
     const lineHeight = values.length
@@ -86,6 +89,10 @@ for (const device of DEVICES) {
       (system) => system.bars.length === 1 && totalBars > 1,
     ).length;
     const fullscreenButton = document.getElementById('fullscreen');
+    const titleBlockBox = titleBlock.getBoundingClientRect();
+    const controlsBox = controls.getBoundingClientRect();
+    const gradeBox = grade.getBoundingClientRect();
+    const scoreFrameBox = scoreFrame.getBoundingClientRect();
 
     return {
       fullscreenButtonUsable: !!fullscreenButton && !fullscreenButton.disabled,
@@ -100,6 +107,15 @@ for (const device of DEVICES) {
       singleBarRows,
       totalRows: layout.systems.length,
       zoom: window.__osmd.zoom,
+      // Title on the left, controls on the right, same row — this must hold
+      // identically whether the page is in normal or fullscreen mode.
+      titleLeftOfControls: titleBlockBox.width < 1 || controlsBox.left >= titleBlockBox.right - 1,
+      titleAndControlsShareRow:
+        Math.min(titleBlockBox.bottom, controlsBox.bottom) - Math.max(titleBlockBox.top, controlsBox.top) > 4,
+      // The grade selector lives over the score frame's own white area, not
+      // in the controls row.
+      gradeInsideScoreFrame: gradeBox.left >= scoreFrameBox.left - 1 && gradeBox.top >= scoreFrameBox.top - 1,
+      gradeNotInControls: !controls.contains(grade),
     };
   });
 
@@ -110,6 +126,10 @@ for (const device of DEVICES) {
   }
   if (idle.controlsOverflow) problems.push(`${device.name}: controls overflow their panel`);
   if (!idle.buttonsVisible) problems.push(`${device.name}: a control has no width`);
+  if (!idle.titleLeftOfControls) problems.push(`${device.name}: title is not left of the controls`);
+  if (!idle.titleAndControlsShareRow) problems.push(`${device.name}: title and controls don't share the same row`);
+  if (!idle.gradeInsideScoreFrame) problems.push(`${device.name}: grade selector isn't positioned over the score frame`);
+  if (!idle.gradeNotInControls) problems.push(`${device.name}: grade selector is still inside the controls row`);
   for (const value of idle.wrappedValues) {
     problems.push(`${device.name}: metadata value wraps onto two lines — "${value}"`);
   }
@@ -194,15 +214,14 @@ for (const device of DEVICES) {
   const stopped = await page.evaluate(() => !document.getElementById('play').classList.contains('is-active'));
   if (!stopped) problems.push(`${device.name}: #stop did not work`);
 
-  // Fullscreen is a dedicated distraction-free view modelled on
-  // ScrollScore's toolbar: a title on the left with the controls to its
-  // right on the same row, at exactly their normal-mode size — never a
-  // fullscreen-specific size, so a button must not change size or move
-  // when fullscreen toggles. Checked twice: once through the real
+  // Fullscreen is a dedicated distraction-free view that reuses the exact
+  // same title-left/controls-right row as normal mode — no fullscreen-
+  // specific rearrangement or resizing, so a button must not change size
+  // or move when fullscreen toggles. Checked twice: once through the real
   // Fullscreen API, once through the CSS fallback that browsers with no
   // Element.requestFullscreen (older iOS Safari) need instead.
   const buttonBoxesOf = () => page.evaluate(() => {
-    const ids = ['grade', 'generate', 'prepare', 'play', 'stop', 'fullscreen', 'download'];
+    const ids = ['generate', 'prepare', 'play', 'stop', 'fullscreen'];
     return Object.fromEntries(ids.map((id) => {
       const box = document.getElementById(id).getBoundingClientRect();
       return [id, { width: box.width, height: box.height }];
@@ -218,53 +237,55 @@ for (const device of DEVICES) {
     }
 
     const before = await buttonBoxesOf();
+    const beforeControlsBox = await page.evaluate(
+      () => document.querySelector('.controls').getBoundingClientRect().toJSON(),
+    );
     await page.click('#fullscreen');
     await page.waitForTimeout(500);
     const entered = await page.evaluate(() => {
       const status = document.getElementById('status');
       const controls = document.querySelector('.controls');
-      const header = document.querySelector('header');
+      const titleBlock = document.querySelector('.title-block');
       const footer = document.querySelector('footer');
       const message = document.getElementById('message');
       const scoreFrame = document.getElementById('score-frame');
+      const grade = document.getElementById('grade');
       const isHidden = (el) => !el || getComputedStyle(el).display === 'none';
-      const ids = ['grade', 'generate', 'prepare', 'play', 'stop', 'fullscreen', 'download'];
+      const ids = ['generate', 'prepare', 'play', 'stop', 'fullscreen'];
       const reachable = ids.every((id) => {
         const el = document.getElementById(id);
         const box = el.getBoundingClientRect();
         const atPoint = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
         return box.width > 0 && box.height > 0 && (atPoint === el || el.contains(atPoint));
       });
-      const headerBox = header.getBoundingClientRect();
+      const titleBlockBox = titleBlock.getBoundingClientRect();
       const controlsBox = controls.getBoundingClientRect();
       const statusBox = status.getBoundingClientRect();
+      const scoreFrameBox = scoreFrame.getBoundingClientRect();
+      const gradeBox = grade.getBoundingClientRect();
+      const gradeReachable = (() => {
+        const atPoint = document.elementFromPoint(gradeBox.x + gradeBox.width / 2, gradeBox.y + gradeBox.height / 2);
+        return gradeBox.width > 0 && gradeBox.height > 0 && (atPoint === grade || grade.contains(atPoint));
+      })();
       const layout = window.__stage.measure();
       const totalBars = layout.bars.size;
-      // Below 680px the title steps aside entirely rather than truncating
-      // to one barely-visible letter (ScrollScore's equivalent toolbar has
-      // fewer buttons and so more room) — the controls unaffected either way.
-      const narrow = window.innerWidth <= 680;
-      const titleShown = !isHidden(header) && headerBox.height > 0;
       return {
         active: window.__isFullscreen(),
-        narrow,
-        titleOk: narrow ? !titleShown : titleShown,
         taglineHidden: isHidden(document.querySelector('.tagline')),
         footerHidden: isHidden(footer),
         messageHidden: isHidden(message),
         countdownVisible: getComputedStyle(document.getElementById('countdown')).display !== 'none',
         controlsVisible: controlsBox.height > 0,
-        // Title and controls share the top row (centered within a row of
-        // differing heights, so tops won't match exactly — check they
-        // share a vertical band instead), controls on the right. Narrow:
-        // no title to share with, controls just need to be on the right.
-        titleRowOk: narrow
-          ? true
-          : Math.min(headerBox.bottom, controlsBox.bottom) - Math.max(headerBox.top, controlsBox.top) > 4
-            && controlsBox.right >= headerBox.right,
+        // Same invariant as normal mode: title on the left, controls on the
+        // right, sharing one row — never a separate fullscreen-only layout.
+        titleLeftOfControls: titleBlockBox.width < 1 || controlsBox.left >= titleBlockBox.right - 1,
+        titleAndControlsShareRow:
+          Math.min(titleBlockBox.bottom, controlsBox.bottom) - Math.max(titleBlockBox.top, controlsBox.top) > 4,
         // The meta strip sits on its own row below the title row, not
         // overlapping either the title row or the score.
-        statusBelowTitle: statusBox.top >= (narrow ? controlsBox.bottom : Math.max(headerBox.bottom, controlsBox.bottom)) - 1,
+        statusBelowTitle: statusBox.top >= controlsBox.bottom - 1,
+        gradeInsideScoreFrame: gradeBox.left >= scoreFrameBox.left - 1 && gradeBox.top >= scoreFrameBox.top - 1,
+        gradeReachable,
         // The score box must size to its own content, not clip to whatever
         // height <main> has room for — checked by scrolling <main> all the
         // way down and confirming the box's background still extends to
@@ -278,21 +299,37 @@ for (const device of DEVICES) {
     });
 
     if (!entered.active) problems.push(`${device.name}: fullscreen (${mode}) did not activate`);
-    if (!entered.titleOk) {
-      problems.push(`${device.name}: fullscreen (${mode}) title visibility is wrong for its width (narrow=${entered.narrow})`);
-    }
     if (!entered.taglineHidden) problems.push(`${device.name}: fullscreen (${mode}) still shows the tagline`);
     if (!entered.footerHidden) problems.push(`${device.name}: fullscreen (${mode}) still shows the footer`);
     if (!entered.messageHidden) problems.push(`${device.name}: fullscreen (${mode}) still shows the status message`);
     if (!entered.countdownVisible) problems.push(`${device.name}: fullscreen (${mode}) hid the countdown`);
     if (!entered.controlsVisible) problems.push(`${device.name}: fullscreen (${mode}) hid the controls`);
-    if (!entered.titleRowOk) problems.push(`${device.name}: fullscreen (${mode}) title/controls aren't sharing the top row correctly`);
+    if (!entered.titleLeftOfControls) problems.push(`${device.name}: fullscreen (${mode}) title is not left of the controls`);
+    if (!entered.titleAndControlsShareRow) problems.push(`${device.name}: fullscreen (${mode}) title/controls aren't sharing the top row`);
     if (!entered.statusBelowTitle) problems.push(`${device.name}: fullscreen (${mode}) meta strip isn't below the title row`);
+    if (!entered.gradeInsideScoreFrame) problems.push(`${device.name}: fullscreen (${mode}) grade selector isn't positioned over the score frame`);
+    if (!entered.gradeReachable) problems.push(`${device.name}: fullscreen (${mode}) grade selector is unreachable`);
     if (!entered.reachable) problems.push(`${device.name}: fullscreen (${mode}) made a control unreachable`);
     if (entered.pageScrollsY) problems.push(`${device.name}: fullscreen (${mode}) page itself scrolls vertically (should be the score only)`);
     if (entered.pageScrollsX) problems.push(`${device.name}: fullscreen (${mode}) scrolls sideways`);
     if (entered.singleBarRows > 0) {
       problems.push(`${device.name}: fullscreen (${mode}) leaves ${entered.singleBarRows} single-bar line(s)`);
+    }
+
+    // The controls row's horizontal position (left/right edges) must not
+    // shift between normal and fullscreen mode — this is the exact bug
+    // reported: fullscreen used to rearrange title/controls into a
+    // different grid area, moving the buttons to a different spot.
+    const afterControlsBox = await page.evaluate(
+      () => document.querySelector('.controls').getBoundingClientRect().toJSON(),
+    );
+    if (Math.abs(beforeControlsBox.left - afterControlsBox.left) > 1
+      || Math.abs(beforeControlsBox.right - afterControlsBox.right) > 1) {
+      problems.push(
+        `${device.name}: fullscreen (${mode}) moved the controls row horizontally `
+        + `(left ${Math.round(beforeControlsBox.left)}->${Math.round(afterControlsBox.left)}, `
+        + `right ${Math.round(beforeControlsBox.right)}->${Math.round(afterControlsBox.right)})`,
+      );
     }
 
     // Buttons must be pixel-identical to normal mode — no fullscreen-

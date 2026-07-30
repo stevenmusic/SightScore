@@ -15,7 +15,6 @@ const elements = {
   stop: document.getElementById('stop'),
   fullscreen: document.getElementById('fullscreen'),
   fullscreenIcon: document.getElementById('fullscreenIcon'),
-  download: document.getElementById('download'),
   status: document.getElementById('status'),
   countdown: document.getElementById('countdown'),
   countdownValue: document.getElementById('countdown-value'),
@@ -131,7 +130,6 @@ async function init() {
     stopFollowing();
     setPlayState(false);
   });
-  elements.download.addEventListener('click', downloadXml);
   elements.fullscreen.addEventListener('click', toggleFullscreen);
   document.addEventListener('fullscreenchange', () => onFullscreenChange(!!document.fullscreenElement));
   document.addEventListener('webkitfullscreenchange', () => onFullscreenChange(!!document.webkitFullscreenElement));
@@ -192,7 +190,6 @@ async function newTest() {
   elements.play.disabled = false;
   elements.stop.disabled = false;
   elements.fullscreen.disabled = false;
-  elements.download.disabled = false;
   elements.countdownValue.textContent = String(rules.exam.preparationSeconds);
   elements.countdown.className = 'countdown';
   elements.checklist.hidden = true;
@@ -481,18 +478,6 @@ function togglePlayback() {
       startFollowing();
     })
     .catch((error) => fail('播放失敗', error.message));
-}
-
-function downloadXml() {
-  if (!current) return;
-  const { score, xml } = current;
-  const name = `sightscore-g${score.grade}-${score.seed}.musicxml`;
-  const url = URL.createObjectURL(new Blob([xml], { type: 'application/vnd.recordare.musicxml+xml' }));
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = name;
-  link.click();
-  URL.revokeObjectURL(url);
 }
 
 function updateHistoryInfo() {
