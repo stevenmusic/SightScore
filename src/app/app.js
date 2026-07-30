@@ -317,6 +317,12 @@ function onFullscreenChange(active) {
   elements.fullscreen.setAttribute('aria-label', active ? '退出全螢幕' : '全螢幕顯示');
   elements.fullscreen.title = active ? '退出全螢幕' : '全螢幕顯示';
   elements.fullscreen.classList.toggle('is-active', active);
+  if (active) {
+    // Fullscreen pins the page to exactly one screen (only the score scrolls,
+    // inside <main>) — a scroll position left over from before entering can
+    // otherwise push the whole grid, top bar included, out of view.
+    window.scrollTo(0, 0);
+  }
   // The available width just changed (relaxed max-width, or the address bar
   // disappearing); re-run the same fit used on resize so lines don't strand
   // a single bar.

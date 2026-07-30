@@ -323,28 +323,105 @@ footer {
 /* ---------- fullscreen ---------- */
 
 /*
- * Fullscreen is applied to <html>, not to the score frame — nothing is
- * hidden or reparented, so the countdown/status strip and the controls stay
- * exactly where they are, just with the browser chrome gone and more room to
- * breathe. Only the centred max-width needs relaxing so the extra width is
- * actually used. `.pseudo-fullscreen` is the same effect for browsers with no
- * Element.requestFullscreen (older iOS Safari): pin the page to the
- * viewport instead of asking the browser to go fullscreen.
+ * Fullscreen is a dedicated distraction-free reading view, not just "the
+ * same page with the browser chrome gone": the title, the status message and
+ * the footer all disappear, and the countdown/meta strip + every control
+ * collapse onto one row pinned to the top — everything else on screen is the
+ * score. A CSS grid does this without moving anything in the DOM: `#status`
+ * and `.controls` are unrelated siblings, but grid-area lets two siblings
+ * share one row (meta on the left, controls on the right) purely in CSS.
+ * `.pseudo-fullscreen` gives browsers with no Element.requestFullscreen
+ * (older iOS Safari) the same layout by pinning the page to the viewport
+ * instead of asking the browser to go fullscreen.
  */
+html:fullscreen, html:-webkit-full-screen { overflow: hidden; }
+
 html:fullscreen body,
 html:-webkit-full-screen body,
 body.pseudo-fullscreen {
+  display: grid;
+  /* minmax(0, 1fr): a bare 1fr won't shrink below its content's min-content
+     width, so on a narrow phone the meta strip and the button row together
+     overflow the viewport instead of sharing it — minmax(0, ...) lets this
+     column give way to `.controls`, which gets priority since its buttons
+     must all stay reachable. */
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto 1fr;
+  grid-template-areas:
+    "status controls"
+    "main main";
+  gap: 10px;
+  height: 100vh;
+  height: 100dvh;
   max-width: none;
-  padding-left: clamp(16px, 4vw, 56px);
-  padding-right: clamp(16px, 4vw, 56px);
+  padding: 12px clamp(12px, 3vw, 32px);
+  overflow: hidden;
 }
 
 body.pseudo-fullscreen {
   position: fixed;
   inset: 0;
-  overflow-y: auto;
   z-index: 1000;
   background: var(--bg);
+}
+
+html:fullscreen body > header,
+html:fullscreen body > footer,
+html:fullscreen #message,
+html:fullscreen #checklist,
+body.pseudo-fullscreen > header,
+body.pseudo-fullscreen > footer,
+body.pseudo-fullscreen #message,
+body.pseudo-fullscreen #checklist {
+  display: none;
+}
+
+html:fullscreen #status, body.pseudo-fullscreen #status {
+  grid-area: status;
+  align-self: center;
+  margin: 0;
+  min-width: 0;
+}
+
+html:fullscreen .controls, body.pseudo-fullscreen .controls {
+  grid-area: controls;
+  align-self: center;
+}
+
+/*
+ * The button row alone is already close to a phone's full width, so on a
+ * narrow screen the meta strip has nowhere to go but a second line — only
+ * the button row is required to stay single-line ("不換行" in the request
+ * describes the button row specifically). Dropping the meta strip's labels
+ * (dt) and shrinking the countdown still buys back enough room that most
+ * widths fit everything on the one line anyway.
+ */
+html:fullscreen .meta dt, body.pseudo-fullscreen .meta dt { display: none; }
+html:fullscreen .meta, body.pseudo-fullscreen .meta { gap: 4px 14px; }
+html:fullscreen .meta dd, body.pseudo-fullscreen .meta dd { font-size: var(--fs-xs); white-space: nowrap; }
+html:fullscreen .countdown, body.pseudo-fullscreen .countdown {
+  font-size: 26px;
+  min-width: 0;
+}
+
+@media (max-width: 680px) {
+  html:fullscreen .controls, body.pseudo-fullscreen .controls { gap: 4px; padding: 8px 6px; }
+  html:fullscreen .btn, body.pseudo-fullscreen .btn { width: 30px; height: 30px; }
+  html:fullscreen select, body.pseudo-fullscreen select { font-size: var(--fs-2xs); padding: 4px 2px; }
+}
+
+html:fullscreen main, body.pseudo-fullscreen main {
+  grid-area: main;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+html:fullscreen .score-frame, body.pseudo-fullscreen .score-frame {
+  flex: 1;
+  min-height: 0;
+  margin-top: 0;
 }
 
 ::backdrop { background: var(--bg); }

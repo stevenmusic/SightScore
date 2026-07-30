@@ -5,8 +5,9 @@
  *
  * Fails if the page scrolls sideways, if a control overflows its panel, if the
  * metadata strip wraps a value onto two lines, if the score lays out with a
- * bar alone on its own line, or if fullscreen (real or the CSS fallback) hides
- * the countdown/status strip or makes a control unreachable.
+ * bar alone on its own line, or if fullscreen (real or the CSS fallback)
+ * doesn't collapse into its dedicated view — title/message/footer/checklist
+ * hidden, meta strip and controls sharing one top row, score filling the rest.
  */
 import { chromium } from 'playwright';
 import { createServer } from 'node:http';
@@ -193,11 +194,13 @@ for (const device of DEVICES) {
   const stopped = await page.evaluate(() => !document.getElementById('play').classList.contains('is-active'));
   if (!stopped) problems.push(`${device.name}: #stop did not work`);
 
-  // Fullscreen goes on <html>, not the score frame — nothing is hidden or
-  // reparented, so the countdown/status strip and every control should stay
-  // exactly where they are and stay clickable. Checked twice: once through
-  // the real Fullscreen API, once through the CSS fallback that browsers
-  // with no Element.requestFullscreen (older iOS Safari) need instead.
+  // Fullscreen is a dedicated distraction-free view: the title, the status
+  // message and the footer disappear; the countdown/meta strip and every
+  // control collapse onto one row pinned to the top (meta on the left,
+  // controls on the right, no wrap); everything else is the score. Checked
+  // twice: once through the real Fullscreen API, once through the CSS
+  // fallback that browsers with no Element.requestFullscreen (older iOS
+  // Safari) need instead.
   for (const mode of ['api', 'fallback']) {
     if (mode === 'fallback') {
       await page.evaluate(() => {
@@ -211,6 +214,11 @@ for (const device of DEVICES) {
     const entered = await page.evaluate(() => {
       const status = document.getElementById('status');
       const controls = document.querySelector('.controls');
+      const header = document.querySelector('header');
+      const footer = document.querySelector('footer');
+      const message = document.getElementById('message');
+      const scoreFrame = document.getElementById('score-frame');
+      const isHidden = (el) => !el || getComputedStyle(el).display === 'none';
       const ids = ['grade', 'generate', 'prepare', 'play', 'stop', 'fullscreen', 'download'];
       const reachable = ids.every((id) => {
         const el = document.getElementById(id);
@@ -218,41 +226,59 @@ for (const device of DEVICES) {
         const atPoint = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
         return box.width > 0 && box.height > 0 && (atPoint === el || el.contains(atPoint));
       });
+      const statusBox = status.getBoundingClientRect();
+      const controlsBox = controls.getBoundingClientRect();
       const layout = window.__stage.measure();
       const totalBars = layout.bars.size;
       return {
         active: window.__isFullscreen(),
-        statusVisible: !status.hidden && status.getBoundingClientRect().height > 0,
+        headerHidden: isHidden(header),
+        footerHidden: isHidden(footer),
+        messageHidden: isHidden(message),
         countdownVisible: getComputedStyle(document.getElementById('countdown')).display !== 'none',
-        controlsVisible: controls.getBoundingClientRect().height > 0,
+        controlsVisible: controlsBox.height > 0,
+        // Meta strip and controls must share one row (top bar), not stack.
+        // They're centered within a shared row of differing heights (a 44px
+        // countdown next to 38px buttons), so tops won't match exactly —
+        // check they share a vertical band instead of one sitting above/below.
+        sameRow: Math.min(statusBox.bottom, controlsBox.bottom) - Math.max(statusBox.top, controlsBox.top) > 8,
+        controlsOnRight: controlsBox.right >= statusBox.right,
+        // The score should fill essentially the rest of the viewport.
+        scoreFrameFillsRest: scoreFrame.getBoundingClientRect().height
+          > (window.innerHeight - controlsBox.bottom) * 0.6,
         reachable,
+        pageScrollsY: document.documentElement.scrollHeight > document.documentElement.clientHeight + 1,
         pageScrollsX: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
         singleBarRows: layout.systems.filter((s) => s.bars.length === 1 && totalBars > 1).length,
       };
     });
 
     if (!entered.active) problems.push(`${device.name}: fullscreen (${mode}) did not activate`);
-    if (!entered.statusVisible) problems.push(`${device.name}: fullscreen (${mode}) hid the status/countdown strip`);
+    if (!entered.headerHidden) problems.push(`${device.name}: fullscreen (${mode}) still shows the title`);
+    if (!entered.footerHidden) problems.push(`${device.name}: fullscreen (${mode}) still shows the footer`);
+    if (!entered.messageHidden) problems.push(`${device.name}: fullscreen (${mode}) still shows the status message`);
     if (!entered.countdownVisible) problems.push(`${device.name}: fullscreen (${mode}) hid the countdown`);
     if (!entered.controlsVisible) problems.push(`${device.name}: fullscreen (${mode}) hid the controls`);
+    if (!entered.sameRow) problems.push(`${device.name}: fullscreen (${mode}) meta strip and controls aren't on one row`);
+    if (!entered.controlsOnRight) problems.push(`${device.name}: fullscreen (${mode}) controls aren't on the right`);
+    if (!entered.scoreFrameFillsRest) problems.push(`${device.name}: fullscreen (${mode}) score doesn't fill the rest of the screen`);
     if (!entered.reachable) problems.push(`${device.name}: fullscreen (${mode}) made a control unreachable`);
+    if (entered.pageScrollsY) problems.push(`${device.name}: fullscreen (${mode}) page itself scrolls vertically (should be the score only)`);
     if (entered.pageScrollsX) problems.push(`${device.name}: fullscreen (${mode}) scrolls sideways`);
     if (entered.singleBarRows > 0) {
       problems.push(`${device.name}: fullscreen (${mode}) leaves ${entered.singleBarRows} single-bar line(s)`);
     }
 
-    // The 30-second preparation countdown must still run and stay visible
-    // while fullscreen — the whole reason fullscreen is on <html> rather
-    // than just the score frame.
+    // The 30-second preparation countdown number must still run, but the
+    // checklist text is exactly the kind of extra text fullscreen drops.
     await page.click('#prepare');
     await page.waitForTimeout(300);
     const preparing = await page.evaluate(() => ({
-      checklistVisible: !document.getElementById('checklist').hidden,
+      checklistHidden: getComputedStyle(document.getElementById('checklist')).display === 'none',
       countdownRunning: document.getElementById('countdown').classList.contains('running'),
     }));
-    if (!preparing.checklistVisible || !preparing.countdownRunning) {
-      problems.push(`${device.name}: fullscreen (${mode}) preparation countdown did not run/show`);
-    }
+    if (!preparing.checklistHidden) problems.push(`${device.name}: fullscreen (${mode}) still shows the checklist text`);
+    if (!preparing.countdownRunning) problems.push(`${device.name}: fullscreen (${mode}) preparation countdown did not run`);
 
     await page.click('#fullscreen');
     await page.waitForTimeout(500);
