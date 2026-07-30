@@ -265,6 +265,28 @@ body.has-fullscreen-frame { overflow: hidden; }
 .score-frame.is-fullscreen .stage { width: 100%; }
 .score-frame.is-fullscreen .score { min-width: 0; }
 
+/*
+ * Every necessary action — grade, generate, prepare, play, stop, download —
+ * lives in .controls. Fullscreen (real or the CSS fallback) removes
+ * everything outside .score-frame from both view and hit-testing, so without
+ * this the whole toolbar became unusable the moment fullscreen started.
+ * stage.js physically moves the .controls node in here (not a duplicate
+ * toolbar, so there's only ever one set of listeners/state) — this rule just
+ * gives it somewhere to sit once it arrives: position:absolute takes it out
+ * of the frame's flex layout entirely, so it floats as a bottom bar without
+ * disturbing .stage's centring.
+ */
+.score-frame.is-fullscreen .controls {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 7;
+  margin: 0;
+  background: rgba(244, 238, 224, .95);
+  backdrop-filter: blur(6px);
+}
+
 .frame-action {
   position: absolute;
   top: 12px;

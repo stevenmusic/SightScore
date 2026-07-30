@@ -220,7 +220,7 @@ for (const device of DEVICES) {
 
   // Pressing "prepare" should go fullscreen on its own (the 30-second look at
   // the whole test), the same way #fullscreen does, without needing a second
-  // click. Generating a new test should then leave it again.
+  // click.
   {
     const before = await page.evaluate(() => document.getElementById('score-frame').classList.contains('is-fullscreen'));
     await page.click('#prepare');
@@ -228,12 +228,63 @@ for (const device of DEVICES) {
     const duringPrepare = await page.evaluate(() => document.getElementById('score-frame').classList.contains('is-fullscreen'));
     if (before) problems.push(`${device.name}: fullscreen was already active before testing #prepare`);
     if (!duringPrepare) problems.push(`${device.name}: #prepare did not enter fullscreen`);
+  }
 
+  // Every necessary action must stay usable while fullscreen — generate,
+  // prepare, play, stop, download, grade. Fullscreen (real or the CSS
+  // fallback) removes everything outside #score-frame from both view and
+  // hit-testing, so before .controls was reparented into the frame, every
+  // one of these was visible but literally unclickable: a hit-test at the
+  // button's own centre landed on the frame, not the button.
+  {
+    const reach = await page.evaluate(() => {
+      const ids = ['grade', 'generate', 'prepare', 'play', 'stop', 'download'];
+      return Object.fromEntries(ids.map((id) => {
+        const el = document.getElementById(id);
+        const box = el.getBoundingClientRect();
+        const atPoint = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+        return [id, box.width > 0 && box.height > 0 && (atPoint === el || el.contains(atPoint))];
+      }));
+    });
+    for (const [id, reachable] of Object.entries(reach)) {
+      if (!reachable) problems.push(`${device.name}: #${id} is not reachable while fullscreen`);
+    }
+  }
+
+  // Generating a new test must NOT leave fullscreen — that would defeat the
+  // point of putting generate inside the frame at all. A real user auditions
+  // several tests in a row without dropping out.
+  {
     await page.click('#generate');
     await page.waitForFunction(() => document.querySelector('#score svg'), { timeout: 20000 });
     await page.waitForTimeout(400);
-    const afterNewTest = await page.evaluate(() => document.getElementById('score-frame').classList.contains('is-fullscreen'));
-    if (afterNewTest) problems.push(`${device.name}: generating a new test did not leave fullscreen`);
+    const stillFullscreen = await page.evaluate(() => document.getElementById('score-frame').classList.contains('is-fullscreen'));
+    if (!stillFullscreen) problems.push(`${device.name}: generating a new test while fullscreen left fullscreen`);
+  }
+
+  // Play and stop must actually work while fullscreen, not just be present.
+  {
+    await page.click('#play');
+    await page.waitForTimeout(600);
+    const playing = await page.evaluate(() => document.getElementById('play').classList.contains('is-active'));
+    if (!playing) problems.push(`${device.name}: #play did not activate while fullscreen`);
+    await page.click('#stop');
+    await page.waitForTimeout(300);
+    const stopped = await page.evaluate(() => !document.getElementById('play').classList.contains('is-active'));
+    if (!stopped) problems.push(`${device.name}: #stop did not work while fullscreen`);
+  }
+
+  // Leaving fullscreen must put .controls back exactly where it started —
+  // immediately before #status — not merely "somewhere in the body".
+  {
+    await page.click('#fullscreen');
+    await page.waitForTimeout(500);
+    const restored = await page.evaluate(() => {
+      const controls = document.querySelector('.controls');
+      const status = document.getElementById('status');
+      return controls.parentElement === document.body && controls.nextElementSibling === status;
+    });
+    if (!restored) problems.push(`${device.name}: .controls was not restored to its original position on exiting fullscreen`);
   }
 
   await page.close();

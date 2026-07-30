@@ -24,7 +24,9 @@ const TEXT_ALLOWANCE = 30;
 const TOP_INSET = 8;
 
 export function createStage(elements) {
-  const { frame, stage, scroller, score, playline, highlight, fullscreen } = elements;
+  const {
+    frame, stage, scroller, score, playline, highlight, fullscreen, controls, controlsHome,
+  } = elements;
 
   /** @type {{bars: Map<number, object>, systems: object[], scale: number}} */
   let layout = { bars: new Map(), systems: [], scale: 1 };
@@ -195,12 +197,39 @@ export function createStage(elements) {
    */
   let pseudoFullscreen = false;
 
+  /*
+   * Fullscreen (real or CSS-fallback) removes everything outside `frame` from
+   * both view and interaction — a real fullscreen element paints over
+   * everything else, and the pseudo one's position:fixed sits on top of it.
+   * Generate/prepare/play/stop/download/grade all live in `.controls`,
+   * outside the frame, so entering fullscreen made every one of them
+   * unreachable (visible in the DOM, but a hit-test at their coordinates
+   * lands on `frame`, not on them — confirmed by probing
+   * elementFromPoint() at each button's centre while fullscreen).
+   *
+   * Moving the actual `.controls` node into the frame (rather than building
+   * a second, duplicate toolbar) keeps one set of listeners and state; only
+   * its position changes. `controlsHome` is the node `.controls` sits
+   * immediately before in the document, so `.before()` restores it exactly.
+   */
+  function relocateControls(active) {
+    if (!controls) return;
+    if (active) {
+      if (controls.parentElement !== frame) frame.appendChild(controls);
+    } else if (controlsHome && controls.parentElement !== controlsHome.parentElement) {
+      controlsHome.before(controls);
+    }
+  }
+
   function applyFullscreenState(active, pseudo) {
     frame.classList.toggle('is-fullscreen', active);
     frame.classList.toggle('is-pseudo-fullscreen', active && pseudo);
     document.body.classList.toggle('has-fullscreen-frame', active && pseudo);
     fullscreen.setAttribute('aria-label', active ? '離開全螢幕' : '全螢幕');
     fullscreen.title = active ? '離開全螢幕' : '全螢幕檢視整首樂譜';
+    // Before onFullscreenChange (fitScore), so it measures the toolbar's
+    // real height once already relocated, and leaves room above it.
+    relocateControls(active);
     elements.onFullscreenChange?.(active);
   }
 

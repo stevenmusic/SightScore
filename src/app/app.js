@@ -7,6 +7,7 @@ import { createStage, barTimings } from './stage.js';
 const STORAGE_KEY = 'sightscore.history.v1';
 
 const elements = {
+  controls: document.querySelector('.controls'),
   grade: document.getElementById('grade'),
   generate: document.getElementById('generate'),
   prepare: document.getElementById('prepare'),
@@ -122,6 +123,10 @@ async function init() {
     playline: elements.playline,
     highlight: elements.highlight,
     fullscreen: elements.fullscreen,
+    // .controls sits immediately before #status in the document; that's
+    // where it's restored to when leaving fullscreen.
+    controls: elements.controls,
+    controlsHome: elements.status,
     onFullscreenChange: fitScore,
   });
 
@@ -151,8 +156,10 @@ async function newTest() {
   player.stop();
   stopFollowing();
   setPlayState(false);
-  // A fresh test invalidates whatever was on screen during prep fullscreen.
-  stage?.exitFullscreen().catch(() => {});
+  // Fullscreen is deliberately left alone here: generate is one of the
+  // controls reparented into the frame while fullscreen (see stage.js), so a
+  // real user can audition several tests in a row without ever dropping out
+  // of it. Forcing an exit on every new test defeats that.
 
   // Start fetching the piano samples now, so the first press of play is
   // immediate — same moment ScrollScore loads them, once there is a score.
@@ -282,8 +289,16 @@ async function fitScore(isFullscreen) {
 
   if (isFullscreen) {
     const style = getComputedStyle(elements.frame);
+    // The controls toolbar is an overlay pinned to the bottom of the frame
+    // (see stage.js's relocateControls) — it doesn't push the frame's own
+    // box around, so its height has to be subtracted by hand or the fitted
+    // score would render underneath it instead of stopping above it.
+    const controlsBar = elements.controls;
+    const overlayHeight = controlsBar && controlsBar.parentElement === elements.frame
+      ? controlsBar.getBoundingClientRect().height + 24
+      : 0;
     const availableHeight = elements.frame.clientHeight
-      - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+      - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom) - overlayHeight;
 
     let low = 0.35;
     let high = 1.6;
