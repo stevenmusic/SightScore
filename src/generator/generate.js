@@ -56,6 +56,28 @@ const TEMPO_BPM = {
 };
 
 /**
+ * From Grade 6 the specimen books print an actual piece title above the
+ * tempo/character word, not just the tempo word on its own (confirmed
+ * against the Grade 6-8 specimen books — "Aria" / Molto moderato, "Prelude" /
+ * Allegro giusto, "Procession" / Alla marcia, etc.). Original titles in the
+ * same spirit — dance forms and short character pieces — not the specific
+ * titles those books use.
+ */
+const TITLES = [
+  'Prelude', 'Nocturne', 'Impromptu', 'Reverie', 'Caprice', 'Intermezzo', 'Arabesque',
+  'Barcarolle', 'Berceuse', 'Elegy', 'Serenade', 'Aubade', 'Rhapsody', 'Toccata',
+  'Minuet', 'Waltz', 'Gigue', 'Bolero', 'Mazurka', 'Polka', 'Gavotte', 'Sarabande',
+  'Tarantella', 'Habanera', 'Polonaise',
+  'Morning Light', 'Evening Song', 'Distant Bells', 'Running Stream', 'Mountain Path',
+  'City Lights', 'Falling Snow', 'Summer Breeze', 'Autumn Leaves', "Winter's Tale",
+  'Clockwork Toy', 'Puppet Dance', 'Midnight Journey', 'Whirlwind', 'Lantern Festival',
+  'Silver Moon', 'Garden Path', 'Storm Clouds', 'Quiet Harbour', 'Wandering Star',
+  'Forest Whisper', 'Village Fair', 'Market Square', 'Old Clock Tower', 'Sunlit Meadow',
+  'Rolling Waves', 'Frosty Morning', 'Firefly Dance', 'Hidden Valley', 'Carnival',
+  'Shadow Play', 'Restless Spirit', 'Homeward Bound', 'Fleeting Moment', 'Golden Hour',
+];
+
+/**
  * @param {object} rulesTable parsed abrsm-piano-grades.json
  * @param {{grade: number, seed?: number}} options
  */
@@ -105,6 +127,7 @@ export function generateTest(rulesTable, options) {
     barDuration: meter.barDuration,
     tempoTerm,
     tempoBpm: TEMPO_BPM[tempoTerm] ?? 96,
+    title: grade >= 6 ? rng.pick(TITLES) : null,
     progression,
     staves: { 1: rightHand, 2: leftHand },
   };
