@@ -149,6 +149,8 @@ async function newTest() {
   player.stop();
   stopFollowing();
   setPlayState(false);
+  // A fresh test invalidates whatever was on screen during prep fullscreen.
+  stage?.exitFullscreen().catch(() => {});
 
   // Start fetching the piano samples now, so the first press of play is
   // immediate — same moment ScrollScore loads them, once there is a score.
@@ -219,7 +221,16 @@ function startCountdown() {
   elements.checklist.innerHTML = PREPARATION_STEPS
     .map((step) => `<li>${escapeHtml(step)}</li>`)
     .join('');
-  say('準備時間：照下面的順序看譜。');
+  say('準備時間：全螢幕顯示整份樂譜，時間到會自動返回。');
+
+  // The real exam hands over the whole page for these 30 seconds — go
+  // fullscreen for the same reason the follow view exists at all: the next
+  // line needs to already be in sight. enterFullscreen() is called directly
+  // from this click handler (nothing awaited before it), which is what the
+  // Fullscreen API's user-gesture rule requires.
+  stage.enterFullscreen().catch(() => {
+    /* refused or unsupported; the countdown still runs in the normal view */
+  });
 
   countdownTimer = setInterval(() => {
     remaining -= 1;
@@ -228,6 +239,7 @@ function startCountdown() {
       stopCountdown();
       elements.countdown.className = 'countdown done';
       elements.checklist.hidden = true;
+      stage.exitFullscreen().catch(() => {});
       // Continuity outscores accuracy: going back to fix a slip is counted as
       // a second mistake.
       say('時間到——不要停、不要回頭改，彈完再按播放比對。');
