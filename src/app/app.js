@@ -251,28 +251,85 @@ function setPlayState(playing) {
 }
 
 /**
- * The whole test always renders on the page — no fullscreen step, no cropped
- * follow-window — so the only thing left to fit is width: OSMD wraps a
- * measure onto its own line whenever it doesn't fit next to the one before
- * it, and a lone bar on a line reads like a badly-set page. Shrink the
- * engraving until every line holds at least two, or bottom out at a size
- * that's still legible.
+ * Shrinks zoom, re-rendering each step, until no line holds only a single
+ * bar (unreadable) or the legibility floor is hit. Returns the layout from
+ * the last render. Whatever `EngravingRules.RenderXMeasuresPerLineAkaSystem`
+ * is currently set to stays in effect across every render in the loop — used
+ * both unforced (to find a legible natural size) and forced (since that rule
+ * is a target, not a guarantee: if the forced bar count doesn't actually fit
+ * the container at the current zoom, OSMD still wraps it further, splitting
+ * one intended line into several, sometimes down to single bars each).
  */
-async function fitScore() {
-  if (!current || !osmd) return;
-  osmd.zoom = BASE_ZOOM;
+function shrinkUntilNoSingleBarLines(zoom) {
+  osmd.zoom = zoom;
   osmd.render();
   let layout = stage.measure();
-
-  let zoom = BASE_ZOOM;
-  const singleBarLine = () => layout.systems.some(
-    (system) => system.bars.length === 1 && layout.bars.size > 1,
-  );
-  while (zoom > MIN_ZOOM && singleBarLine()) {
+  while (zoom > MIN_ZOOM && hasSingleBarLine(layout)) {
     zoom = Math.max(MIN_ZOOM, zoom * 0.92);
     osmd.zoom = zoom;
     osmd.render();
     layout = stage.measure();
+  }
+  return { layout, zoom };
+}
+
+function hasSingleBarLine(layout) {
+  return layout.bars.size > 1 && layout.systems.some((system) => system.bars.length === 1);
+}
+
+/**
+ * Picks a uniform bars-per-line count for `RenderXMeasuresPerLineAkaSystem`.
+ * That rule isn't a "share the remainder with the last line" split — it's a
+ * flat chunking of every `n` bars into a line, so any remainder becomes an
+ * extra, undersized final line (`n=3` on 10 bars renders 3+3+3+1, not
+ * 3+3+4). Search for the `n` that keeps the result closest to `targetLines`
+ * lines, ruling out any `n` that would strand a single bar on its own line,
+ * preferring an exact divisor (no remainder line at all) on ties.
+ */
+function chooseMeasuresPerLine(totalBars, targetLines) {
+  let best = null;
+  for (let n = 2; n <= totalBars; n++) {
+    if (totalBars % n === 1) continue; // would leave one bar alone on the last line
+    const lines = Math.ceil(totalBars / n);
+    const score = Math.abs(lines - targetLines) * 10 - (totalBars % n === 0 ? 1 : 0);
+    if (!best || score < best.score || (score === best.score && n > best.n)) best = { n, score };
+  }
+  return best.n;
+}
+
+/**
+ * The whole test always renders on the page — no fullscreen step, no cropped
+ * follow-window — so the only fitting left to do is layout: OSMD's own line
+ * breaking is a greedy fill (pack bars onto a line until the next one
+ * doesn't fit), which both leaves a lone bar on a line when the content
+ * doesn't happen to divide evenly, and tends to front-load the earlier lines
+ * since they're filled first (they're packed to the same width limit, but
+ * bar-to-bar width varies with note density, so the count that fits varies
+ * with it too). Two passes fix both: shrink zoom until the *natural* wrap
+ * has no single-bar lines (establishing a legible size and how many lines
+ * the piece needs), then force a uniform bars-per-line count via
+ * `RenderXMeasuresPerLineAkaSystem` chosen to match that many lines without
+ * ever stranding a single bar alone. On a narrow-enough screen even that can
+ * still fail to fit at the legibility floor — falling back to the natural
+ * wrap (already confirmed single-bar-free) is safer than an uneven split
+ * that reintroduces the very problem being fixed.
+ */
+async function fitScore() {
+  if (!current || !osmd) return;
+  osmd.EngravingRules.RenderXMeasuresPerLineAkaSystem = 0;
+  const natural = shrinkUntilNoSingleBarLines(BASE_ZOOM);
+  const totalBars = natural.layout.bars.size;
+  const lineCount = natural.layout.systems.length;
+  if (lineCount <= 1 || totalBars <= lineCount) return;
+
+  const perLine = chooseMeasuresPerLine(totalBars, lineCount);
+  osmd.EngravingRules.RenderXMeasuresPerLineAkaSystem = perLine;
+  const forced = shrinkUntilNoSingleBarLines(natural.zoom);
+  if (hasSingleBarLine(forced.layout)) {
+    osmd.EngravingRules.RenderXMeasuresPerLineAkaSystem = 0;
+    osmd.zoom = natural.zoom;
+    osmd.render();
+    stage.measure();
   }
 }
 
