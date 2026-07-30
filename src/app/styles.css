@@ -273,6 +273,42 @@ body.has-fullscreen-frame { overflow: hidden; }
   background: rgba(255, 253, 246, .92);
 }
 
+/*
+ * Only appears while actually fullscreen — in the normal view the status
+ * strip above the frame already shows the countdown, so this would be a
+ * redundant second clock. JS toggles [hidden] to match whether a countdown is
+ * running at all; this rule additionally requires .is-fullscreen so the
+ * element never shows up outside it even if JS forgets to hide it.
+ */
+.frame-countdown {
+  display: none;
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 6;
+  align-items: baseline;
+  gap: 2px;
+  background: rgba(255, 253, 246, .92);
+  border: 1px solid var(--gold);
+  border-radius: var(--radius-pill);
+  padding: 6px 14px;
+  box-shadow: var(--shadow-sm);
+  font-family: "Noto Serif TC", serif;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 22px;
+  color: var(--gold);
+}
+
+.score-frame.is-fullscreen .frame-countdown:not([hidden]) { display: flex; }
+
+.frame-countdown .unit {
+  font-family: "Noto Sans TC", sans-serif;
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  color: var(--muted);
+}
+
 /* ---------- playback follow view ---------- */
 
 .stage { position: relative; }

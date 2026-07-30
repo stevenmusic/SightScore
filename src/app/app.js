@@ -17,6 +17,8 @@ const elements = {
   status: document.getElementById('status'),
   countdown: document.getElementById('countdown'),
   countdownValue: document.getElementById('countdown-value'),
+  frameCountdown: document.getElementById('frame-countdown'),
+  frameCountdownValue: document.getElementById('frame-countdown-value'),
   meta: document.getElementById('meta'),
   score: document.getElementById('score'),
   frame: document.getElementById('score-frame'),
@@ -179,6 +181,7 @@ async function newTest() {
   elements.countdownValue.textContent = String(rules.exam.preparationSeconds);
   elements.countdown.className = 'countdown';
   elements.checklist.hidden = true;
+  elements.frameCountdown.hidden = true;
   updateHistoryInfo();
 }
 
@@ -221,6 +224,11 @@ function startCountdown() {
   elements.checklist.innerHTML = PREPARATION_STEPS
     .map((step) => `<li>${escapeHtml(step)}</li>`)
     .join('');
+  // Mirrors the main countdown: entering fullscreen removes #status (a
+  // sibling of .score-frame) from view entirely, so the seconds have to be
+  // shown again from inside the frame itself.
+  elements.frameCountdownValue.textContent = String(remaining);
+  elements.frameCountdown.hidden = false;
   say('準備時間：全螢幕顯示整份樂譜，時間到會自動返回。');
 
   // The real exam hands over the whole page for these 30 seconds — go
@@ -234,11 +242,14 @@ function startCountdown() {
 
   countdownTimer = setInterval(() => {
     remaining -= 1;
-    elements.countdownValue.textContent = String(Math.max(remaining, 0));
+    const display = String(Math.max(remaining, 0));
+    elements.countdownValue.textContent = display;
+    elements.frameCountdownValue.textContent = display;
     if (remaining <= 0) {
       stopCountdown();
       elements.countdown.className = 'countdown done';
       elements.checklist.hidden = true;
+      elements.frameCountdown.hidden = true;
       stage.exitFullscreen().catch(() => {});
       // Continuity outscores accuracy: going back to fix a slip is counted as
       // a second mistake.
@@ -300,6 +311,7 @@ async function fitScore(isFullscreen) {
 function startFollowing() {
   if (!current || !stage.begin()) return;
   const { secondsPerBar } = barTimings(current.score);
+  const totalBars = current.score.barCount;
 
   const step = () => {
     const elapsed = player.elapsed;
@@ -309,8 +321,21 @@ function startFollowing() {
     }
     if (elapsed >= 0) {
       const position = elapsed / secondsPerBar;
-      const bar = Math.min(Math.floor(position) + 1, current.score.barCount);
-      stage.update(bar, position - Math.floor(position));
+      /*
+       * Playback keeps running for a couple of seconds after the last note —
+       * the reverb tail — before onEnd fires and stops this loop, but
+       * `elapsed` keeps climbing that whole time. Left unclamped, `position`
+       * sails past `totalBars` and its fractional part keeps cycling 0→1, so
+       * the playhead swept back across the final bar and re-played it, which
+       * is the "last bar repeats" symptom. Freeze at the end of the last bar
+       * once the test itself is actually finished.
+       */
+      if (position >= totalBars) {
+        stage.update(totalBars, 1);
+      } else {
+        const bar = Math.floor(position) + 1;
+        stage.update(bar, position - Math.floor(position));
+      }
     }
     followFrame = requestAnimationFrame(step);
   };

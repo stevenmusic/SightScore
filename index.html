@@ -68,6 +68,17 @@
 
   <main>
     <div class="score-frame" id="score-frame">
+      <!--
+        The main countdown lives in #status, a sibling of this frame — once
+        the frame goes fullscreen (real Fullscreen API removes everything
+        else from the render tree; the CSS fallback covers it with
+        position:fixed), that countdown becomes invisible. This mirrors it,
+        shown only while both fullscreen and the countdown are active.
+      -->
+      <div class="frame-countdown" id="frame-countdown" hidden>
+        <span id="frame-countdown-value">30</span><span class="unit">秒</span>
+      </div>
+
       <button class="btn icon-only frame-action" id="fullscreen" aria-label="全螢幕" title="全螢幕檢視整首樂譜">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path id="fullscreenIcon" d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>
       </button>
