@@ -10,7 +10,9 @@
 import { createRandom, randomSeed } from './random.js';
 import { createKey, dstepRange, degreeOf, pitchAt } from './theory.js';
 import { buildProgression } from './harmony.js';
-import { assignPitches, stackChordTones, soundingTimeline, harmoniseLeadingNotes } from './melody.js';
+import {
+  assignPitches, stackChordTones, soundingTimeline, harmoniseLeadingNotes, harmoniseRepeatedLeadingNotes,
+} from './melody.js';
 import { DIVISIONS, cellsFor, fillBar, wholeBarRest } from './rhythm.js';
 import { meterInfo, rescaleCells } from './meter.js';
 
@@ -113,6 +115,11 @@ export function generateTest(rulesTable, options) {
     against: soundingTimeline(leftHand, meter.barDuration),
   });
   harmoniseLeadingNotes([rightHand, leftHand], key, meter.barDuration);
+  // The cross-hand reconciliation above can itself leave a repeated note
+  // disagreeing with itself within one hand (it only checks the two hands
+  // against each other, not a hand against its own immediate repeat).
+  harmoniseRepeatedLeadingNotes(rightHand, key);
+  harmoniseRepeatedLeadingNotes(leftHand, key);
 
   const tempoTerm = rng.pick(rules.tempoTerms);
   const score = {

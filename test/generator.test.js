@@ -315,6 +315,34 @@ test('no false relations between the hands', () => {
   }
 });
 
+test('a repeated note never disagrees with itself on the raised 7th', () => {
+  // resolveClashes (dodging the other hand) and harmoniseLeadingNotes
+  // (reconciling the two hands) can each flip just one occurrence of a
+  // repeated scale-degree-7 note to its natural form — e.g. a G minor test
+  // whose bass sat on G/D printed the melody's F# immediately followed by
+  // F-natural, an obvious wrong note no real test would write. Every
+  // immediately repeated pitch within one hand must agree with itself.
+  for (const grade of GRADES) {
+    for (const seed of SEEDS) {
+      const score = generateTest(rules, { grade, seed });
+      if (score.key.mode !== 'minor') continue;
+
+      for (const staffNumber of [1, 2]) {
+        const notes = soundingEvents({ events: score.staves[staffNumber].flatMap((bar) => bar.events) });
+        for (let i = 1; i < notes.length; i++) {
+          const previous = notes[i - 1];
+          const current = notes[i];
+          if (current.dstep !== previous.dstep) continue;
+          assert.equal(
+            current.raiseSeventh, previous.raiseSeventh,
+            `grade ${grade} seed ${seed} staff ${staffNumber}: repeated note disagrees with itself on the raised 7th`,
+          );
+        }
+      }
+    }
+  }
+});
+
 test('a melodic hand develops fresh rhythm rather than leaning on repetition', () => {
   // A genuine accompaniment (Grade 2-3's left hand, once the hands play
   // together) is *supposed* to repeat one figure for the whole piece — real

@@ -139,6 +139,10 @@ export function assignPitches({ rng, key, bars, progression, window, options, ag
   fixAugmentedSeconds(bars, key);
   // Both repairs move pitches after the vertical check, so verify once more.
   resolveClashes({ bars, key, window, against, barDuration, finalEvent: endOnTonic ? finalEvent : null });
+  // resolveClashes can leave a repeated note disagreeing with itself (see
+  // harmoniseRepeatedLeadingNotes) — check that last, since it depends on
+  // whatever resolveClashes just decided.
+  harmoniseRepeatedLeadingNotes(bars, key);
   return bars;
 }
 
@@ -361,6 +365,35 @@ function resolveClashes({ bars, key, window, against, barDuration, finalEvent })
 
 function clashesWith(midi, sounding) {
   return sounding.some((other) => NEVER_INTERVALS.has(Math.abs(midi - other) % 12));
+}
+
+/**
+ * A repeated note — the melody landing on the same scale degree twice in a
+ * row — has to agree with itself on whether the 7th is raised. Both
+ * `resolveClashes` (dodging a clash against the other hand) and
+ * `harmoniseLeadingNotes` (reconciling a clash between the hands) can flip
+ * just one occurrence to its natural form, leaving the immediately
+ * adjacent repeat still raised: an F# followed immediately by F-natural
+ * (or the reverse), which no real melody writes. The natural form is
+ * always safe — the same rule `harmoniseLeadingNotes` uses between the
+ * hands — so force both occurrences to it rather than leaving one raised.
+ * Called once per hand inside `assignPitches` (catching what
+ * `resolveClashes` does) and once more after the cross-hand
+ * `harmoniseLeadingNotes` pass (catching what that introduces).
+ */
+export function harmoniseRepeatedLeadingNotes(bars, key) {
+  if (!key.isMinor) return;
+  const notes = bars.flatMap((bar) => bar.events.filter((event) => !event.rest));
+  for (let i = 1; i < notes.length; i++) {
+    const previous = notes[i - 1];
+    const current = notes[i];
+    if (current.dstep !== previous.dstep) continue;
+    if (current.raiseSeventh === previous.raiseSeventh) continue;
+    for (const note of [previous, current]) {
+      note.raiseSeventh = false;
+      note.pitch = pitchAt(note.dstep, key, { raiseSeventh: false });
+    }
+  }
 }
 
 /**
