@@ -7,7 +7,6 @@ import { createStage, barTimings } from './stage.js';
 const STORAGE_KEY = 'sightscore.history.v1';
 
 const elements = {
-  controls: document.querySelector('.controls'),
   grade: document.getElementById('grade'),
   generate: document.getElementById('generate'),
   prepare: document.getElementById('prepare'),
@@ -18,16 +17,10 @@ const elements = {
   status: document.getElementById('status'),
   countdown: document.getElementById('countdown'),
   countdownValue: document.getElementById('countdown-value'),
-  frameCountdown: document.getElementById('frame-countdown'),
-  frameCountdownValue: document.getElementById('frame-countdown-value'),
   meta: document.getElementById('meta'),
   score: document.getElementById('score'),
-  frame: document.getElementById('score-frame'),
-  stage: document.getElementById('stage'),
-  scroller: document.getElementById('scroller'),
   playline: document.getElementById('playline'),
   highlight: document.getElementById('measure-highlight'),
-  fullscreen: document.getElementById('fullscreen'),
   message: document.getElementById('message'),
   checklist: document.getElementById('checklist'),
   historyInfo: document.getElementById('history-info'),
@@ -55,8 +48,10 @@ let stage = null;
 let current = null;
 let countdownTimer = null;
 let followFrame = null;
-/** Zoom chosen for the normal view, restored when leaving fullscreen. */
+let resizeTimer = null;
 const BASE_ZOOM = 1;
+/** Below this, engraving reads as too small to sight-read from. */
+const MIN_ZOOM = 0.5;
 
 const CONFIDENCE_LABEL = {
   verified: null,
@@ -116,19 +111,11 @@ async function init() {
   window.__osmd = osmd; // debugging hook, also used by scripts/smoke.js
 
   stage = createStage({
-    frame: elements.frame,
-    stage: elements.stage,
-    scroller: elements.scroller,
     score: elements.score,
     playline: elements.playline,
     highlight: elements.highlight,
-    fullscreen: elements.fullscreen,
-    // .controls sits immediately before #status in the document; that's
-    // where it's restored to when leaving fullscreen.
-    controls: elements.controls,
-    controlsHome: elements.status,
-    onFullscreenChange: fitScore,
   });
+  window.__stage = stage; // debugging hook, also used by scripts/devices.js
 
   elements.generate.disabled = false;
   elements.generate.addEventListener('click', newTest);
@@ -148,6 +135,14 @@ async function init() {
     if (current) newTest();
   });
 
+  // Bars per line depend on the container's actual width, so a resize (or a
+  // phone rotating) can turn a fine layout into single-bar rows again.
+  window.addEventListener('resize', () => {
+    if (!current) return;
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => { fitScore(); }, 200);
+  });
+
   updateHistoryInfo();
 }
 
@@ -156,10 +151,6 @@ async function newTest() {
   player.stop();
   stopFollowing();
   setPlayState(false);
-  // Fullscreen is deliberately left alone here: generate is one of the
-  // controls reparented into the frame while fullscreen (see stage.js), so a
-  // real user can audition several tests in a row without ever dropping out
-  // of it. Forcing an exit on every new test defeats that.
 
   // Start fetching the piano samples now, so the first press of play is
   // immediate — same moment ScrollScore loads them, once there is a score.
@@ -179,7 +170,7 @@ async function newTest() {
     return;
   }
 
-  stage.measure();
+  await fitScore();
   showMeta(score);
   elements.status.hidden = false;
   elements.play.disabled = false;
@@ -188,7 +179,6 @@ async function newTest() {
   elements.countdownValue.textContent = String(rules.exam.preparationSeconds);
   elements.countdown.className = 'countdown';
   elements.checklist.hidden = true;
-  elements.frameCountdown.hidden = true;
   updateHistoryInfo();
 }
 
@@ -231,33 +221,15 @@ function startCountdown() {
   elements.checklist.innerHTML = PREPARATION_STEPS
     .map((step) => `<li>${escapeHtml(step)}</li>`)
     .join('');
-  // Mirrors the main countdown: entering fullscreen removes #status (a
-  // sibling of .score-frame) from view entirely, so the seconds have to be
-  // shown again from inside the frame itself.
-  elements.frameCountdownValue.textContent = String(remaining);
-  elements.frameCountdown.hidden = false;
-  say('準備時間：全螢幕顯示整份樂譜，時間到會自動返回。');
-
-  // The real exam hands over the whole page for these 30 seconds — go
-  // fullscreen for the same reason the follow view exists at all: the next
-  // line needs to already be in sight. enterFullscreen() is called directly
-  // from this click handler (nothing awaited before it), which is what the
-  // Fullscreen API's user-gesture rule requires.
-  stage.enterFullscreen().catch(() => {
-    /* refused or unsupported; the countdown still runs in the normal view */
-  });
+  say('準備時間：整份樂譜已經在畫面上，時間到會提示開始。');
 
   countdownTimer = setInterval(() => {
     remaining -= 1;
-    const display = String(Math.max(remaining, 0));
-    elements.countdownValue.textContent = display;
-    elements.frameCountdownValue.textContent = display;
+    elements.countdownValue.textContent = String(Math.max(remaining, 0));
     if (remaining <= 0) {
       stopCountdown();
       elements.countdown.className = 'countdown done';
       elements.checklist.hidden = true;
-      elements.frameCountdown.hidden = true;
-      stage.exitFullscreen().catch(() => {});
       // Continuity outscores accuracy: going back to fix a slip is counted as
       // a second mistake.
       say('時間到——不要停、不要回頭改，彈完再按播放比對。');
@@ -279,48 +251,29 @@ function setPlayState(playing) {
 }
 
 /**
- * Fit the whole test on screen. In fullscreen the point is to read it in one
- * go, so the engraving is scaled down until it fits both ways.
+ * The whole test always renders on the page — no fullscreen step, no cropped
+ * follow-window — so the only thing left to fit is width: OSMD wraps a
+ * measure onto its own line whenever it doesn't fit next to the one before
+ * it, and a lone bar on a line reads like a badly-set page. Shrink the
+ * engraving until every line holds at least two, or bottom out at a size
+ * that's still legible.
  */
-async function fitScore(isFullscreen) {
+async function fitScore() {
   if (!current || !osmd) return;
   osmd.zoom = BASE_ZOOM;
   osmd.render();
+  let layout = stage.measure();
 
-  if (isFullscreen) {
-    const style = getComputedStyle(elements.frame);
-    // The controls toolbar is an overlay pinned to the bottom of the frame
-    // (see stage.js's relocateControls) — it doesn't push the frame's own
-    // box around, so its height has to be subtracted by hand or the fitted
-    // score would render underneath it instead of stopping above it.
-    const controlsBar = elements.controls;
-    const overlayHeight = controlsBar && controlsBar.parentElement === elements.frame
-      ? controlsBar.getBoundingClientRect().height + 24
-      : 0;
-    const availableHeight = elements.frame.clientHeight
-      - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom) - overlayHeight;
-
-    let low = 0.35;
-    let high = 1.6;
-    let best = null;
-    for (let pass = 0; pass < 6 && high - low > 0.04; pass++) {
-      const zoom = (low + high) / 2;
-      osmd.zoom = zoom;
-      osmd.render();
-      const box = elements.score.querySelector('svg')?.getBoundingClientRect();
-      if (box && box.height <= availableHeight) {
-        best = zoom;
-        low = zoom;
-      } else {
-        high = zoom;
-      }
-    }
-    if (best !== null && osmd.zoom !== best) {
-      osmd.zoom = best;
-      osmd.render();
-    }
+  let zoom = BASE_ZOOM;
+  const singleBarLine = () => layout.systems.some(
+    (system) => system.bars.length === 1 && layout.bars.size > 1,
+  );
+  while (zoom > MIN_ZOOM && singleBarLine()) {
+    zoom = Math.max(MIN_ZOOM, zoom * 0.92);
+    osmd.zoom = zoom;
+    osmd.render();
+    layout = stage.measure();
   }
-  stage.measure();
 }
 
 function startFollowing() {

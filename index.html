@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="src/app/styles.css?v=5">
+  <link rel="stylesheet" href="src/app/styles.css?v=6">
   <!--
     Loaded from vendor/ rather than node_modules/ so the page works as a plain
     static site (GitHub Pages) with no build step and no npm install.
@@ -68,31 +68,13 @@
 
   <main>
     <div class="score-frame" id="score-frame">
-      <!--
-        The main countdown lives in #status, a sibling of this frame — once
-        the frame goes fullscreen (real Fullscreen API removes everything
-        else from the render tree; the CSS fallback covers it with
-        position:fixed), that countdown becomes invisible. This mirrors it,
-        shown only while both fullscreen and the countdown are active.
-      -->
-      <div class="frame-countdown" id="frame-countdown" hidden>
-        <span id="frame-countdown-value">30</span><span class="unit">秒</span>
-      </div>
-
-      <button class="btn icon-only frame-action" id="fullscreen" aria-label="全螢幕" title="全螢幕檢視整首樂譜">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path id="fullscreenIcon" d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>
-      </button>
-
       <div class="stage" id="stage">
-        <div class="scroller" id="scroller">
-          <div class="measure-highlight" id="measure-highlight"></div>
-          <div id="score" class="score"></div>
-        </div>
+        <div class="measure-highlight" id="measure-highlight"></div>
+        <div id="score" class="score"></div>
         <div class="playline" id="playline"></div>
       </div>
     </div>
     <p id="message" class="message">選擇級數，按「產生新題目」開始。</p>
-    <p class="rotate-hint">畫面較窄時樂譜可左右滑動，播放時會自動跟著走；按右上角全螢幕可一次看完整首。</p>
     <ol class="checklist" id="checklist" hidden></ol>
   </main>
 
@@ -103,6 +85,6 @@
     <span id="confidence" class="badge" hidden></span>
   </footer>
 
-  <script type="module" src="src/app/app.js?v=5"></script>
+  <script type="module" src="src/app/app.js?v=6"></script>
 </body>
 </html>
