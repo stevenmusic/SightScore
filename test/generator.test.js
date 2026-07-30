@@ -315,6 +315,44 @@ test('no false relations between the hands', () => {
   }
 });
 
+test('a melodic hand develops fresh rhythm rather than leaning on repetition', () => {
+  // A genuine accompaniment (Grade 2-3's left hand, once the hands play
+  // together) is *supposed* to repeat one figure for the whole piece — real
+  // Alberti-bass-style accompaniments do exactly that (see buildStaff's
+  // `ostinato`) — so only the melodic hand is checked here: the right hand
+  // always, and the left hand once Grade 1's alternation or Grade 4+'s
+  // independent rhythms mean it isn't a fixed accompaniment figure.
+  const rhythmSignature = (bar) => bar.events.map((e) => `${e.rest ? 'r' : 'n'}${e.dur}.${e.dots ?? 0}`).join(',');
+  let repeated = 0;
+  let total = 0;
+
+  eachTest((score, gradeRules) => {
+    for (const [handKey, hand] of [[1, 'rightHand'], [2, 'leftHand']]) {
+      const isAccompaniment = hand === 'leftHand' && gradeRules.grade < 4 && gradeRules.texture.handsPlayTogether;
+      if (isAccompaniment) continue;
+
+      const seen = [];
+      for (const bar of score.staves[handKey]) {
+        const sig = rhythmSignature(bar);
+        total += 1;
+        if (seen.includes(sig)) repeated += 1;
+        seen.push(sig);
+      }
+    }
+  });
+
+  // Before buildStaff's motif-reuse mechanic was scoped down, 33-46% of a
+  // melodic hand's bars were an exact rhythmic clone of an earlier one —
+  // it kept echoing bars 1-2 specifically for the rest of the piece
+  // (instead of whichever phrase most recently played) at too high a
+  // chance (0.55) to begin with. Measured at ~29% after the fix.
+  const rate = repeated / total;
+  assert.ok(
+    rate <= 0.35,
+    `${(rate * 100).toFixed(1)}% of melodic-hand bars exactly repeat an earlier bar's rhythm`,
+  );
+});
+
 /** Absolute-time sounding notes of one staff. */
 function soundingTimeline(score, staffNumber) {
   const timeline = [];

@@ -176,6 +176,10 @@ function pickBarCount(rng, rules, timeSignature) {
 function buildStaff({ rng, rules, meter, barCount, hand, progression, key, silentBars = new Set(), against = null }) {
   const isLeft = hand === 'leftHand';
   const activity = rules.generatorHints.activity ?? 0.4;
+  // A supportive accompaniment role only exists once the hands actually
+  // sound together — Grade 1's hands alternate, so its "calm" hand is just
+  // taking its turn at the tune, not accompanying anything underneath it.
+  const isAccompaniment = isLeft && rules.grade < 4 && rules.texture.handsPlayTogether;
   const cells = rescaleCells(
     cellsFor(rules, {
       compound: meter.compound,
@@ -192,21 +196,46 @@ function buildStaff({ rng, rules, meter, barCount, hand, progression, key, silen
   const bank = [];
   const bars = [];
 
+  /*
+   * A real accompaniment (Grade 2-3's left hand under the melody) reads as
+   * one consistent figure for the whole piece — an Alberti-bass-style
+   * pattern, not a fresh rhythm drawn bar by bar — so pick that figure once
+   * and reuse it everywhere it applies, rather than leaving it to chance.
+   */
+  const ostinato = isAccompaniment
+    ? fillBar(rng, cells, meter.cellBeats, { restBudget, activity: activity * 0.7 }).events
+    : null;
+
   for (let barIndex = 0; barIndex < barCount; barIndex++) {
     const isFinalBar = barIndex === barCount - 1;
+    const isCadenceBar = isFinalBar || (silentBars.size && silentBars.has(barIndex + 1));
+    const isRegularBar = !silentBars.has(barIndex) && !isCadenceBar && !ostinato;
     let events;
 
     if (silentBars.has(barIndex)) {
       events = wholeBarRest(meter.barDuration);
-    } else if (isFinalBar || (silentBars.size && silentBars.has(barIndex + 1))) {
+    } else if (isCadenceBar) {
       // Cadence bar: end on a long note rather than a busy figure.
       const calm = cells.filter((cell) => cell.calm && !cell.rests);
       events = fillBar(rng, calm.length ? calm : cells, meter.cellBeats, {
         restBudget: 0,
         activity: activity * 0.4,
       }).events;
-    } else if (barIndex >= 2 && bank[barIndex % 2] && rng.chance(0.55)) {
-      // Motif reuse: bars 3–4 restate the rhythm of bars 1–2.
+    } else if (ostinato) {
+      events = ostinato.map((event) => ({ ...event }));
+    } else if (barIndex >= 2 && bank[barIndex % 2] && rng.chance(0.3)) {
+      /*
+       * Phrase echo: this bar restates the rhythm of the same position two
+       * bars back (bar 3 echoing bar 1, bar 4 echoing bar 2, and so on).
+       * `bank` is refreshed on every regular bar below, not just the first
+       * two — otherwise every later pair keeps echoing bars 1-2
+       * specifically forever, instead of echoing whichever phrase most
+       * recently played. The chance itself is also lower than it used to
+       * be (was 0.55): real specimens use this device occasionally, not as
+       * the dominant way bars get filled — at 0.55 measured 33-46% of a
+       * whole test's bars ending up an exact rhythmic clone of an earlier
+       * one, which read as far more repetitive than a real test.
+       */
       events = bank[barIndex % 2].map((event) => ({ ...event }));
     } else {
       const filled = fillBar(rng, cells, meter.cellBeats, {
@@ -214,8 +243,9 @@ function buildStaff({ rng, rules, meter, barCount, hand, progression, key, silen
         activity: isLeft ? activity * 0.7 : activity,
       });
       events = filled.events;
-      if (barIndex < 2) bank[barIndex] = events.map((event) => ({ ...event }));
     }
+
+    if (isRegularBar) bank[barIndex % 2] = events.map((event) => ({ ...event }));
 
     bars.push({ events, beatDuration: meter.beatDuration, directions: [] });
   }
