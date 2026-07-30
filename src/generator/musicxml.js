@@ -108,6 +108,8 @@ function renderDirection(direction, staffNumber) {
     out.push(`        <direction-type><wedge type="${type}"/></direction-type>`);
   } else if (direction.kind === 'words') {
     out.push(`        <direction-type><words font-style="italic">${escapeXml(direction.value)}</words></direction-type>`);
+  } else if (direction.kind === 'pedal') {
+    out.push(`        <direction-type><pedal type="${direction.type}" line="yes"/></direction-type>`);
   } else {
     return [];
   }

@@ -371,6 +371,23 @@ function applyExpression(rng, rules, score) {
       score.staves[1][score.barCount - 2]?.directions.push({ kind: 'words', value: 'rall.' });
     }
   }
+
+  if (rules.otherFeatures.some((feature) => feature.includes('踏板'))) {
+    addPedalMarking(rng, score);
+  }
+}
+
+/**
+ * One sustain-pedal span over a legato passage, shown under the bass staff
+ * (real engraving convention) rather than tied to any one hand's notes.
+ */
+function addPedalMarking(rng, score) {
+  if (score.barCount < 3) return;
+  const span = Math.min(rng.int(2, 4), score.barCount - 1);
+  const start = rng.int(0, score.barCount - 1 - span);
+  const end = start + span;
+  score.staves[2][start].directions.push({ kind: 'pedal', type: 'start' });
+  score.staves[2][end].directions.push({ kind: 'pedal', type: 'stop' });
 }
 
 const ORDER = ['ppp', 'pp', 'p', 'mp', 'mf', 'f', 'ff', 'fff'];
