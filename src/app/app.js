@@ -144,9 +144,17 @@ async function init() {
   });
 
   // Bars per line depend on the container's actual width, so a resize (or a
-  // phone rotating) can turn a fine layout into single-bar rows again.
+  // phone rotating) can turn a fine layout into single-bar rows again. Width
+  // only, not height: mobile Safari fires a resize event whenever its
+  // address bar auto-hides or reappears from ordinary page scrolling, which
+  // only changes innerHeight — refitting (and so re-rendering the score) on
+  // every one of those reset the scroll position, making the score appear
+  // to snap back to the top while simply scrolling down through it.
+  let lastWidth = window.innerWidth;
   window.addEventListener('resize', () => {
     if (!current) return;
+    if (window.innerWidth === lastWidth) return;
+    lastWidth = window.innerWidth;
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => { fitScore(); }, 200);
   });

@@ -323,13 +323,14 @@ footer {
 /* ---------- fullscreen ---------- */
 
 /*
- * Fullscreen is a dedicated distraction-free reading view, not just "the
- * same page with the browser chrome gone": the title, the status message and
- * the footer all disappear, and the countdown/meta strip + every control
- * collapse onto one row pinned to the top — everything else on screen is the
- * score. A CSS grid does this without moving anything in the DOM: `#status`
- * and `.controls` are unrelated siblings, but grid-area lets two siblings
- * share one row (meta on the left, controls on the right) purely in CSS.
+ * Fullscreen is a dedicated distraction-free reading view, modelled on
+ * ScrollScore's toolbar: a title on the left with the controls to its right
+ * on the same row, always the same size — nothing here is fullscreen-
+ * specific sizing, it's exactly the controls' normal-mode styling, so
+ * toggling fullscreen never makes a button change size or move. The status
+ * message, the footer and the preparation checklist's text still disappear
+ * (extra text this view has no room for); the countdown/meta strip gets its
+ * own row below the title so it can't compete with the controls for width.
  * `.pseudo-fullscreen` gives browsers with no Element.requestFullscreen
  * (older iOS Safari) the same layout by pinning the page to the viewport
  * instead of asking the browser to go fullscreen.
@@ -341,16 +342,16 @@ html:-webkit-full-screen body,
 body.pseudo-fullscreen {
   display: grid;
   /* minmax(0, 1fr): a bare 1fr won't shrink below its content's min-content
-     width, so on a narrow phone the meta strip and the button row together
-     overflow the viewport instead of sharing it — minmax(0, ...) lets this
-     column give way to `.controls`, which gets priority since its buttons
-     must all stay reachable. */
+     width — without it the title could force the row wider than the
+     viewport instead of giving way to `.controls`, which gets priority
+     since its buttons must all stay reachable and unchanged in size. */
   grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto auto 1fr;
   grid-template-areas:
-    "status controls"
+    "title controls"
+    "status status"
     "main main";
-  gap: 10px;
+  gap: 6px 10px;
   height: 100vh;
   height: 100dvh;
   max-width: none;
@@ -365,22 +366,48 @@ body.pseudo-fullscreen {
   background: var(--bg);
 }
 
-html:fullscreen body > header,
 html:fullscreen body > footer,
 html:fullscreen #message,
 html:fullscreen #checklist,
-body.pseudo-fullscreen > header,
+html:fullscreen .tagline,
 body.pseudo-fullscreen > footer,
 body.pseudo-fullscreen #message,
-body.pseudo-fullscreen #checklist {
+body.pseudo-fullscreen #checklist,
+body.pseudo-fullscreen .tagline {
   display: none;
 }
 
-html:fullscreen #status, body.pseudo-fullscreen #status {
-  grid-area: status;
+html:fullscreen body > header, body.pseudo-fullscreen > header {
+  grid-area: title;
   align-self: center;
   margin: 0;
   min-width: 0;
+}
+html:fullscreen h1, body.pseudo-fullscreen h1 {
+  font-size: var(--fs-lg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * Same button count as normal mode plus a title genuinely doesn't fit a
+ * phone's width (ScrollScore's equivalent toolbar has fewer buttons) — a
+ * couple of visible letters before the ellipsis reads as broken, not as a
+ * title, so below this width the title steps aside entirely and the
+ * controls simply take the full row. The controls themselves are
+ * unaffected either way, which is the part that must never change.
+ */
+@media (max-width: 680px) {
+  html:fullscreen body > header, body.pseudo-fullscreen > header { display: none; }
+  html:fullscreen body, html:-webkit-full-screen body, body.pseudo-fullscreen {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "controls"
+      "status"
+      "main";
+  }
+  html:fullscreen .controls, body.pseudo-fullscreen .controls { justify-self: end; }
 }
 
 html:fullscreen .controls, body.pseudo-fullscreen .controls {
@@ -388,45 +415,19 @@ html:fullscreen .controls, body.pseudo-fullscreen .controls {
   align-self: center;
 }
 
+html:fullscreen #status, body.pseudo-fullscreen #status {
+  grid-area: status;
+  align-self: center;
+  margin: 0;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+}
+html:fullscreen .meta, body.pseudo-fullscreen .meta { flex-wrap: nowrap; min-width: 0; }
 html:fullscreen .meta dt, body.pseudo-fullscreen .meta dt { display: none; }
-html:fullscreen .meta, body.pseudo-fullscreen .meta { gap: 4px 14px; }
 html:fullscreen .meta dd, body.pseudo-fullscreen .meta dd { font-size: var(--fs-xs); white-space: nowrap; }
 html:fullscreen .countdown, body.pseudo-fullscreen .countdown {
   font-size: 26px;
   min-width: 0;
-}
-
-/*
- * The button row alone is already close to a phone's full width, so sharing
- * it with the meta strip left the meta strip wrapping onto however many
- * lines its content happened to need — different key/metre/tempo text is a
- * different length, so that line count (and the row's height) changed on
- * every new test, and the button row rode up and down with it. Below this
- * width, give each its own full-width row instead: both then have a height
- * fixed by font-size alone, never by content, so the controls row's
- * position stays put — meta becomes a single line that scrolls sideways
- * on the rare test whose text doesn't fit, rather than wrapping.
- */
-@media (max-width: 680px) {
-  html:fullscreen body, html:-webkit-full-screen body, body.pseudo-fullscreen {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto auto 1fr;
-    grid-template-areas:
-      "status"
-      "controls"
-      "main";
-  }
-  html:fullscreen #status, body.pseudo-fullscreen #status {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-  }
-  html:fullscreen .meta, body.pseudo-fullscreen .meta {
-    flex-wrap: nowrap;
-    min-width: 0;
-  }
-  html:fullscreen .controls, body.pseudo-fullscreen .controls { gap: 4px; padding: 8px 6px; }
-  html:fullscreen .btn, body.pseudo-fullscreen .btn { width: 30px; height: 30px; }
-  html:fullscreen select, body.pseudo-fullscreen select { font-size: var(--fs-2xs); padding: 4px 2px; }
 }
 
 html:fullscreen main, body.pseudo-fullscreen main {

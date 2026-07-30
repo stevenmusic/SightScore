@@ -194,13 +194,21 @@ for (const device of DEVICES) {
   const stopped = await page.evaluate(() => !document.getElementById('play').classList.contains('is-active'));
   if (!stopped) problems.push(`${device.name}: #stop did not work`);
 
-  // Fullscreen is a dedicated distraction-free view: the title, the status
-  // message and the footer disappear; the countdown/meta strip and every
-  // control collapse onto one row pinned to the top (meta on the left,
-  // controls on the right, no wrap); everything else is the score. Checked
-  // twice: once through the real Fullscreen API, once through the CSS
-  // fallback that browsers with no Element.requestFullscreen (older iOS
-  // Safari) need instead.
+  // Fullscreen is a dedicated distraction-free view modelled on
+  // ScrollScore's toolbar: a title on the left with the controls to its
+  // right on the same row, at exactly their normal-mode size — never a
+  // fullscreen-specific size, so a button must not change size or move
+  // when fullscreen toggles. Checked twice: once through the real
+  // Fullscreen API, once through the CSS fallback that browsers with no
+  // Element.requestFullscreen (older iOS Safari) need instead.
+  const buttonBoxesOf = () => page.evaluate(() => {
+    const ids = ['grade', 'generate', 'prepare', 'play', 'stop', 'fullscreen', 'download'];
+    return Object.fromEntries(ids.map((id) => {
+      const box = document.getElementById(id).getBoundingClientRect();
+      return [id, { width: box.width, height: box.height }];
+    }));
+  });
+
   for (const mode of ['api', 'fallback']) {
     if (mode === 'fallback') {
       await page.evaluate(() => {
@@ -209,6 +217,7 @@ for (const device of DEVICES) {
       });
     }
 
+    const before = await buttonBoxesOf();
     await page.click('#fullscreen');
     await page.waitForTimeout(500);
     const entered = await page.evaluate(() => {
@@ -226,29 +235,36 @@ for (const device of DEVICES) {
         const atPoint = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
         return box.width > 0 && box.height > 0 && (atPoint === el || el.contains(atPoint));
       });
-      const statusBox = status.getBoundingClientRect();
+      const headerBox = header.getBoundingClientRect();
       const controlsBox = controls.getBoundingClientRect();
+      const statusBox = status.getBoundingClientRect();
       const layout = window.__stage.measure();
       const totalBars = layout.bars.size;
-      // Below 680px the meta strip and controls stack onto their own
-      // full-width rows instead of sharing one (see styles.css) — a phone
-      // couldn't fit both a legible meta strip and every button on one line.
-      const stacked = window.innerWidth <= 680;
+      // Below 680px the title steps aside entirely rather than truncating
+      // to one barely-visible letter (ScrollScore's equivalent toolbar has
+      // fewer buttons and so more room) — the controls unaffected either way.
+      const narrow = window.innerWidth <= 680;
+      const titleShown = !isHidden(header) && headerBox.height > 0;
       return {
         active: window.__isFullscreen(),
-        headerHidden: isHidden(header),
+        narrow,
+        titleOk: narrow ? !titleShown : titleShown,
+        taglineHidden: isHidden(document.querySelector('.tagline')),
         footerHidden: isHidden(footer),
         messageHidden: isHidden(message),
         countdownVisible: getComputedStyle(document.getElementById('countdown')).display !== 'none',
         controlsVisible: controlsBox.height > 0,
-        stacked,
-        // Wide: share a vertical band (centered within one row of differing
-        // heights, so tops won't match exactly). Narrow: controls sit on
-        // their own row below the meta strip, not overlapping it.
-        rowLayoutOk: stacked
-          ? controlsBox.top >= statusBox.bottom - 1
-          : Math.min(statusBox.bottom, controlsBox.bottom) - Math.max(statusBox.top, controlsBox.top) > 8,
-        controlsOnRight: stacked || controlsBox.right >= statusBox.right,
+        // Title and controls share the top row (centered within a row of
+        // differing heights, so tops won't match exactly — check they
+        // share a vertical band instead), controls on the right. Narrow:
+        // no title to share with, controls just need to be on the right.
+        titleRowOk: narrow
+          ? true
+          : Math.min(headerBox.bottom, controlsBox.bottom) - Math.max(headerBox.top, controlsBox.top) > 4
+            && controlsBox.right >= headerBox.right,
+        // The meta strip sits on its own row below the title row, not
+        // overlapping either the title row or the score.
+        statusBelowTitle: statusBox.top >= (narrow ? controlsBox.bottom : Math.max(headerBox.bottom, controlsBox.bottom)) - 1,
         // The score box must size to its own content, not clip to whatever
         // height <main> has room for — checked by scrolling <main> all the
         // way down and confirming the box's background still extends to
@@ -262,20 +278,30 @@ for (const device of DEVICES) {
     });
 
     if (!entered.active) problems.push(`${device.name}: fullscreen (${mode}) did not activate`);
-    if (!entered.headerHidden) problems.push(`${device.name}: fullscreen (${mode}) still shows the title`);
+    if (!entered.titleOk) {
+      problems.push(`${device.name}: fullscreen (${mode}) title visibility is wrong for its width (narrow=${entered.narrow})`);
+    }
+    if (!entered.taglineHidden) problems.push(`${device.name}: fullscreen (${mode}) still shows the tagline`);
     if (!entered.footerHidden) problems.push(`${device.name}: fullscreen (${mode}) still shows the footer`);
     if (!entered.messageHidden) problems.push(`${device.name}: fullscreen (${mode}) still shows the status message`);
     if (!entered.countdownVisible) problems.push(`${device.name}: fullscreen (${mode}) hid the countdown`);
     if (!entered.controlsVisible) problems.push(`${device.name}: fullscreen (${mode}) hid the controls`);
-    if (!entered.rowLayoutOk) {
-      problems.push(`${device.name}: fullscreen (${mode}) meta strip/controls layout is wrong (stacked=${entered.stacked})`);
-    }
-    if (!entered.controlsOnRight) problems.push(`${device.name}: fullscreen (${mode}) controls aren't on the right`);
+    if (!entered.titleRowOk) problems.push(`${device.name}: fullscreen (${mode}) title/controls aren't sharing the top row correctly`);
+    if (!entered.statusBelowTitle) problems.push(`${device.name}: fullscreen (${mode}) meta strip isn't below the title row`);
     if (!entered.reachable) problems.push(`${device.name}: fullscreen (${mode}) made a control unreachable`);
     if (entered.pageScrollsY) problems.push(`${device.name}: fullscreen (${mode}) page itself scrolls vertically (should be the score only)`);
     if (entered.pageScrollsX) problems.push(`${device.name}: fullscreen (${mode}) scrolls sideways`);
     if (entered.singleBarRows > 0) {
       problems.push(`${device.name}: fullscreen (${mode}) leaves ${entered.singleBarRows} single-bar line(s)`);
+    }
+
+    // Buttons must be pixel-identical to normal mode — no fullscreen-
+    // specific shrink, so toggling fullscreen never moves or resizes them.
+    const after = await buttonBoxesOf();
+    for (const id of Object.keys(before)) {
+      if (Math.abs(before[id].width - after[id].width) > 1 || Math.abs(before[id].height - after[id].height) > 1) {
+        problems.push(`${device.name}: fullscreen (${mode}) resized #${id} (${Math.round(before[id].width)}x${Math.round(before[id].height)} -> ${Math.round(after[id].width)}x${Math.round(after[id].height)})`);
+      }
     }
 
     // The score-frame box must actually cover the whole score, not clip
@@ -298,13 +324,13 @@ for (const device of DEVICES) {
     // key/metre/tempo text is a different length, and a height that
     // depends on that length previously made the controls row bob up and
     // down on every click instead of staying put.
-    const before = await page.evaluate(() => document.querySelector('.controls').getBoundingClientRect().top);
+    const rowBefore = await page.evaluate(() => document.querySelector('.controls').getBoundingClientRect().top);
     await page.click('#generate');
     await page.waitForFunction(() => document.getElementById('message').textContent !== '渲染中…', { timeout: 20000 });
     await page.waitForTimeout(200);
-    const after = await page.evaluate(() => document.querySelector('.controls').getBoundingClientRect().top);
-    if (Math.abs(before - after) > 1) {
-      problems.push(`${device.name}: fullscreen (${mode}) controls row moved after generating a new test (${Math.round(before)} -> ${Math.round(after)})`);
+    const rowAfter = await page.evaluate(() => document.querySelector('.controls').getBoundingClientRect().top);
+    if (Math.abs(rowBefore - rowAfter) > 1) {
+      problems.push(`${device.name}: fullscreen (${mode}) controls row moved after generating a new test (${Math.round(rowBefore)} -> ${Math.round(rowAfter)})`);
     }
 
     // The 30-second preparation countdown number must still run, but the
