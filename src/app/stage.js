@@ -163,27 +163,80 @@ export function createStage(elements) {
     const x = left + width * Math.min(Math.max(progress, 0), 1);
     playline.style.transform = `translateX(${x}px) translateY(${top - system.top * scale + TOP_INSET + TEXT_ALLOWANCE}px)`;
     playline.style.height = `${height}px`;
-  }
 
-  async function toggleFullscreen() {
-    if (document.fullscreenElement) {
-      await document.exitFullscreen();
-    } else if (frame.requestFullscreen) {
-      await frame.requestFullscreen({ navigationUI: 'hide' });
+    /*
+     * On a narrow screen the system is wider than the frame, so the playhead
+     * marches off the right edge and the music never follows it. Scroll the
+     * frame so the playhead stays about a third of the way in, which keeps
+     * what is coming next on screen.
+     */
+    const visible = frame.clientWidth;
+    if (frame.scrollWidth > visible + 1) {
+      const target = Math.max(0, Math.min(x - visible * 0.34, frame.scrollWidth - visible));
+      // Only nudge when it has drifted, so a manual scroll is not fought over.
+      if (Math.abs(frame.scrollLeft - target) > 2) frame.scrollLeft = target;
     }
   }
 
-  document.addEventListener('fullscreenchange', () => {
-    const active = document.fullscreenElement === frame;
+  /*
+   * iOS Safari does not implement Element.requestFullscreen — only <video>
+   * can go fullscreen there — so the button did nothing at all on iPhone and
+   * iPad. Fall back to filling the viewport with CSS, which works everywhere
+   * and looks the same to the reader.
+   */
+  let pseudoFullscreen = false;
+
+  function applyFullscreenState(active, pseudo) {
     frame.classList.toggle('is-fullscreen', active);
+    frame.classList.toggle('is-pseudo-fullscreen', active && pseudo);
+    document.body.classList.toggle('has-fullscreen-frame', active && pseudo);
     fullscreen.setAttribute('aria-label', active ? '離開全螢幕' : '全螢幕');
     fullscreen.title = active ? '離開全螢幕' : '全螢幕檢視整首樂譜';
     elements.onFullscreenChange?.(active);
+  }
+
+  function enterPseudoFullscreen() {
+    pseudoFullscreen = true;
+    applyFullscreenState(true, true);
+  }
+
+  function exitPseudoFullscreen() {
+    pseudoFullscreen = false;
+    applyFullscreenState(false, true);
+  }
+
+  async function toggleFullscreen() {
+    if (pseudoFullscreen) {
+      exitPseudoFullscreen();
+      return;
+    }
+    if (document.fullscreenElement) {
+      await document.exitFullscreen();
+      return;
+    }
+    if (typeof frame.requestFullscreen === 'function') {
+      try {
+        await frame.requestFullscreen({ navigationUI: 'hide' });
+        return;
+      } catch {
+        // Refused (a user-gesture rule, an iframe policy): fall through.
+      }
+    }
+    enterPseudoFullscreen();
+  }
+
+  document.addEventListener('fullscreenchange', () => {
+    if (pseudoFullscreen) return;
+    applyFullscreenState(document.fullscreenElement === frame, false);
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && pseudoFullscreen) exitPseudoFullscreen();
   });
 
   fullscreen.addEventListener('click', () => {
     toggleFullscreen().catch(() => {
-      /* the browser refused; nothing else to do */
+      /* nothing further to try */
     });
   });
 
@@ -194,7 +247,7 @@ export function createStage(elements) {
     update,
     get following() { return following; },
     get systems() { return layout.systems.length; },
-    get isFullscreen() { return document.fullscreenElement === frame; },
+    get isFullscreen() { return pseudoFullscreen || document.fullscreenElement === frame; },
   };
 }
 

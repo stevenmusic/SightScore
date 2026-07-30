@@ -68,9 +68,17 @@ for (const device of DEVICES) {
     const values = [...meta.querySelectorAll('dd')];
     const lineHeight = values.length
       ? parseFloat(getComputedStyle(values[0]).lineHeight) : 0;
+    // Every control must sit on the same line as the first one.
+    const items = [...controls.children];
+    const firstTop = items.length ? items[0].getBoundingClientRect().top : 0;
+    const wrappedControls = items
+      .filter((item) => Math.abs(item.getBoundingClientRect().top - firstTop) > 4)
+      .map((item) => item.id || item.tagName.toLowerCase());
+
     return {
       pageScrollsX: root.scrollWidth > root.clientWidth + 1,
       controlsOverflow: controls.scrollWidth > controls.clientWidth + 1,
+      wrappedControls,
       wrappedValues: values
         .filter((dd) => dd.getBoundingClientRect().height > lineHeight * 1.6)
         .map((dd) => dd.textContent),
@@ -80,6 +88,9 @@ for (const device of DEVICES) {
   });
 
   if (idle.pageScrollsX) problems.push(`${device.name}: page scrolls sideways`);
+  for (const control of idle.wrappedControls) {
+    problems.push(`${device.name}: control "${control}" wrapped onto a second row`);
+  }
   if (idle.controlsOverflow) problems.push(`${device.name}: controls overflow their panel`);
   if (!idle.buttonsVisible) problems.push(`${device.name}: a control has no width`);
   for (const value of idle.wrappedValues) {
@@ -120,7 +131,14 @@ for (const device of DEVICES) {
     const texts = [...svg.querySelectorAll('text')].map((t) => t.getBoundingClientRect());
     const above = texts.filter((box) => box.bottom > stageBox.top - 60 && box.top < stageBox.bottom);
     const clippedTop = above.length ? Math.max(...above.map((box) => stageBox.top - box.top)) : 0;
-    return { clipped: lowest - stageBox.bottom, clippedTop, shift, rows: visible.length };
+    // The playhead has to stay inside the frame, or the music stops following it.
+    const frameBox = document.getElementById('score-frame').getBoundingClientRect();
+    const lineBox = document.getElementById('playline').getBoundingClientRect();
+    const playheadOffscreen = lineBox.left < frameBox.left - 1 || lineBox.right > frameBox.right + 1;
+
+    return {
+      clipped: lowest - stageBox.bottom, clippedTop, shift, rows: visible.length, playheadOffscreen,
+    };
   });
 
   if (follow === null) {
@@ -129,6 +147,8 @@ for (const device of DEVICES) {
     problems.push(`${device.name}: follow window clips the lower system by ${Math.round(follow.clipped)}px`);
   } else if (follow.clippedTop > 1) {
     problems.push(`${device.name}: follow window clips text above the top system by ${Math.round(follow.clippedTop)}px`);
+  } else if (follow.playheadOffscreen) {
+    problems.push(`${device.name}: the playhead is outside the visible frame`);
   }
 
   console.log(
@@ -142,6 +162,32 @@ for (const device of DEVICES) {
   if (shots) {
     await page.screenshot({ path: `${shots}/${device.name.replace(/\s+/g, '-')}.png`, fullPage: false });
   }
+
+  // Fullscreen, twice: through the API, and through the CSS fallback that iOS
+  // Safari needs because it has no Element.requestFullscreen at all.
+  await page.click('#stop');
+  for (const mode of ['api', 'fallback']) {
+    if (mode === 'fallback') {
+      await page.evaluate(() => { delete Element.prototype.requestFullscreen; });
+    }
+    await page.click('#fullscreen');
+    await page.waitForTimeout(700);
+    const state = await page.evaluate(() => {
+      const frame = document.getElementById('score-frame');
+      const svg = document.querySelector('#score svg');
+      return {
+        active: frame.classList.contains('is-fullscreen'),
+        fills: frame.getBoundingClientRect().height > window.innerHeight * 0.8,
+        fits: svg ? svg.getBoundingClientRect().height <= frame.clientHeight + 2 : false,
+      };
+    });
+    if (!state.active) problems.push(`${device.name}: fullscreen (${mode}) did not activate`);
+    else if (!state.fills) problems.push(`${device.name}: fullscreen (${mode}) does not fill the viewport`);
+    else if (!state.fits) problems.push(`${device.name}: fullscreen (${mode}) does not fit the whole test`);
+    await page.click('#fullscreen');
+    await page.waitForTimeout(500);
+  }
+
   await page.close();
 }
 
