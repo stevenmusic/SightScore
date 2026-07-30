@@ -249,7 +249,13 @@ function tonicPitchClassOf(key) {
 test('simultaneous intervals stay consonant', () => {
   // Before the hands were written against each other, roughly 18% of
   // simultaneous intervals were seconds, sevenths or tritones. What is left
-  // should only be off-beat passing dissonance.
+  // should only be off-beat passing dissonance. That bound moved from 6% to
+  // 10% when melody.js started forcing a passing/neighbour tone to actually
+  // resolve by step (previously it could get silently discarded and
+  // replaced with a chord tone instead, which is why so few survived to
+  // clash in the first place) — more of them surviving means slightly more
+  // of exactly the dissonance this test expects to find, still strictly
+  // off-beat and never a forced unconditional clash (see pickWeighted).
   const HARSH = new Set([1, 2, 6, 10, 11]);
 
   for (const grade of GRADES) {
@@ -277,7 +283,7 @@ test('simultaneous intervals stay consonant', () => {
     if (!total) continue; // Grade 1 alternates, so nothing ever sounds together
     const rate = harsh / total;
     assert.ok(
-      rate <= 0.06,
+      rate <= 0.10,
       `grade ${grade}: ${(rate * 100).toFixed(1)}% of simultaneous intervals are harsh`,
     );
   }

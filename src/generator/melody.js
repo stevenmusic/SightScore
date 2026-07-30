@@ -167,11 +167,14 @@ function pickWeighted(ctx) {
 
   const previousMidi = pitchAt(previous, key).midi;
   const ceiling = sounding.length ? Math.max(...sounding) : null;
-  const candidates = [];
   // Was the note we're stepping from itself a passing/neighbour tone? If so,
   // continuing the same direction is how it resolves — see the weighting
   // comment below for why this matters.
   const previousWasChordTone = tones.includes(degreeOf(previous, key));
+
+  const repeats = [];
+  const steps = [];
+  const leaps = [];
 
   for (const dstep of allSteps) {
     const interval = dstep - previous;
@@ -202,21 +205,12 @@ function pickWeighted(ctx) {
     // everything the left hand is holding, not just its lowest note.
     if (ceiling !== null && midi < ceiling) continue;
 
-    let weight;
-    if (distance === 0) weight = 0.5;
-    else if (distance === 1) weight = 10 * stepwiseBias;
-    else weight = (10 * (1 - stepwiseBias)) / (distance - 1);
-
     /*
-     * On the beat, strongly prefer a chord tone — that's correct harmony.
-     * Off the beat is where real melodic writing puts its passing and
-     * neighbour tones; a 1.3x chord-tone boost there was enough to make
-     * 83-96% of even the metrically-free notes land on a chord tone anyway
-     * (measured directly), so nearly every bar read as a plain arpeggio
-     * instead of a line. Off the beat, give the passing/neighbour tone a
-     * slight edge instead so lines with real stepwise motion actually win.
+     * On the beat, prefer a chord tone — that's correct harmony. Off the
+     * beat is where real melodic writing puts its passing and neighbour
+     * tones, so give those a slight edge there instead.
      */
-    if (isChordTone) weight *= onBeat ? 2.2 : 0.85;
+    let weight = isChordTone ? (onBeat ? 1.6 : 0.85) : 1;
     /*
      * A passing/neighbour tone has to actually resolve, or the later repair
      * pass (repairNonChordTones) discards it and replaces it with the
@@ -231,19 +225,61 @@ function pickWeighted(ctx) {
     if (!previousWasChordTone && distance === 1 && Math.sign(interval) === Math.sign(previousLeap)) {
       weight *= 3;
     }
-    if (clash) weight *= 0.5;
+    if (clash) weight *= 0.3;
     if (Math.abs(previousLeap) >= 3) {
       weight *= Math.sign(interval) === -Math.sign(previousLeap) ? 2.5 : 0.4;
     }
     weight *= 1 / (1 + Math.abs(dstep - centre) * 0.12);
+    // Within the leap category, a smaller leap still outweighs a bigger one.
+    if (distance > 1) weight /= distance - 1;
 
-    candidates.push({ dstep, weight });
+    const candidate = { dstep, weight, clash };
+    if (distance === 0) repeats.push(candidate);
+    else if (distance === 1) steps.push(candidate);
+    else leaps.push(candidate);
   }
 
-  if (!candidates.length) {
+  if (!steps.length && !leaps.length && !repeats.length) {
     return nearestWithDegreeSet(allSteps, key, tones, previous);
   }
-  return rng.weighted(candidates).dstep;
+
+  /*
+   * A passing/neighbour tone must resolve by step in the direction it was
+   * approached from — that is what makes it a passing tone rather than a
+   * wrong note. Leaving that to the category lottery below meant the
+   * (1 - stepwiseBias) chance of a leap could fire right when the previous
+   * note needed resolving, and repairNonChordTones then discards that
+   * previous note and relocates it to the nearest chord tone anyway,
+   * quietly turning an intended stepwise pair into two leaps. Forcing the
+   * resolution here, before the lottery, is what actually stops that.
+   *
+   * There is exactly one step candidate in the resolving direction (never
+   * two), so if it happens to clash with the other hand there is no
+   * alternative resolution to fall back on — better to let the ordinary
+   * (clash-weighted) lottery below have this one note than to force a
+   * clash unconditionally every time.
+   */
+  if (!previousWasChordTone && previousLeap !== 0) {
+    const resolving = steps.filter((s) => Math.sign(s.dstep - previous) === Math.sign(previousLeap) && !s.clash);
+    if (resolving.length) return rng.weighted(resolving).dstep;
+  }
+
+  /*
+   * Decide step vs. leap vs. repeat as a category first, weighted by
+   * stepwiseBias, and only then pick a candidate within it. There are
+   * always exactly two possible step candidates (previous ± 1) but often
+   * a dozen+ legal leap candidates — weighing every candidate individually
+   * on the same scale let the leap candidates' combined weight dwarf the
+   * steps' even at a high stepwiseBias, since summing a dozen modest
+   * weights beats two: measured at 70-80% leaps by Grade 5+ versus a
+   * configured stepwiseBias of 62-65%. Deciding the category first is what
+   * actually makes stepwiseBias mean "this fraction of moves are steps."
+   */
+  const categories = [];
+  if (steps.length) categories.push({ items: steps, weight: 10 * stepwiseBias });
+  if (leaps.length) categories.push({ items: leaps, weight: 10 * (1 - stepwiseBias) });
+  if (repeats.length) categories.push({ items: repeats, weight: 1 });
+  return rng.weighted(rng.weighted(categories).items).dstep;
 }
 
 /**
