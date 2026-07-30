@@ -87,6 +87,12 @@ h1 {
   letter-spacing: .06em;
   color: var(--gold);
   line-height: 1.2;
+  /* Noto Serif TC's descenders (the tail on "g") sit lower than a 1.2
+     line-height box allows for — with overflow:hidden that clipped the
+     bottom of "Sight" off outright. The padding gives the glyph room to
+     render fully without moving where the ellipsis (for the rare overlong
+     case) kicks in. */
+  padding-bottom: 0.15em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -227,7 +233,7 @@ button.link:hover { color: var(--gold); }
  */
 .meta {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   flex: 1;
   min-width: 0;
   overflow-x: auto;
@@ -252,16 +258,27 @@ button.link:hover { color: var(--gold); }
 .meta-time { flex: none; width: 42px; }  /* widest: "12/8" */
 .meta-bars { flex: none; width: 66px; }  /* widest: "16 小節" */
 /*
- * Tempo is last, so nothing after it depends on its width — it just
- * shrinks to whatever's left and ellipsizes. It must be the *only*
- * shrinking/clipping boundary in this row: giving it a min-width wider
- * than what's actually left (with `.meta`'s own overflow-x:auto as a
- * second, narrower clip boundary in front of it) rendered the "…" inside
- * the part that the outer boundary had already clipped away, so the text
- * just stopped mid-word with no ellipsis visible at all. One boundary,
- * sized to genuinely fit, is what makes the ellipsis itself visible.
+ * Tempo is last, so nothing after it depends on its width. A single-line
+ * ellipsis here used to hide the BPM value entirely on a narrow phone
+ * ("Con moto (♩…" with the number cut off) — wrapping to a second line
+ * keeps that visible far more often, and clamping at 2 lines (rather than
+ * letting it grow unbounded) keeps the added height small: at this
+ * line-height two lines together are still shorter than the countdown
+ * digit beside them, so the status row's overall height doesn't grow.
+ * `-webkit-line-clamp` still ellipsizes the rare case that needs a 3rd
+ * line, same as the old single-line version did, just with more headroom
+ * first.
  */
-.meta-tempo { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.meta span.meta-tempo {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: normal;
+  line-height: 1.2;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
 
 /* ---------- score ---------- */
 
