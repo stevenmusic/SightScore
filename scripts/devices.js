@@ -4,8 +4,9 @@
  *   node scripts/devices.js [--shots <dir>]
  *
  * Fails if the page scrolls sideways, if a control overflows its panel, if the
- * metadata strip wraps a value onto two lines, or if the score lays out with
- * a bar alone on its own line.
+ * metadata strip wraps a value onto two lines, if the score lays out with a
+ * bar alone on its own line, or if fullscreen (real or the CSS fallback) hides
+ * the countdown/status strip or makes a control unreachable.
  */
 import { chromium } from 'playwright';
 import { createServer } from 'node:http';
@@ -78,15 +79,15 @@ for (const device of DEVICES) {
       .filter((item) => Math.abs(item.getBoundingClientRect().top - firstTop) > 4)
       .map((item) => item.id || item.tagName.toLowerCase());
 
-    // No fullscreen button any more — the whole test just renders on the page.
     const layout = window.__stage.measure();
     const totalBars = layout.bars.size;
     const singleBarRows = layout.systems.filter(
       (system) => system.bars.length === 1 && totalBars > 1,
     ).length;
+    const fullscreenButton = document.getElementById('fullscreen');
 
     return {
-      hasFullscreenButton: !!document.getElementById('fullscreen'),
+      fullscreenButtonUsable: !!fullscreenButton && !fullscreenButton.disabled,
       pageScrollsX: root.scrollWidth > root.clientWidth + 1,
       controlsOverflow: controls.scrollWidth > controls.clientWidth + 1,
       wrappedControls,
@@ -101,7 +102,7 @@ for (const device of DEVICES) {
     };
   });
 
-  if (idle.hasFullscreenButton) problems.push(`${device.name}: a #fullscreen button still exists`);
+  if (!idle.fullscreenButtonUsable) problems.push(`${device.name}: #fullscreen button is missing or disabled`);
   if (idle.pageScrollsX) problems.push(`${device.name}: page scrolls sideways`);
   for (const control of idle.wrappedControls) {
     problems.push(`${device.name}: control "${control}" wrapped onto a second row`);
@@ -191,6 +192,73 @@ for (const device of DEVICES) {
   await page.waitForTimeout(200);
   const stopped = await page.evaluate(() => !document.getElementById('play').classList.contains('is-active'));
   if (!stopped) problems.push(`${device.name}: #stop did not work`);
+
+  // Fullscreen goes on <html>, not the score frame — nothing is hidden or
+  // reparented, so the countdown/status strip and every control should stay
+  // exactly where they are and stay clickable. Checked twice: once through
+  // the real Fullscreen API, once through the CSS fallback that browsers
+  // with no Element.requestFullscreen (older iOS Safari) need instead.
+  for (const mode of ['api', 'fallback']) {
+    if (mode === 'fallback') {
+      await page.evaluate(() => {
+        delete Element.prototype.requestFullscreen;
+        delete Element.prototype.webkitRequestFullscreen;
+      });
+    }
+
+    await page.click('#fullscreen');
+    await page.waitForTimeout(500);
+    const entered = await page.evaluate(() => {
+      const status = document.getElementById('status');
+      const controls = document.querySelector('.controls');
+      const ids = ['grade', 'generate', 'prepare', 'play', 'stop', 'fullscreen', 'download'];
+      const reachable = ids.every((id) => {
+        const el = document.getElementById(id);
+        const box = el.getBoundingClientRect();
+        const atPoint = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+        return box.width > 0 && box.height > 0 && (atPoint === el || el.contains(atPoint));
+      });
+      const layout = window.__stage.measure();
+      const totalBars = layout.bars.size;
+      return {
+        active: window.__isFullscreen(),
+        statusVisible: !status.hidden && status.getBoundingClientRect().height > 0,
+        countdownVisible: getComputedStyle(document.getElementById('countdown')).display !== 'none',
+        controlsVisible: controls.getBoundingClientRect().height > 0,
+        reachable,
+        pageScrollsX: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+        singleBarRows: layout.systems.filter((s) => s.bars.length === 1 && totalBars > 1).length,
+      };
+    });
+
+    if (!entered.active) problems.push(`${device.name}: fullscreen (${mode}) did not activate`);
+    if (!entered.statusVisible) problems.push(`${device.name}: fullscreen (${mode}) hid the status/countdown strip`);
+    if (!entered.countdownVisible) problems.push(`${device.name}: fullscreen (${mode}) hid the countdown`);
+    if (!entered.controlsVisible) problems.push(`${device.name}: fullscreen (${mode}) hid the controls`);
+    if (!entered.reachable) problems.push(`${device.name}: fullscreen (${mode}) made a control unreachable`);
+    if (entered.pageScrollsX) problems.push(`${device.name}: fullscreen (${mode}) scrolls sideways`);
+    if (entered.singleBarRows > 0) {
+      problems.push(`${device.name}: fullscreen (${mode}) leaves ${entered.singleBarRows} single-bar line(s)`);
+    }
+
+    // The 30-second preparation countdown must still run and stay visible
+    // while fullscreen — the whole reason fullscreen is on <html> rather
+    // than just the score frame.
+    await page.click('#prepare');
+    await page.waitForTimeout(300);
+    const preparing = await page.evaluate(() => ({
+      checklistVisible: !document.getElementById('checklist').hidden,
+      countdownRunning: document.getElementById('countdown').classList.contains('running'),
+    }));
+    if (!preparing.checklistVisible || !preparing.countdownRunning) {
+      problems.push(`${device.name}: fullscreen (${mode}) preparation countdown did not run/show`);
+    }
+
+    await page.click('#fullscreen');
+    await page.waitForTimeout(500);
+    const exited = await page.evaluate(() => window.__isFullscreen());
+    if (exited) problems.push(`${device.name}: fullscreen (${mode}) did not exit`);
+  }
 
   // Resizing the viewport must re-fit the layout (no leftover single-bar
   // rows) rather than leaving whatever zoom the previous width chose.

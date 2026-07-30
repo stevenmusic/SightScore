@@ -55,7 +55,7 @@ Key data structures/conventions to know before touching the generator:
 - `stage.js` — reading-stage geometry. Reads bar/system bounding boxes directly out of the rendered SVG (`g.vf-measure`, `g.staffline`) rather than OSMD's internal graphic model, and drives the playback highlight box, moving playhead, and auto-scroll-to-system.
 - `playback.js` — reference audio playback matching a sibling app's ("ScrollScore") audio chain: real Salamander piano samples, pitch-shifted to the nearest recorded note → gain envelope → stereo pan by pitch → reverb send (a synthesized impulse response, not a downloaded IR) → limiter → output. Falls back to a synthesized oscillator tone if the samples can't be fetched.
 
-The whole test always renders in normal page flow — no fullscreen mode, no cropped follow-window — the reader just scrolls the page like any document.
+The whole test always renders in normal page flow, no cropped follow-window (that was tried and dropped — see git history around "Drop fullscreen, always show the whole test on the page"). The `#fullscreen` toggle (`app.js`'s `enterFullscreen`/`exitFullscreen`) puts the *entire page* into the Fullscreen API, not just the score frame — nothing is hidden or reparented, so the countdown/status strip and every control stay exactly where they are and stay clickable; only the browser chrome goes away and the centred `max-width` relaxes (`:fullscreen` / `.pseudo-fullscreen` in `styles.css`) to use the extra width. Browsers with no `Element.requestFullscreen` (older iOS Safari) fall back to a `.pseudo-fullscreen` CSS class with the same visual effect.
 
 ## Conventions
 

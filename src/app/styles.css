@@ -320,6 +320,35 @@ footer {
   white-space: nowrap;
 }
 
+/* ---------- fullscreen ---------- */
+
+/*
+ * Fullscreen is applied to <html>, not to the score frame — nothing is
+ * hidden or reparented, so the countdown/status strip and the controls stay
+ * exactly where they are, just with the browser chrome gone and more room to
+ * breathe. Only the centred max-width needs relaxing so the extra width is
+ * actually used. `.pseudo-fullscreen` is the same effect for browsers with no
+ * Element.requestFullscreen (older iOS Safari): pin the page to the
+ * viewport instead of asking the browser to go fullscreen.
+ */
+html:fullscreen body,
+html:-webkit-full-screen body,
+body.pseudo-fullscreen {
+  max-width: none;
+  padding-left: clamp(16px, 4vw, 56px);
+  padding-right: clamp(16px, 4vw, 56px);
+}
+
+body.pseudo-fullscreen {
+  position: fixed;
+  inset: 0;
+  overflow-y: auto;
+  z-index: 1000;
+  background: var(--bg);
+}
+
+::backdrop { background: var(--bg); }
+
 /*
  * The full-label controls need about 604px to lay out on one line; below
  * that (but above the phone breakpoint) they used to silently overflow

@@ -13,6 +13,8 @@ const elements = {
   play: document.getElementById('play'),
   playIcon: document.getElementById('playIcon'),
   stop: document.getElementById('stop'),
+  fullscreen: document.getElementById('fullscreen'),
+  fullscreenIcon: document.getElementById('fullscreenIcon'),
   download: document.getElementById('download'),
   status: document.getElementById('status'),
   countdown: document.getElementById('countdown'),
@@ -31,6 +33,8 @@ const elements = {
 /* ScrollScore's icon paths, so the two apps show the same glyphs. */
 const PLAY_ICON_D = 'M8 5v14l11-7z';
 const PAUSE_ICON_D = 'M6 5h4v14H6zM14 5h4v14h-4z';
+const EXPAND_ICON_D = 'M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3';
+const COMPRESS_ICON_D = 'M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3';
 
 const player = createPlayer({
   // Only loading progress and failures; play() reports the rest.
@@ -109,6 +113,7 @@ async function init() {
     return;
   }
   window.__osmd = osmd; // debugging hook, also used by scripts/smoke.js
+  window.__isFullscreen = isFullscreenActive; // debugging hook, also used by scripts/devices.js
 
   stage = createStage({
     score: elements.score,
@@ -127,6 +132,9 @@ async function init() {
     setPlayState(false);
   });
   elements.download.addEventListener('click', downloadXml);
+  elements.fullscreen.addEventListener('click', toggleFullscreen);
+  document.addEventListener('fullscreenchange', () => onFullscreenChange(!!document.fullscreenElement));
+  document.addEventListener('webkitfullscreenchange', () => onFullscreenChange(!!document.webkitFullscreenElement));
   elements.clearHistory.addEventListener('click', () => {
     history.clear();
     updateHistoryInfo();
@@ -175,6 +183,7 @@ async function newTest() {
   elements.status.hidden = false;
   elements.play.disabled = false;
   elements.stop.disabled = false;
+  elements.fullscreen.disabled = false;
   elements.download.disabled = false;
   elements.countdownValue.textContent = String(rules.exam.preparationSeconds);
   elements.countdown.className = 'countdown';
@@ -248,6 +257,70 @@ function setPlayState(playing) {
   const label = playing ? '停止' : '播放';
   elements.play.setAttribute('aria-label', label);
   elements.play.title = playing ? '停止播放' : '播放正確版本';
+}
+
+/*
+ * Fullscreen goes on <html>, not just the score frame — the countdown, the
+ * controls and the score are then all still the same page, nothing hidden or
+ * reparented, so nothing needs a separate "show this while fullscreen too"
+ * path. Only the browser chrome (address bar, tab strip) goes away.
+ *
+ * iOS Safari (pre-16.4) has no Element.requestFullscreen at all, so a missing
+ * or rejected request falls back to a CSS class that pins the page to the
+ * viewport instead — same effect, no native API required.
+ */
+function isFullscreenActive() {
+  return !!(document.fullscreenElement || document.webkitFullscreenElement)
+    || document.body.classList.contains('pseudo-fullscreen');
+}
+
+function toggleFullscreen() {
+  if (isFullscreenActive()) {
+    exitFullscreen();
+  } else {
+    enterFullscreen();
+  }
+}
+
+function enterFullscreen() {
+  const root = document.documentElement;
+  const request = root.requestFullscreen?.bind(root) ?? root.webkitRequestFullscreen?.bind(root);
+  if (!request) {
+    enterPseudoFullscreen();
+    return;
+  }
+  const result = request();
+  if (result?.catch) result.catch(() => enterPseudoFullscreen());
+}
+
+function exitFullscreen() {
+  if (document.fullscreenElement || document.webkitFullscreenElement) {
+    (document.exitFullscreen ?? document.webkitExitFullscreen)?.call(document);
+  } else {
+    exitPseudoFullscreen();
+  }
+}
+
+function enterPseudoFullscreen() {
+  document.body.classList.add('pseudo-fullscreen');
+  onFullscreenChange(true);
+}
+
+function exitPseudoFullscreen() {
+  document.body.classList.remove('pseudo-fullscreen');
+  onFullscreenChange(false);
+}
+
+/** Also fires from the browser's own Esc-to-exit, not just our button. */
+function onFullscreenChange(active) {
+  elements.fullscreenIcon.setAttribute('d', active ? COMPRESS_ICON_D : EXPAND_ICON_D);
+  elements.fullscreen.setAttribute('aria-label', active ? '退出全螢幕' : '全螢幕顯示');
+  elements.fullscreen.title = active ? '退出全螢幕' : '全螢幕顯示';
+  elements.fullscreen.classList.toggle('is-active', active);
+  // The available width just changed (relaxed max-width, or the address bar
+  // disappearing); re-run the same fit used on resize so lines don't strand
+  // a single bar.
+  if (current) requestAnimationFrame(() => fitScore());
 }
 
 /**
