@@ -71,6 +71,11 @@ body {
   justify-content: space-between;
   gap: 10px 16px;
   margin-bottom: 20px;
+  padding: 12px 16px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
 }
 
 .title-block { min-width: 0; }
@@ -93,9 +98,6 @@ h1 span { color: var(--ivory); font-weight: 600; }
   margin-top: 6px;
   color: var(--muted);
   font-size: var(--fs-sm);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* ---------- controls ---------- */
@@ -103,6 +105,10 @@ h1 span { color: var(--ivory); font-weight: 600; }
 /*
  * One row, always. Wrapping pushed a control onto a second line on a phone,
  * which cost vertical space the score needs, so the labels give way instead.
+ * The panel background/border/shadow live on `.topbar` now (shared with the
+ * title, matching ScrollScore's toolbar, which is one continuous band
+ * rather than a separate panel just behind the buttons) — `.controls` is
+ * just the flex row of buttons within it.
  */
 .controls {
   display: flex;
@@ -110,11 +116,6 @@ h1 span { color: var(--ivory); font-weight: 600; }
   flex-wrap: nowrap;
   align-items: center;
   gap: 8px 10px;
-  padding: 12px 14px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
 }
 
 .control {
@@ -216,35 +217,51 @@ button.link:hover { color: var(--gold); }
 .countdown.running { color: var(--gold-bright); }
 .countdown.done { color: var(--muted-bright); }
 
+/*
+ * No labels — just the four values in a fixed reading order, separated by
+ * "丨". The key/time/bar-count fields get a fixed width (sized generously
+ * above the widest value the rules table can ever produce — see the width
+ * comments below), so the separators sit at the same horizontal position
+ * on every generated test; only the tempo field (last, nothing after it)
+ * is allowed to vary in width.
+ */
 .meta {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px 24px;
+  align-items: baseline;
   flex: 1;
   min-width: 0;
+  overflow-x: auto;
 }
 
-.meta div {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.meta dt {
-  color: var(--muted);
-  font-size: var(--fs-2xs);
-  letter-spacing: .04em;
-  white-space: nowrap;
-}
-
-.meta dd {
-  font-size: var(--fs-sm);
+.meta span {
+  font-size: var(--fs-md);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--ivory);
   white-space: nowrap;
 }
+
+.meta-sep {
+  flex: none;
+  padding: 0 10px;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.meta-key { flex: none; width: 68px; }   /* widest: "Gb 大調" */
+.meta-time { flex: none; width: 42px; }  /* widest: "12/8" */
+.meta-bars { flex: none; width: 66px; }  /* widest: "16 小節" */
+/*
+ * Tempo is last, so nothing after it depends on its width — it just
+ * shrinks to whatever's left and ellipsizes. It must be the *only*
+ * shrinking/clipping boundary in this row: giving it a min-width wider
+ * than what's actually left (with `.meta`'s own overflow-x:auto as a
+ * second, narrower clip boundary in front of it) rendered the "…" inside
+ * the part that the outer boundary had already clipped away, so the text
+ * just stopped mid-word with no ellipsis visible at all. One boundary,
+ * sized to genuinely fit, is what makes the ellipsis itself visible.
+ */
+.meta-tempo { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
 /* ---------- score ---------- */
 
@@ -428,9 +445,7 @@ html:fullscreen #status, body.pseudo-fullscreen #status {
   flex-wrap: nowrap;
   overflow-x: auto;
 }
-html:fullscreen .meta, body.pseudo-fullscreen .meta { flex-wrap: nowrap; min-width: 0; }
-html:fullscreen .meta dt, body.pseudo-fullscreen .meta dt { display: none; }
-html:fullscreen .meta dd, body.pseudo-fullscreen .meta dd { font-size: var(--fs-xs); white-space: nowrap; }
+html:fullscreen .meta span, body.pseudo-fullscreen .meta span { font-size: var(--fs-xs); }
 html:fullscreen .countdown, body.pseudo-fullscreen .countdown {
   font-size: 26px;
   min-width: 0;
@@ -465,7 +480,8 @@ html:fullscreen .score-frame, body.pseudo-fullscreen .score-frame {
  * this app is normally checked against. 680px leaves a safety margin.
  */
 @media (max-width: 680px) {
-  .controls { padding: 10px 8px; gap: 6px; }
+  .topbar { padding: 10px 8px; }
+  .controls { gap: 6px; }
   /* Every button becomes its icon so the row still fits on one line. */
   .btn { width: 36px; height: 36px; padding: 0; }
   .btn .btn-label { display: none; }
@@ -478,7 +494,13 @@ html:fullscreen .score-frame, body.pseudo-fullscreen .score-frame {
 
   .status { gap: 10px 18px; margin: 14px 2px 8px; }
   .countdown { font-size: 32px; min-width: 52px; }
-  .meta { gap: 6px 16px; }
+  /* Smaller fixed columns leave more of the strip for the tempo field,
+     which is the one part allowed to ellipsize on a narrow phone. */
+  .meta span { font-size: var(--fs-sm); }
+  .meta-sep { padding: 0 6px; }
+  .meta-key { width: 58px; }
+  .meta-time { width: 36px; }
+  .meta-bars { width: 58px; }
 
   .score-frame { padding: 48px 8px 12px; }
   .grade-select { top: 10px; left: 8px; }

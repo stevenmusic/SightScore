@@ -73,7 +73,7 @@ for (const device of DEVICES) {
     const scoreFrame = document.getElementById('score-frame');
     const grade = document.getElementById('grade');
     const meta = document.getElementById('meta');
-    const values = [...meta.querySelectorAll('dd')];
+    const values = [...meta.querySelectorAll('span:not(.meta-sep)')];
     const lineHeight = values.length
       ? parseFloat(getComputedStyle(values[0]).lineHeight) : 0;
     // Every control must sit on the same line as the first one.
@@ -100,8 +100,8 @@ for (const device of DEVICES) {
       controlsOverflow: controls.scrollWidth > controls.clientWidth + 1,
       wrappedControls,
       wrappedValues: values
-        .filter((dd) => dd.getBoundingClientRect().height > lineHeight * 1.6)
-        .map((dd) => dd.textContent),
+        .filter((span) => span.getBoundingClientRect().height > lineHeight * 1.6)
+        .map((span) => span.textContent),
       buttonsVisible: [...document.querySelectorAll('.controls .btn')]
         .every((b) => b.getBoundingClientRect().width > 0),
       singleBarRows,
@@ -213,6 +213,30 @@ for (const device of DEVICES) {
   await page.waitForTimeout(200);
   const stopped = await page.evaluate(() => !document.getElementById('play').classList.contains('is-active'));
   if (!stopped) problems.push(`${device.name}: #stop did not work`);
+
+  // The meta strip has no labels any more — just the four values separated
+  // by "丨" — so the separators are the only thing marking field
+  // boundaries. Each of the first three fields has a fixed CSS width
+  // specifically so a new test's differently-sized key/time/bar-count text
+  // never shifts them. Regenerate a few times and confirm every separator
+  // stays exactly where it was.
+  const sepPositions = () => page.evaluate(
+    () => [...document.querySelectorAll('.meta-sep')].map((s) => s.getBoundingClientRect().left),
+  );
+  const firstSeps = await sepPositions();
+  for (let i = 1; i <= 3; i++) {
+    await page.selectOption('#grade', String((i % 8) + 1));
+    await page.click('#generate');
+    await page.waitForFunction(() => document.getElementById('message').textContent !== '渲染中…', { timeout: 20000 });
+    await page.waitForTimeout(200);
+    const seps = await sepPositions();
+    if (seps.length !== firstSeps.length || seps.some((x, idx) => Math.abs(x - firstSeps[idx]) > 1)) {
+      problems.push(
+        `${device.name}: meta separator position moved after generating a new test `
+        + `(${firstSeps.map((n) => Math.round(n))} -> ${seps.map((n) => Math.round(n))})`,
+      );
+    }
+  }
 
   // Fullscreen is a dedicated distraction-free view that reuses the exact
   // same title-left/controls-right row as normal mode — no fullscreen-

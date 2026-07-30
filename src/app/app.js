@@ -198,15 +198,19 @@ async function newTest() {
 
 function showMeta(score) {
   const mode = score.key.mode === 'major' ? '大調' : '小調';
-  const rows = [
-    ['調性', `${score.key.tonic} ${mode}`],
-    ['拍號', score.timeSignature.text],
-    ['小節', `${score.barCount} 小節`],
-    ['速度', `${score.tempoTerm} (♩≈${score.tempoBpm})`],
+  // No labels — just the values in a fixed order, separated by "丨". The
+  // key/time/bar-count fields have a fixed CSS width so the separators
+  // never move when a new test changes their text length; only the tempo
+  // field (last, nothing after it) is free to vary.
+  const fields = [
+    ['meta-key', `${score.key.tonic} ${mode}`],
+    ['meta-time', score.timeSignature.text],
+    ['meta-bars', `${score.barCount} 小節`],
+    ['meta-tempo', `${score.tempoTerm} (♩≈${score.tempoBpm})`],
   ];
-  elements.meta.innerHTML = rows
-    .map(([term, value]) => `<div><dt>${term}</dt><dd>${escapeHtml(value)}</dd></div>`)
-    .join('');
+  elements.meta.innerHTML = fields
+    .map(([cls, value]) => `<span class="${cls}">${escapeHtml(value)}</span>`)
+    .join('<span class="meta-sep">丨</span>');
 
   const warning = CONFIDENCE_LABEL[score.confidence];
   elements.confidence.hidden = !warning;
