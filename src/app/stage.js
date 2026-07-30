@@ -1,36 +1,23 @@
 /**
- * The reading stage: geometry, playhead and the two-row follow view.
+ * The reading stage: geometry, playhead and the bar highlight.
  *
- * ScrollScore scrolls one long row sideways under a fixed playline. A sight-
- * reading test is read differently — you need the next line in view before you
- * reach it — so this keeps two systems on screen: playing system 1 shows
- * systems 1 and 2, playing system 2 shows 2 and 3. The playhead and the
- * current-bar colour block are ScrollScore's, moved onto that layout.
+ * The whole test renders in normal page flow — no fullscreen, no cropped
+ * follow-window — so the reader can see the entire piece and just scrolls the
+ * page like any other document. During playback the current bar is tinted
+ * and a moving playhead sweeps across it; when playback moves to a new
+ * system, that system is scrolled into view.
  *
  * Geometry comes from the rendered SVG rather than OSMD's graphic model:
  * every bar is a `g.vf-measure` whose id is its bar number, and it appears
  * once per staff, so the union of both is the bar's full height.
  */
 
-/** Breathing room under the lower system so descending stems stay whole. */
-const BOTTOM_ALLOWANCE = 10;
-/**
- * Room above a system for text that sits over it — the tempo word, rehearsal
- * numbers. Bar boxes do not include those, so scrolling to a bar's own top
- * cut "Lento" in half.
- */
-const TEXT_ALLOWANCE = 30;
-/** Distance from the top of the window to that allowance. */
-const TOP_INSET = 8;
-
 export function createStage(elements) {
-  const {
-    frame, stage, scroller, score, playline, highlight, fullscreen, controls, controlsHome,
-  } = elements;
+  const { score, playline, highlight } = elements;
 
   /** @type {{bars: Map<number, object>, systems: object[], scale: number}} */
   let layout = { bars: new Map(), systems: [], scale: 1 };
-  let following = false;
+  let active = false;
   let currentSystem = -1;
 
   /** Read bar and system boxes out of the rendered SVG. */
@@ -45,14 +32,32 @@ export function createStage(elements) {
     const scale = viewBox?.width ? rect.width / viewBox.width : 1;
 
     const boxes = new Map();
+    const contentLefts = new Map();
     for (const element of svg.querySelectorAll('g.vf-measure')) {
       const number = Number(element.id);
       if (!Number.isFinite(number)) continue;
       const box = element.getBBox();
       const existing = boxes.get(number);
       boxes.set(number, existing ? union(existing, box) : toRect(box));
+
+      /*
+       * A bar's own box starts at the stave lines, which run under whatever
+       * comes before its notes too — the clef, key and time signature that
+       * VexFlow draws inside bar 1 of every system. The playhead and the
+       * highlight block both need to start at the first actual note, not at
+       * that leading furniture, or on every system's opening bar they
+       * visibly start from the clef instead of beat one.
+       */
+      const noteLefts = [...element.children]
+        .filter((child) => child.getAttribute('class') === 'vf-stavenote')
+        .map((child) => child.getBBox().x);
+      if (noteLefts.length) {
+        const contentLeft = Math.min(...noteLefts);
+        contentLefts.set(number, Math.min(contentLefts.get(number) ?? Infinity, contentLeft));
+      }
     }
     if (!boxes.size) return layout;
+    for (const [number, box] of boxes) box.contentLeft = contentLefts.get(number) ?? box.left;
 
     // Cluster bars into systems by vertical position.
     const ordered = [...boxes.entries()].sort((a, b) => a[1].top - b[1].top || a[1].left - b[1].left);
@@ -78,7 +83,7 @@ export function createStage(elements) {
     /*
      * A bar's box covers its notes, but slurs, hairpins and dynamics are drawn
      * outside it and can hang well below the staff. Grow each system to cover
-     * every staff group it overlaps, or the window clips those.
+     * every staff group it overlaps, or the highlight clips those.
      */
     for (const staffline of svg.querySelectorAll('g.staffline')) {
       const box = toRect(staffline.getBBox());
@@ -94,42 +99,18 @@ export function createStage(elements) {
     return layout;
   }
 
-  /**
-   * Height of the window showing system `index` and the one after it, from the
-   * top of the first to the bottom of the second.
-   *
-   * Sizing to the tallest pair in the piece instead leaves slack on shorter
-   * pairs, and the system after next then peeks in at the bottom edge, which
-   * reads exactly like a row with its stems cut off.
-   */
-  function windowHeight(index = 0) {
-    const { systems, scale } = layout;
-    if (!systems.length) return 0;
-    const first = systems[Math.min(index, systems.length - 1)];
-    const second = systems[index + 1];
-    const span = second ? second.bottom - first.top : first.bottom - first.top;
-    return span * scale + BOTTOM_ALLOWANCE + TEXT_ALLOWANCE + TOP_INSET;
-  }
-
   function begin() {
-    measure();
     if (!layout.systems.length) return false;
-    following = true;
+    active = true;
     currentSystem = -1;
-    stage.classList.add('following');
-    stage.style.height = `${windowHeight(0)}px`;
     playline.style.display = 'block';
     highlight.style.display = 'block';
     return true;
   }
 
   function end() {
-    following = false;
+    active = false;
     currentSystem = -1;
-    stage.classList.remove('following');
-    stage.style.height = '';
-    stage.scrollLeft = 0;
-    scroller.style.transform = '';
     playline.style.display = '';
     highlight.style.display = '';
   }
@@ -139,7 +120,7 @@ export function createStage(elements) {
    * @param {number} progress 0–1 through that bar
    */
   function update(bar, progress) {
-    if (!following) return;
+    if (!active) return;
     const box = layout.bars.get(bar);
     if (!box) return;
     const { scale } = layout;
@@ -147,14 +128,13 @@ export function createStage(elements) {
 
     if (box.system !== currentSystem) {
       currentSystem = box.system;
-      // Put the current system at the top; the next one sits below it, and the
-      // window is resized to that exact pair so nothing else shows through.
-      scroller.style.transform = `translateY(${-system.top * scale + TOP_INSET + TEXT_ALLOWANCE}px)`;
-      stage.style.height = `${windowHeight(box.system)}px`;
+      // Bring the new line into view; the reader scrolls the page normally
+      // otherwise, so this only has to fire on a line change, not every frame.
+      highlight.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
-    const left = box.left * scale;
-    const width = (box.right - box.left) * scale;
+    const left = box.contentLeft * scale;
+    const width = (box.right - box.contentLeft) * scale;
     const top = system.top * scale;
     const height = (system.bottom - system.top) * scale;
 
@@ -164,136 +144,18 @@ export function createStage(elements) {
     highlight.style.height = `${height}px`;
 
     const x = left + width * Math.min(Math.max(progress, 0), 1);
-    playline.style.transform = `translateX(${x}px) translateY(${top - system.top * scale + TOP_INSET + TEXT_ALLOWANCE}px)`;
+    playline.style.transform = `translateX(${x}px)`;
+    playline.style.top = `${top}px`;
     playline.style.height = `${height}px`;
-
-    /*
-     * On a narrow screen the system is wider than the frame, so the playhead
-     * marches off the right edge and the music never follows it. Scroll so the
-     * playhead stays about a third of the way in, which keeps what is coming
-     * next on screen.
-     *
-     * This scrolls `stage`, not `frame`. `.stage.following` sets its own
-     * height and clips vertically, and a clipped element's box no longer
-     * reports its child's overflow to its own parent — so once following
-     * began, `frame.scrollWidth` always read back equal to `frame.clientWidth`
-     * (no overflow "visible" to it) and this never actually moved anything.
-     * `stage` is the element that actually clips the wide score, so it has to
-     * be the one that scrolls it.
-     */
-    const visible = stage.clientWidth;
-    if (stage.scrollWidth > visible + 1) {
-      const target = Math.max(0, Math.min(x - visible * 0.34, stage.scrollWidth - visible));
-      // Only nudge when it has drifted, so a manual scroll is not fought over.
-      if (Math.abs(stage.scrollLeft - target) > 2) stage.scrollLeft = target;
-    }
   }
-
-  /*
-   * iOS Safari does not implement Element.requestFullscreen — only <video>
-   * can go fullscreen there — so the button did nothing at all on iPhone and
-   * iPad. Fall back to filling the viewport with CSS, which works everywhere
-   * and looks the same to the reader.
-   */
-  let pseudoFullscreen = false;
-
-  /*
-   * Fullscreen (real or CSS-fallback) removes everything outside `frame` from
-   * both view and interaction — a real fullscreen element paints over
-   * everything else, and the pseudo one's position:fixed sits on top of it.
-   * Generate/prepare/play/stop/download/grade all live in `.controls`,
-   * outside the frame, so entering fullscreen made every one of them
-   * unreachable (visible in the DOM, but a hit-test at their coordinates
-   * lands on `frame`, not on them — confirmed by probing
-   * elementFromPoint() at each button's centre while fullscreen).
-   *
-   * Moving the actual `.controls` node into the frame (rather than building
-   * a second, duplicate toolbar) keeps one set of listeners and state; only
-   * its position changes. `controlsHome` is the node `.controls` sits
-   * immediately before in the document, so `.before()` restores it exactly.
-   */
-  function relocateControls(active) {
-    if (!controls) return;
-    if (active) {
-      if (controls.parentElement !== frame) frame.appendChild(controls);
-    } else if (controlsHome && controls.parentElement !== controlsHome.parentElement) {
-      controlsHome.before(controls);
-    }
-  }
-
-  function applyFullscreenState(active, pseudo) {
-    frame.classList.toggle('is-fullscreen', active);
-    frame.classList.toggle('is-pseudo-fullscreen', active && pseudo);
-    document.body.classList.toggle('has-fullscreen-frame', active && pseudo);
-    fullscreen.setAttribute('aria-label', active ? '離開全螢幕' : '全螢幕');
-    fullscreen.title = active ? '離開全螢幕' : '全螢幕檢視整首樂譜';
-    // Before onFullscreenChange (fitScore), so it measures the toolbar's
-    // real height once already relocated, and leaves room above it.
-    relocateControls(active);
-    elements.onFullscreenChange?.(active);
-  }
-
-  function enterPseudoFullscreen() {
-    pseudoFullscreen = true;
-    applyFullscreenState(true, true);
-  }
-
-  function exitPseudoFullscreen() {
-    pseudoFullscreen = false;
-    applyFullscreenState(false, true);
-  }
-
-  async function enterFullscreen() {
-    if (pseudoFullscreen || document.fullscreenElement === frame) return;
-    if (typeof frame.requestFullscreen === 'function') {
-      try {
-        await frame.requestFullscreen({ navigationUI: 'hide' });
-        return;
-      } catch {
-        // Refused (a user-gesture rule, an iframe policy): fall through.
-      }
-    }
-    enterPseudoFullscreen();
-  }
-
-  async function exitFullscreen() {
-    if (pseudoFullscreen) {
-      exitPseudoFullscreen();
-      return;
-    }
-    if (document.fullscreenElement === frame) await document.exitFullscreen();
-  }
-
-  async function toggleFullscreen() {
-    if (pseudoFullscreen || document.fullscreenElement === frame) await exitFullscreen();
-    else await enterFullscreen();
-  }
-
-  document.addEventListener('fullscreenchange', () => {
-    if (pseudoFullscreen) return;
-    applyFullscreenState(document.fullscreenElement === frame, false);
-  });
-
-  document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && pseudoFullscreen) exitPseudoFullscreen();
-  });
-
-  fullscreen.addEventListener('click', () => {
-    toggleFullscreen().catch(() => {
-      /* nothing further to try */
-    });
-  });
 
   return {
     measure,
     begin,
     end,
     update,
-    enterFullscreen,
-    exitFullscreen,
-    get following() { return following; },
+    get active() { return active; },
     get systems() { return layout.systems.length; },
-    get isFullscreen() { return pseudoFullscreen || document.fullscreenElement === frame; },
   };
 }
 

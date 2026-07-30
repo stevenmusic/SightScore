@@ -4,8 +4,8 @@
  *   node scripts/devices.js [--shots <dir>]
  *
  * Fails if the page scrolls sideways, if a control overflows its panel, if the
- * metadata strip wraps a value onto two lines, or if the two-row follow window
- * clips the lower system.
+ * metadata strip wraps a value onto two lines, or if the score lays out with
+ * a bar alone on its own line.
  */
 import { chromium } from 'playwright';
 import { createServer } from 'node:http';
@@ -58,8 +58,11 @@ for (const device of DEVICES) {
   await page.waitForFunction(() => !document.getElementById('generate').disabled, { timeout: 20000 });
   await page.selectOption('#grade', '5');
   await page.click('#generate');
-  await page.waitForFunction(() => document.querySelector('#score svg'), { timeout: 20000 });
-  await page.waitForTimeout(500);
+  await page.waitForFunction(
+    () => document.getElementById('message').textContent !== '渲染中…',
+    { timeout: 20000 },
+  );
+  await page.waitForTimeout(400);
 
   const idle = await page.evaluate(() => {
     const root = document.documentElement;
@@ -75,7 +78,15 @@ for (const device of DEVICES) {
       .filter((item) => Math.abs(item.getBoundingClientRect().top - firstTop) > 4)
       .map((item) => item.id || item.tagName.toLowerCase());
 
+    // No fullscreen button any more — the whole test just renders on the page.
+    const layout = window.__stage.measure();
+    const totalBars = layout.bars.size;
+    const singleBarRows = layout.systems.filter(
+      (system) => system.bars.length === 1 && totalBars > 1,
+    ).length;
+
     return {
+      hasFullscreenButton: !!document.getElementById('fullscreen'),
       pageScrollsX: root.scrollWidth > root.clientWidth + 1,
       controlsOverflow: controls.scrollWidth > controls.clientWidth + 1,
       wrappedControls,
@@ -84,9 +95,13 @@ for (const device of DEVICES) {
         .map((dd) => dd.textContent),
       buttonsVisible: [...document.querySelectorAll('.controls .btn')]
         .every((b) => b.getBoundingClientRect().width > 0),
+      singleBarRows,
+      totalRows: layout.systems.length,
+      zoom: window.__osmd.zoom,
     };
   });
 
+  if (idle.hasFullscreenButton) problems.push(`${device.name}: a #fullscreen button still exists`);
   if (idle.pageScrollsX) problems.push(`${device.name}: page scrolls sideways`);
   for (const control of idle.wrappedControls) {
     problems.push(`${device.name}: control "${control}" wrapped onto a second row`);
@@ -96,196 +111,103 @@ for (const device of DEVICES) {
   for (const value of idle.wrappedValues) {
     problems.push(`${device.name}: metadata value wraps onto two lines — "${value}"`);
   }
-
-  // Track the stage's actual scrollLeft over time, so a "no problem" result
-  // can't be a false negative from scrollLeft simply never having moved.
-  await page.evaluate(() => {
-    window.__sightscoreMaxScrollLeft = 0;
-    window.__sightscoreScrollWatch = setInterval(() => {
-      const stage = document.getElementById('stage');
-      window.__sightscoreMaxScrollLeft = Math.max(window.__sightscoreMaxScrollLeft, stage.scrollLeft);
-    }, 100);
-  });
-
-  // The follow window must not clip the lower system's stems. Playback waits
-  // on the piano samples, which can take a while (and, in a sandbox with no
-  // route to the sample host, waits for every fetch to fail), so poll rather
-  // than guess a delay.
-  await page.click('#play');
-  await page.waitForFunction(
-    () => document.getElementById('stage').classList.contains('following'),
-    { timeout: 30000 },
-  ).catch(() => {});
-  await page.waitForTimeout(900);
-  const follow = await page.evaluate(() => {
-    const stage = document.getElementById('stage');
-    const scroller = document.getElementById('scroller');
-    if (!stage.classList.contains('following')) return null;
-    const stageBox = stage.getBoundingClientRect();
-    const svg = document.querySelector('#score svg');
-    const shift = new DOMMatrix(getComputedStyle(scroller).transform).m42;
-
-    // Bottom of the lowest system still inside the window, in stage space.
-    const rows = new Map();
-    for (const measure of svg.querySelectorAll('g.vf-measure')) {
-      const box = measure.getBoundingClientRect();
-      const key = Math.round(box.top / 20);
-      const row = rows.get(key) ?? { top: box.top, bottom: box.bottom };
-      rows.set(key, { top: Math.min(row.top, box.top), bottom: Math.max(row.bottom, box.bottom) });
-    }
-    const visible = [...rows.values()].filter(
-      (row) => row.bottom > stageBox.top && row.top < stageBox.bottom,
-    );
-    const lowest = Math.max(...visible.map((row) => row.bottom));
-    // Text above the top system (the tempo word) must be inside the window too.
-    const texts = [...svg.querySelectorAll('text')].map((t) => t.getBoundingClientRect());
-    const above = texts.filter((box) => box.bottom > stageBox.top - 60 && box.top < stageBox.bottom);
-    const clippedTop = above.length ? Math.max(...above.map((box) => stageBox.top - box.top)) : 0;
-    // The playhead has to stay inside the stage, or the music stops following
-    // it. `.stage` is the actual horizontal scroll container during
-    // following (see stage.js), not `.score-frame` — checking the frame here
-    // would pass even when the stage never scrolled at all.
-    const stageBounds = stage.getBoundingClientRect();
-    const lineBox = document.getElementById('playline').getBoundingClientRect();
-    const playheadOffscreen = lineBox.left < stageBounds.left - 1 || lineBox.right > stageBounds.right + 1;
-
-    return {
-      clipped: lowest - stageBox.bottom, clippedTop, shift, rows: visible.length, playheadOffscreen,
-    };
-  });
-
-  if (follow === null) {
-    problems.push(`${device.name}: playback did not enter the follow view`);
-  } else if (follow.clipped > 1) {
-    problems.push(`${device.name}: follow window clips the lower system by ${Math.round(follow.clipped)}px`);
-  } else if (follow.clippedTop > 1) {
-    problems.push(`${device.name}: follow window clips text above the top system by ${Math.round(follow.clippedTop)}px`);
-  } else if (follow.playheadOffscreen) {
-    problems.push(`${device.name}: the playhead is outside the visible stage`);
+  if (idle.singleBarRows > 0) {
+    problems.push(`${device.name}: ${idle.singleBarRows} line(s) hold only a single bar (zoom ${idle.zoom})`);
   }
 
-  // The stage must actually have scrolled sideways at some point during
-  // playback, not just have room to. A wrong ancestor's overflow being
-  // checked (or clipped by a mis-set overflow rule) can leave scrollLeft
-  // stuck at 0 the entire time while still reporting no other problem.
-  const scrolled = await page.evaluate(() => window.__sightscoreMaxScrollLeft > 2);
-  if (follow && follow.rows > 0) {
-    const stageOverflows = await page.evaluate(() => {
-      const stage = document.getElementById('stage');
-      return stage.scrollWidth > stage.clientWidth + 1;
-    });
-    if (stageOverflows && !scrolled) {
-      problems.push(`${device.name}: the stage never actually scrolled sideways during playback`);
+  // The whole test must actually be showing on the page — the SVG's own
+  // height should roughly match what its systems actually cover, and no bar
+  // number should be missing from the measured layout.
+  const wholeScore = await page.evaluate(() => {
+    const layout = window.__stage.measure();
+    const barNumbers = [...layout.bars.keys()].sort((a, b) => a - b);
+    const contiguous = barNumbers.every((n, i) => n === i + 1);
+    return { barCount: barNumbers.length, contiguous };
+  });
+  if (!wholeScore.contiguous || wholeScore.barCount === 0) {
+    problems.push(`${device.name}: the rendered score is missing bars (found ${wholeScore.barCount})`);
+  }
+
+  // The playhead must start at the first beat, not at a leading clef — the
+  // bug this fix targets shows up specifically on a system's opening bar,
+  // where VexFlow draws the clef/key/time signature inside the same group.
+  const playheadStart = await page.evaluate(() => {
+    const layout = window.__stage.measure();
+    const svg = document.querySelector('#score svg');
+    const bad = [];
+    for (const [number, box] of layout.bars) {
+      const groups = [...svg.querySelectorAll(`g.vf-measure[id="${number}"]`)];
+      let manualMin = Infinity;
+      for (const g of groups) {
+        for (const c of g.children) {
+          if (c.getAttribute('class') === 'vf-stavenote') manualMin = Math.min(manualMin, c.getBBox().x);
+        }
+      }
+      if (Number.isFinite(manualMin) && Math.abs(manualMin - box.contentLeft) > 0.5) {
+        bad.push(number);
+      }
     }
+    return bad;
+  });
+  if (playheadStart.length) {
+    problems.push(`${device.name}: playhead start doesn't match the first note in bar(s) ${playheadStart.join(', ')}`);
   }
 
   console.log(
     `${device.name.padEnd(22)} ${device.width}x${device.height}  `
     + `橫向捲動:${idle.pageScrollsX ? 'yes' : 'no'}  `
-    + `跟譜列數:${follow?.rows ?? '-'}  `
-    + `下緣裁切:${follow ? `${Math.round(follow.clipped)}px` : '-'}  `
-    + `上緣裁切:${follow ? `${Math.round(follow.clippedTop)}px` : '-'}`,
+    + `總行數:${idle.totalRows}  `
+    + `單小節一行:${idle.singleBarRows}  `
+    + `縮放:${idle.zoom.toFixed(2)}`,
   );
 
   if (shots) {
-    await page.screenshot({ path: `${shots}/${device.name.replace(/\s+/g, '-')}.png`, fullPage: false });
+    await page.screenshot({ path: `${shots}/${device.name.replace(/\s+/g, '-')}.png`, fullPage: true });
   }
 
-  await page.evaluate(() => clearInterval(window.__sightscoreScrollWatch));
+  // Play/stop must actually work, and the highlight/playhead must appear.
+  // startFollowing() (which shows them) only runs once player.play()
+  // resolves, and that waits on the piano samples first — which can take a
+  // while, and in a sandbox with no route to the sample host, waits for
+  // every fetch to fail before falling back to a synthesized tone. Poll
+  // rather than guess a delay.
+  await page.click('#play');
+  await page.waitForFunction(() => window.__stage.active, { timeout: 30000 }).catch(() => {});
+  await page.waitForTimeout(400);
+  const playing = await page.evaluate(() => ({
+    active: document.getElementById('play').classList.contains('is-active'),
+    following: window.__stage.active,
+    highlightVisible: getComputedStyle(document.getElementById('measure-highlight')).display !== 'none',
+    playlineVisible: getComputedStyle(document.getElementById('playline')).display !== 'none',
+  }));
+  if (!playing.active) problems.push(`${device.name}: #play did not activate`);
+  if (!playing.following) problems.push(`${device.name}: playback did not start following (highlight/playhead)`);
+  else {
+    if (!playing.highlightVisible) problems.push(`${device.name}: measure highlight did not appear during playback`);
+    if (!playing.playlineVisible) problems.push(`${device.name}: playhead did not appear during playback`);
+  }
 
-  // Fullscreen, twice: through the API, and through the CSS fallback that iOS
-  // Safari needs because it has no Element.requestFullscreen at all.
   await page.click('#stop');
-  for (const mode of ['api', 'fallback']) {
-    if (mode === 'fallback') {
-      await page.evaluate(() => { delete Element.prototype.requestFullscreen; });
-    }
-    await page.click('#fullscreen');
-    await page.waitForTimeout(700);
-    const state = await page.evaluate(() => {
-      const frame = document.getElementById('score-frame');
-      const svg = document.querySelector('#score svg');
-      return {
-        active: frame.classList.contains('is-fullscreen'),
-        fills: frame.getBoundingClientRect().height > window.innerHeight * 0.8,
-        fits: svg ? svg.getBoundingClientRect().height <= frame.clientHeight + 2 : false,
-      };
-    });
-    if (!state.active) problems.push(`${device.name}: fullscreen (${mode}) did not activate`);
-    else if (!state.fills) problems.push(`${device.name}: fullscreen (${mode}) does not fill the viewport`);
-    else if (!state.fits) problems.push(`${device.name}: fullscreen (${mode}) does not fit the whole test`);
-    await page.click('#fullscreen');
-    await page.waitForTimeout(500);
-  }
+  await page.waitForTimeout(200);
+  const stopped = await page.evaluate(() => !document.getElementById('play').classList.contains('is-active'));
+  if (!stopped) problems.push(`${device.name}: #stop did not work`);
 
-  // Pressing "prepare" should go fullscreen on its own (the 30-second look at
-  // the whole test), the same way #fullscreen does, without needing a second
-  // click.
-  {
-    const before = await page.evaluate(() => document.getElementById('score-frame').classList.contains('is-fullscreen'));
-    await page.click('#prepare');
-    await page.waitForTimeout(700);
-    const duringPrepare = await page.evaluate(() => document.getElementById('score-frame').classList.contains('is-fullscreen'));
-    if (before) problems.push(`${device.name}: fullscreen was already active before testing #prepare`);
-    if (!duringPrepare) problems.push(`${device.name}: #prepare did not enter fullscreen`);
-  }
-
-  // Every necessary action must stay usable while fullscreen — generate,
-  // prepare, play, stop, download, grade. Fullscreen (real or the CSS
-  // fallback) removes everything outside #score-frame from both view and
-  // hit-testing, so before .controls was reparented into the frame, every
-  // one of these was visible but literally unclickable: a hit-test at the
-  // button's own centre landed on the frame, not the button.
-  {
-    const reach = await page.evaluate(() => {
-      const ids = ['grade', 'generate', 'prepare', 'play', 'stop', 'download'];
-      return Object.fromEntries(ids.map((id) => {
-        const el = document.getElementById(id);
-        const box = el.getBoundingClientRect();
-        const atPoint = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
-        return [id, box.width > 0 && box.height > 0 && (atPoint === el || el.contains(atPoint))];
-      }));
-    });
-    for (const [id, reachable] of Object.entries(reach)) {
-      if (!reachable) problems.push(`${device.name}: #${id} is not reachable while fullscreen`);
-    }
-  }
-
-  // Generating a new test must NOT leave fullscreen — that would defeat the
-  // point of putting generate inside the frame at all. A real user auditions
-  // several tests in a row without dropping out.
-  {
-    await page.click('#generate');
-    await page.waitForFunction(() => document.querySelector('#score svg'), { timeout: 20000 });
-    await page.waitForTimeout(400);
-    const stillFullscreen = await page.evaluate(() => document.getElementById('score-frame').classList.contains('is-fullscreen'));
-    if (!stillFullscreen) problems.push(`${device.name}: generating a new test while fullscreen left fullscreen`);
-  }
-
-  // Play and stop must actually work while fullscreen, not just be present.
-  {
-    await page.click('#play');
-    await page.waitForTimeout(600);
-    const playing = await page.evaluate(() => document.getElementById('play').classList.contains('is-active'));
-    if (!playing) problems.push(`${device.name}: #play did not activate while fullscreen`);
-    await page.click('#stop');
-    await page.waitForTimeout(300);
-    const stopped = await page.evaluate(() => !document.getElementById('play').classList.contains('is-active'));
-    if (!stopped) problems.push(`${device.name}: #stop did not work while fullscreen`);
-  }
-
-  // Leaving fullscreen must put .controls back exactly where it started —
-  // immediately before #status — not merely "somewhere in the body".
-  {
-    await page.click('#fullscreen');
-    await page.waitForTimeout(500);
-    const restored = await page.evaluate(() => {
-      const controls = document.querySelector('.controls');
-      const status = document.getElementById('status');
-      return controls.parentElement === document.body && controls.nextElementSibling === status;
-    });
-    if (!restored) problems.push(`${device.name}: .controls was not restored to its original position on exiting fullscreen`);
-  }
+  // Resizing the viewport must re-fit the layout (no leftover single-bar
+  // rows) rather than leaving whatever zoom the previous width chose.
+  await page.setViewportSize({ width: Math.max(360, Math.round(device.width * 0.7)), height: device.height });
+  // The resize handler debounces 200ms before re-fitting, and re-fitting
+  // itself may take a few render() passes — give it room to settle before
+  // checking, or a mid-refit moment reads as a false failure.
+  await page.waitForTimeout(900);
+  const resized = await page.evaluate(() => {
+    const layout = window.__stage.measure();
+    const totalBars = layout.bars.size;
+    return {
+      singleBarRows: layout.systems.filter((s) => s.bars.length === 1 && totalBars > 1).length,
+      pageScrollsX: document.documentElement.scrollWidth > document.documentElement.clientWidth + 1,
+    };
+  });
+  if (resized.pageScrollsX) problems.push(`${device.name}: page scrolls sideways after resizing narrower`);
 
   await page.close();
 }

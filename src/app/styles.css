@@ -230,139 +230,16 @@ button.link:hover { color: var(--gold); }
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
 }
+
+/* ---------- playback highlight + playhead ---------- */
 
 /*
- * Used where Element.requestFullscreen does not exist (iOS Safari): fill the
- * viewport ourselves. `dvh` keeps it right while Safari's toolbars slide.
+ * The whole test renders here in normal page flow — no fullscreen, no
+ * cropped follow-window. The highlight block and playhead are absolutely
+ * positioned within it, over the notes.
  */
-.score-frame.is-pseudo-fullscreen {
-  position: fixed;
-  inset: 0;
-  width: 100vw;
-  height: 100dvh;
-  z-index: 100;
-  background: #FFFDF6;
-}
-
-body.has-fullscreen-frame { overflow: hidden; }
-
-/* Fullscreen shows the whole test at once, so nothing may scroll or clip. */
-.score-frame.is-fullscreen {
-  margin: 0;
-  border: none;
-  border-radius: 0;
-  box-shadow: none;
-  padding: 32px 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-}
-
-.score-frame.is-fullscreen .stage { width: 100%; }
-.score-frame.is-fullscreen .score { min-width: 0; }
-
-/*
- * Every necessary action — grade, generate, prepare, play, stop, download —
- * lives in .controls. Fullscreen (real or the CSS fallback) removes
- * everything outside .score-frame from both view and hit-testing, so without
- * this the whole toolbar became unusable the moment fullscreen started.
- * stage.js physically moves the .controls node in here (not a duplicate
- * toolbar, so there's only ever one set of listeners/state) — this rule just
- * gives it somewhere to sit once it arrives: position:absolute takes it out
- * of the frame's flex layout entirely, so it floats as a bottom bar without
- * disturbing .stage's centring.
- */
-.score-frame.is-fullscreen .controls {
-  position: absolute;
-  left: 12px;
-  right: 12px;
-  bottom: 12px;
-  z-index: 7;
-  margin: 0;
-  background: rgba(244, 238, 224, .95);
-  backdrop-filter: blur(6px);
-}
-
-.frame-action {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  z-index: 6;
-  background: rgba(255, 253, 246, .92);
-}
-
-/*
- * Only appears while actually fullscreen — in the normal view the status
- * strip above the frame already shows the countdown, so this would be a
- * redundant second clock. JS toggles [hidden] to match whether a countdown is
- * running at all; this rule additionally requires .is-fullscreen so the
- * element never shows up outside it even if JS forgets to hide it.
- */
-.frame-countdown {
-  display: none;
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  z-index: 6;
-  align-items: baseline;
-  gap: 2px;
-  background: rgba(255, 253, 246, .92);
-  border: 1px solid var(--gold);
-  border-radius: var(--radius-pill);
-  padding: 6px 14px;
-  box-shadow: var(--shadow-sm);
-  font-family: "Noto Serif TC", serif;
-  font-variant-numeric: tabular-nums;
-  font-weight: 700;
-  font-size: 22px;
-  color: var(--gold);
-}
-
-.score-frame.is-fullscreen .frame-countdown:not([hidden]) { display: flex; }
-
-.frame-countdown .unit {
-  font-family: "Noto Sans TC", sans-serif;
-  font-size: var(--fs-xs);
-  font-weight: 400;
-  color: var(--muted);
-}
-
-/* ---------- playback follow view ---------- */
-
 .stage { position: relative; }
-
-/*
- * While following, the stage is a window exactly two systems tall and the
- * score slides under it, so the line being played and the one after it are
- * both readable.
- *
- * overflow-x is `auto`, not `visible`/`hidden`: `.stage` must become the real
- * horizontal scroll container itself, because a clipped element's box stops
- * reporting its child's overflow to ITS OWN parent. With `overflow: hidden`
- * here, `.score-frame` (the outer, auto-scrolling frame) saw no overflow at
- * all once playback began — its scrollWidth read back equal to its
- * clientWidth — so scrolling it from JS did nothing. `stage.js` scrolls
- * `stage.scrollLeft` directly; the scrollbar is hidden below since a visible
- * native bar here would look wrong stacked under the frame's own scroll area.
- */
-.stage.following {
-  overflow-y: hidden;
-  overflow-x: auto;
-  scrollbar-width: none;
-  transition: height .25s ease;
-}
-
-.stage.following::-webkit-scrollbar { display: none; }
-
-.scroller {
-  position: relative;
-  will-change: transform;
-  transition: transform .35s cubic-bezier(.4, 0, .2, 1);
-}
 
 /* The bar being played, tinted behind the notes rather than over them. */
 .measure-highlight {
@@ -386,18 +263,12 @@ body.has-fullscreen-frame { overflow: hidden; }
   box-shadow: 0 0 14px 2px rgba(133, 100, 24, .45);
   pointer-events: none;
   z-index: 5;
+  transition: transform .12s linear;
 }
 
-.score { position: relative; z-index: 1; }
-
-/*
- * OSMD lays the music out to fit this element's width, so on a phone it would
- * otherwise wrap to one bar per system and the test becomes a long column.
- * Holding a minimum engraving width and letting the frame scroll sideways
- * keeps two or three bars per system, closer to a printed test.
- */
 .score {
-  min-width: 34rem;
+  position: relative;
+  z-index: 1;
   min-height: 10rem;
 }
 
@@ -449,49 +320,35 @@ footer {
   white-space: nowrap;
 }
 
-@media (max-width: 560px) {
-  body { padding: 20px 12px 28px; }
-  h1 { font-size: var(--fs-xl); }
-
+/*
+ * The full-label controls need about 604px to lay out on one line; below
+ * that (but above the phone breakpoint) they used to silently overflow
+ * their panel with no icon-only fallback to catch them — a gap discovered
+ * by resizing the window through it, not by any of the fixed device widths
+ * this app is normally checked against. 680px leaves a safety margin.
+ */
+@media (max-width: 680px) {
   .controls { padding: 10px 8px; gap: 6px; }
   /* Every button becomes its icon so the row still fits on one line. */
   .btn { width: 36px; height: 36px; padding: 0; }
   .btn .btn-label { display: none; }
   select { font-size: var(--fs-xs); padding: 6px 4px; }
+}
+
+@media (max-width: 560px) {
+  body { padding: 20px 12px 28px; }
+  h1 { font-size: var(--fs-xl); }
 
   .status { gap: 10px 18px; margin: 14px 2px 8px; }
   .countdown { font-size: 32px; min-width: 52px; }
   .meta { gap: 6px 16px; }
 
   .score-frame { padding: 12px 8px; }
-  .frame-action { top: 8px; right: 8px; }
   .message { font-size: var(--fs-xs); }
 }
 
-/*
- * A phone is too narrow to engrave a readable test, so the score keeps its
- * minimum width and the frame scrolls sideways. Say so once, rather than
- * letting the reader wonder why the music runs off the edge.
- */
-.rotate-hint { display: none; }
-
-@media (max-width: 560px) {
-  .rotate-hint {
-    display: block;
-    margin: 8px 2px 0;
-    color: var(--muted);
-    font-size: var(--fs-2xs);
-  }
-}
-
-/* Tablets: roomy enough for the full engraving, so give it the width. */
 @media (min-width: 561px) and (max-width: 1024px) {
   body { padding: 24px 20px 36px; }
-  .score { min-width: 0; }
-}
-
-@media (min-width: 1025px) {
-  .score { min-width: 0; }
 }
 
 /* Preparation checklist, shown only while the 30 seconds are running. */
