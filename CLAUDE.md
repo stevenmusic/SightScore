@@ -35,15 +35,21 @@ Entry point `src/generator/generate.js`. Order of generation (see `docs/abrsm-si
 3. **Left hand is written first**: bars of rhythm cells (`rhythm.js`) with pitches assigned against the chord progression (`melody.js`'s `assignPitches`). Its notes become a sounding-bass timeline (`soundingTimeline`).
 4. **Right hand is written second**, checked note-by-note against what the left hand is sounding at that same instant (the `against` timeline) — clashing vertical intervals are rejected or repaired during pitch selection, not patched after the fact.
 5. `harmoniseLeadingNotes` reconciles minor-key leading-tone raises between the two hands (disagreement there is a "false relation," the harshest thing the generator can produce).
-6. `applyExpression` adds dynamics, wedges, slurs, staccato and rall. within what the grade's rules allow.
+6. `applyExpression` adds dynamics, wedges, slurs, staccato and rall. within what the grade's rules allow — and, from Grade 6, sustain-pedal spans, a mid-piece rit./a tempo, and (Grade 7+) grace-note ornaments; see "Grade 6-8 extras" below.
 7. `toMusicXml` (`musicxml.js`) serializes the score to MusicXML 4.0: one `<part>`, two staves, staff 2 reached via `<backup>`.
 
 Key data structures/conventions to know before touching the generator:
 
 - **dstep (diatonic step)**: pitches are generated in diatonic-step space, not MIDI (`theory.js`: `dstep = 7*octave + letterIndex`), so spelling is correct by construction — e.g. the raised 7th in D minor always comes out as C#, never Db.
-- **score object**: `{seed, grade, confidence, key, timeSignature, barCount, divisions, tempoTerm, tempoBpm, progression, staves: {1: rightHandBars, 2: leftHandBars}}`. Each bar is `{events, beatDuration, directions}`; each event carries `dur` in `DIVISIONS`-per-quarter units, `type`, `rest`, and — if pitched — `pitch`/`dstep`/`chordDegrees`.
+- **score object**: `{seed, grade, confidence, key, timeSignature, barCount, divisions, tempoTerm, tempoBpm, title, progression, staves: {1: rightHandBars, 2: leftHandBars}}`. Each bar is `{events, beatDuration, directions}`; each event carries `dur` in `DIVISIONS`-per-quarter units, `type`, `rest`, and — if pitched — `pitch`/`dstep`/`chordDegrees`, plus optionally `grace` (see below).
 - **rhythm cells** (`rhythm.js`): whole-beat idiomatic figures drawn from a fixed library, not built note-by-note. This guarantees bars always sum correctly and that beaming/dots/tuplets only appear once a grade's rules permit them. `meter.js` rescales the (quarter-note-beat) cell library for other beat units and swaps in a separate cell set for compound time (x/8 meters).
 - **fingerprinting** (`fingerprint.js`): a test's fingerprint hashes its musical content (key, metre, bar count, every pitch/duration) rather than the MusicXML text, so two renders differing only in dynamics still count as the same test for dedup purposes (`generateUnique` + the browser's localStorage history).
+
+### Grade 6-8 extras
+
+Confirmed against the official Grade 6-8 specimen books (the syllabus PDFs, not fetchable from this environment but readable if the user attaches them): from Grade 6, every test has an actual piece title above the tempo/character word, not just the tempo word on its own — `score.title` (`generate.js`'s `TITLES` pool, original names in the same spirit, not the specific titles those books use) is only set for `grade >= 6`. `toMusicXml` has to put `<sound tempo>` on the *title's* `<direction>`, not the tempo term's — OSMD hoists whichever same-measure direction carries `<sound>` above any other, so leaving it on the tempo line would print the tempo word above the title instead of below it.
+
+The rules table had also long documented pedal marks, ornaments and mid-piece tempo changes as Grade 6-8 features with no code behind them — `applyExpression` now implements all three: `addPedalMarking` (a bracket pedal line, `<pedal type="start/stop" line="yes"/>`, gated on the rules table's pedal mention — English at Grade 5 ("pedal"), Chinese at Grade 6-8 ("踏板"), so the gate checks both), `addMidPieceTempoChange` (a rit./a tempo pair around the halfway bar, `grade >= 6`), and `addOrnaments` (a step-wise acciaccatura on 1-2 melody notes, `grade >= 7`). A grace note is `event.grace = {pitch}` on the note it decorates, not a separate event — MusicXML forbids `<duration>` on a grace note (it borrows its time from the main note), so it can't be a normal bar-filling event; `musicxml.js`'s `renderGraceNote` emits it as its own `<note><grace slash="yes"/>...</note>` immediately before the main note.
 
 ### Rules table is the single source of truth
 
