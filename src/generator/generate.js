@@ -277,6 +277,7 @@ function applyExpression(rng, rules, score) {
 
   const canSlur = rules.articulations.includes('slur');
   const canStaccato = rules.articulations.includes('staccato');
+  const canAccent = rules.articulations.includes('accent');
 
   for (const staffNumber of [1, 2]) {
     const staff = score.staves[staffNumber];
@@ -301,6 +302,10 @@ function applyExpression(rng, rules, score) {
             event.articulations = [...(event.articulations ?? []), 'staccato'];
           }
         }
+      } else if (canAccent && rng.chance(0.3)) {
+        // Real specimens accent single strong-beat notes (often the phrase's
+        // opening note), not a whole run the way staccato marks one.
+        sounding[0].articulations = [...(sounding[0].articulations ?? []), 'accent'];
       }
     }
   }

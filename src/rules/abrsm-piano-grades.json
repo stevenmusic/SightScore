@@ -137,7 +137,8 @@
       },
       "articulations": [
         "slur",
-        "staccato"
+        "staccato",
+        "accent"
       ],
       "dynamics": [
         "p",
