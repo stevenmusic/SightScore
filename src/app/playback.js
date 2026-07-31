@@ -150,6 +150,40 @@ export function createPlayer({ onStatus } = {}) {
     preload: download,
     stop,
     /**
+     * A short block chord — the tonic triad given before the 30-second
+     * preparation starts, matching what an examiner plays to establish the
+     * key. Shares the sample chain and voice bookkeeping with `play()`
+     * rather than standing up a second audio path, so it is stopped by the
+     * same `stop()` (pressing Stop, or starting a new test, cuts it off
+     * exactly as it would the reference playback). `startTime` is left
+     * untouched: a chord announcement isn't the timeline `startFollowing()`
+     * tracks, so `elapsed` should keep reporting null through it.
+     * @param {number[]} midis
+     * @returns {Promise<void>} resolves once the chord has decayed
+     */
+    async playChord(midis, { duration = 1.3 } = {}) {
+      stop();
+      ensureAudio();
+      await loadSamples();
+
+      const at = context.currentTime + 0.08;
+      let end = at;
+      for (const midi of midis) {
+        const voice = samples?.length
+          ? sampledNote(context, { master, reverbBus }, samples, midi, at, duration)
+          : fallbackNote(context, { master, reverbBus }, midi, at, duration);
+        voices.push(voice);
+        end = Math.max(end, at + duration);
+      }
+
+      return new Promise((resolve) => {
+        stopTimer = setTimeout(() => {
+          voices = [];
+          resolve();
+        }, (end - context.currentTime + TAIL + 0.3) * 1000);
+      });
+    },
+    /**
      * @param {object} score
      * @param {{onEnd?: () => void, tempoScale?: number}} [options]
      */

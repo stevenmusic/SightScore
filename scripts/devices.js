@@ -341,15 +341,34 @@ for (const device of DEVICES) {
 
   // The 30-second preparation countdown must run in place, in the score
   // frame's top-right corner, without moving the controls row above it.
+  // Pressing #prepare first gives the tonic chord and only starts the
+  // visible countdown once it has finished ringing (~1.3s), so this has to
+  // poll rather than assume the countdown is already running a moment after
+  // the click.
   const controlsBeforePrepare = await controlsBoxOf();
   await page.click('#prepare');
-  await page.waitForTimeout(300);
-  const preparing = await page.evaluate(() => ({
-    checklistVisible: getComputedStyle(document.getElementById('checklist')).display !== 'none',
-    countdownRunning: document.getElementById('countdown').classList.contains('running'),
+  // The tonic chord is given before the countdown starts — check that the
+  // gap is real (the countdown is not yet running moments after the click)
+  // and that the status line says so, not just that the countdown eventually
+  // starts.
+  await page.waitForTimeout(150);
+  const givingNote = await page.evaluate(() => ({
+    message: document.getElementById('message').textContent,
+    running: document.getElementById('countdown').classList.contains('running'),
   }));
+  if (!givingNote.message.includes('給音')) {
+    problems.push(`${device.name}: no "giving the note" status shown before the countdown starts (got "${givingNote.message}")`);
+  }
+  if (givingNote.running) {
+    problems.push(`${device.name}: countdown started running before the tonic chord finished`);
+  }
+  const preparing = await page.waitForFunction(() => {
+    const running = document.getElementById('countdown').classList.contains('running');
+    const checklistVisible = getComputedStyle(document.getElementById('checklist')).display !== 'none';
+    return running && checklistVisible ? { running, checklistVisible } : false;
+  }, { timeout: 15000 }).then((handle) => handle.jsonValue()).catch(() => ({ running: false, checklistVisible: false }));
   if (!preparing.checklistVisible) problems.push(`${device.name}: preparation checklist did not appear`);
-  if (!preparing.countdownRunning) problems.push(`${device.name}: preparation countdown did not run`);
+  if (!preparing.running) problems.push(`${device.name}: preparation countdown did not run`);
   const controlsAfterPrepare = await controlsBoxOf();
   if (Math.abs(controlsBeforePrepare.top - controlsAfterPrepare.top) > 1) {
     problems.push(`${device.name}: controls moved when the preparation countdown started`);

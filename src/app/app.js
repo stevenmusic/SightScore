@@ -1,6 +1,7 @@
 import { generateTest } from '../generator/generate.js';
 import { toMusicXml } from '../generator/musicxml.js';
 import { createHistory, generateUnique } from '../generator/fingerprint.js';
+import { createKey, pitchAt } from '../generator/theory.js';
 import { createPlayer } from './playback.js';
 import { createStage, barTimings } from './stage.js';
 
@@ -192,6 +193,7 @@ async function newTest() {
   elements.countdown.hidden = false;
   elements.play.disabled = false;
   elements.stop.disabled = false;
+  elements.prepare.disabled = false;
   elements.countdownValue.textContent = String(rules.exam.preparationSeconds);
   elements.countdown.className = 'countdown';
   elements.checklist.hidden = true;
@@ -232,8 +234,41 @@ const PREPARATION_STEPS = [
   '用最難的那一小節決定速度，然後心裡數一小節',
 ];
 
-function startCountdown() {
+/**
+ * The tonic triad in root position, near the middle of the keyboard — what
+ * an ABRSM examiner plays to establish the key before the 30 seconds start.
+ * Built from `theory.js`'s diatonic-step spelling rather than a hand-picked
+ * MIDI set, so the chord always comes from the test's actual key (its
+ * accidentals follow the key signature, the same way every note in the
+ * generated score does).
+ */
+function tonicTriadMidis(scoreKey) {
+  const key = createKey(scoreKey);
+  const root = 7 * 4 + key.tonicLetter; // dstep for the tonic near middle C
+  return [root, root + 2, root + 4].map((dstep) => pitchAt(dstep, key).midi);
+}
+
+/**
+ * Real preparation starts once the key has been given, not the instant the
+ * button is pressed — so this gives the tonic chord first and only starts
+ * the visible 30-second countdown once it has finished ringing. `current` is
+ * guarded rather than assumed: `#prepare` isn't disabled while a chord or a
+ * countdown from a *previous* test is still in flight, only before the very
+ * first test exists.
+ */
+async function startCountdown() {
+  if (!current) return;
   stopCountdown();
+  player.stop();
+  elements.checklist.hidden = true;
+  say('給音中……');
+
+  await player.playChord(tonicTriadMidis(current.score.key)).catch(() => {});
+
+  runPreparationCountdown();
+}
+
+function runPreparationCountdown() {
   let remaining = rules.exam.preparationSeconds;
   elements.countdownValue.textContent = String(remaining);
   elements.countdown.className = 'countdown running';
