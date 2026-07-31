@@ -85,6 +85,13 @@ export function assignPitches({ rng, key, bars, progression, window, options, ag
    * exactly the moments those matter most, the harmony arrivals.
    */
   let previousWasChordTone = true;
+  /*
+   * The leading note is a tendency tone — it wants the tonic a step above —
+   * and the bass of the previous moment is what a parallel fifth or octave is
+   * measured against. Neither was tracked, so neither could be honoured.
+   */
+  let previousWasLeadingNote = false;
+  let previousBass = null;
 
   bars.forEach((bar, barIndex) => {
     const entry = progression[barIndex] ?? 'I';
@@ -211,6 +218,8 @@ export function assignPitches({ rng, key, bars, progression, window, options, ag
           runDirection,
           runLength,
           previousWasChordTone,
+          previousWasLeadingNote,
+          previousBass,
           tones,
           onBeat,
           isDownbeat,
@@ -227,6 +236,16 @@ export function assignPitches({ rng, key, bars, progression, window, options, ag
       noteIndex += 1;
 
       previousWasChordTone = tones.includes(degreeOf(chosen, key));
+      /*
+       * A leading note only *functions* as one when it sits on dominant
+       * harmony. The 7th degree passing downward through a descending scale
+       * over the tonic is an ordinary passing note and must stay free to fall
+       * — demanding that every degree-7 rise would rewrite exactly the writing
+       * the idiom expects.
+       */
+      previousWasLeadingNote = degreeOf(chosen, key) === 6
+        && (chordHere === 'V' || chordHere === 'viio');
+      previousBass = sounding.length ? Math.min(...sounding) : null;
       const interval = previous === null ? 0 : chosen - previous;
       repeatRun = interval === 0 ? repeatRun + 1 : 0;
       const stepDirection = Math.abs(interval) === 1 ? Math.sign(interval) : 0;
@@ -251,7 +270,7 @@ export function assignPitches({ rng, key, bars, progression, window, options, ag
     });
   });
 
-  repairNonChordTones(bars, key, window);
+  repairNonChordTones(bars, key, window, { against, barDuration });
   fixAugmentedSeconds(bars, key);
   // Both repairs move pitches after the vertical check, so verify once more.
   resolveClashes({ bars, key, window, against, barDuration, finalEvent: endOnTonic ? finalEvent : null });
@@ -389,6 +408,15 @@ function shapeCadence({ bars, key, window, against, barDuration, soundingEvents 
     const pitch = pitchAt(candidate, key, { raiseSeventh });
     if (clashesWith(pitch.midi, sounding)) continue;
     if (ceiling !== null && pitch.midi < ceiling) continue;
+    /*
+     * The preferred approach *is* the leading note, and the chord underneath
+     * it at a cadence is the dominant — which contains the leading note too.
+     * So this is the one place in the generator that reaches for a doubled
+     * leading note by design, and it was the last source of them left.
+     * The supertonic above is tried next and descends to the tonic just as
+     * properly.
+     */
+    if (raiseSeventh && sounding.some((other) => (other % 12) === (pitch.midi % 12))) continue;
     penultimate.dstep = candidate;
     penultimate.raiseSeventh = raiseSeventh;
     penultimate.pitch = pitch;
@@ -455,8 +483,9 @@ function pickWeighted(ctx) {
   const {
     rng, key, allSteps, previous, previousLeap, repeatRun, runDirection, runLength, tones,
     onBeat, isDownbeat, centre, stepwiseBias, maxLeapSemitones, chordToneOnly, sounding,
-    previousWasChordTone, preferred = null,
+    previousWasChordTone, previousWasLeadingNote, previousBass, preferred = null,
   } = ctx;
+  const bass = sounding.length ? Math.min(...sounding) : null;
 
   const previousMidi = soundingMidi(previous, key);
   const ceiling = sounding.length ? Math.max(...sounding) : null;
@@ -481,6 +510,12 @@ function pickWeighted(ctx) {
     const midi = soundingMidi(dstep, key);
     const semitones = Math.abs(midi - previousMidi);
     if (semitones > maxLeapSemitones) continue;
+    /*
+     * A melodic tritone — an augmented 4th or diminished 5th leapt bare — is
+     * as much a part-writing error in this idiom as the augmented 2nd already
+     * guarded against, and nothing was stopping it.
+     */
+    if (semitones === 6) continue;
 
     const isChordTone = tones.includes(degreeOf(dstep, key));
     if (chordToneOnly && !isChordTone) continue;
@@ -505,6 +540,34 @@ function pickWeighted(ctx) {
     if (onBeat && !isChordTone && distance !== 1) continue;
     if (isDownbeat && !isChordTone) continue;
     if (distance === 0 && repeatRun >= 1) continue;
+
+    /*
+     * Consecutive fifths and octaves against the other hand. Two voices moving
+     * the same way into the same perfect consonance is the first prohibition
+     * of tonal part-writing: the voices stop sounding independent and briefly
+     * collapse into one. Nothing here had any notion of what the two hands did
+     * *between* one note and the next, only of what they sounded together at a
+     * single instant, so the audit found them in 1.3-3.9% of moving pairs.
+     */
+    if (previousBass !== null && bass !== null) {
+      const melodyDirection = Math.sign(midi - previousMidi);
+      const bassDirection = Math.sign(bass - previousBass);
+      if (melodyDirection !== 0 && melodyDirection === bassDirection) {
+        const beforeInterval = (((previousMidi - previousBass) % 12) + 12) % 12;
+        const afterInterval = (((midi - bass) % 12) + 12) % 12;
+        if (beforeInterval === afterInterval && (afterInterval === 0 || afterInterval === 7)) continue;
+      }
+    }
+
+    /*
+     * Never double the leading note against the other hand. An octave is not a
+     * dissonance, so the vertical check below waves it through — but two voices
+     * on the leading note both owe the tonic a resolution, and discharging that
+     * in the same direction writes a parallel octave. This is where most of the
+     * doubling came from: Grade 2 carries no chords at all and still doubled it
+     * in 4% of the chords containing one, purely melody against bass.
+     */
+    if (degreeOf(dstep, key) === 6 && sounding.some((other) => (other % 12) === (midi % 12))) continue;
 
     // Vertical check against whatever the other hand is holding.
     let clash = false;
@@ -555,6 +618,18 @@ function pickWeighted(ctx) {
      */
     if (distance === 1 && runDirection !== 0 && Math.sign(interval) === runDirection) {
       weight *= 1 + Math.min(runLength, 4) * 0.6;
+    }
+    /*
+     * Having sounded the leading note, go to the tonic. It is the strongest
+     * tendency in the idiom — and in a minor key the raised 7th exists for no
+     * other reason — but it was weighted no differently from any other step,
+     * so it resolved in as little as a fifth of cases at the upper grades.
+     * A preference rather than a rule: a leading note in an inner part, or one
+     * turned back down mid-phrase, is ordinary enough to leave available.
+     */
+    if (previousWasLeadingNote) {
+      if (dstep === previous + 1) weight *= 8;
+      else if (dstep < previous) weight *= 0.35;
     }
     if (clash) weight *= 0.3;
     if (Math.abs(previousLeap) >= 3) {
@@ -620,6 +695,22 @@ function pickWeighted(ctx) {
       if (preferredResolves) return preferredResolves.dstep;
       return rng.weighted(resolving).dstep;
     }
+  }
+
+  /*
+   * A leading note on dominant harmony resolves up to the tonic. Weighting it
+   * inside the step category was not enough: the category lottery below picks
+   * step-versus-leap *first*, so by Grade 8 it discarded the whole step
+   * category — resolution included — nearly half the time, and the melody
+   * resolved its leading note at the V-I arrival only 41% of the time. Forcing
+   * it here, ahead of the lottery, is the same treatment the passing-tone
+   * resolution already gets and for the same reason. Not absolute: an inner
+   * voice or a phrase that turns the note back down is ordinary enough to
+   * leave a share of.
+   */
+  if (previousWasLeadingNote) {
+    const resolution = steps.find((step) => step.dstep === previous + 1 && !step.clash);
+    if (resolution && rng.chance(0.85)) return resolution.dstep;
   }
 
   /*
@@ -700,6 +791,10 @@ function resolveClashes({ bars, key, window, against, barDuration, finalEvent })
         const raiseSeventh = degreeOf(dstep, key) === 6;
         const candidate = pitchAt(dstep, key, { raiseSeventh });
         if (wrong(candidate.midi)) continue;
+        // Relocating a note must not double the other hand's leading note —
+        // this pass runs after selection, where that rule is enforced, and
+        // was quietly reintroducing what selection had avoided.
+        if (raiseSeventh && sounding.some((other) => (other % 12) === (candidate.midi % 12))) continue;
         const distance = Math.abs(dstep - event.dstep);
         if (distance < bestDistance) {
           bestDistance = distance;
@@ -752,8 +847,21 @@ export function harmoniseRepeatedLeadingNotes(bars, key) {
  * A passing note that leaps in or out is not a passing note, it is a wrong
  * note. Replace those with the nearest chord tone.
  */
-function repairNonChordTones(bars, key, window) {
+function repairNonChordTones(bars, key, window, { against = null, barDuration = 0 } = {}) {
   const notes = bars.flatMap((bar) => bar.events.filter((event) => !event.rest));
+  // Where each note sits in absolute time, so a replacement can be checked
+  // against the other hand. This pass is otherwise vertically blind, which is
+  // usually safe because `resolveClashes` follows it — but that pass only
+  // repairs semitone clashes, and an octave doubling of the leading note is
+  // perfectly consonant, so nothing downstream was catching it.
+  const times = new Map();
+  bars.forEach((bar, barIndex) => {
+    let offset = 0;
+    for (const event of bar.events) {
+      if (!event.rest) times.set(event, { start: barIndex * barDuration + offset, dur: event.dur });
+      offset += event.dur;
+    }
+  });
 
   notes.forEach((note, index) => {
     if (!note.chordDegrees) return;
@@ -765,9 +873,16 @@ function repairNonChordTones(bars, key, window) {
     const steppedOut = !next || Math.abs(next.dstep - note.dstep) === 1;
     if (steppedInto && steppedOut) return;
 
+    const at = times.get(note);
+    const sounding = at && against ? soundingAt(against, at.start, at.dur) : [];
     const options = [];
     for (let dstep = window.low; dstep <= window.high; dstep++) {
-      if (note.chordDegrees.includes(degreeOf(dstep, key))) options.push(dstep);
+      if (!note.chordDegrees.includes(degreeOf(dstep, key))) continue;
+      if (degreeOf(dstep, key) === 6 && sounding.length) {
+        const midi = pitchAt(dstep, key, { raiseSeventh: true }).midi;
+        if (sounding.some((other) => (other % 12) === (midi % 12))) continue;
+      }
+      options.push(dstep);
     }
     if (!options.length) return;
 
@@ -889,6 +1004,17 @@ export function stackChordTones({
         // A stacked note can itself land on the leading note (a V or vii°
         // chord contains it) — harmonic minor raises it there same as anywhere.
         const pitch = pitchAt(below, key, { raiseSeventh: degreeOf(below, key) === 6 });
+        /*
+         * Never double the leading note. Both copies are tendency tones owing
+         * the tonic a resolution, and two voices discharging that debt in the
+         * same direction is a parallel octave by construction — which is part
+         * of how the octaves the audit also reports came about. This only
+         * became reachable once both hands could carry chords, and by Grade 8
+         * it was in 17% of the chords containing a leading note.
+         */
+        if (degreeOf(below, key) === 6
+          && (degreeOf(event.dstep, key) === 6
+            || sounding.some((midi) => midi % 12 === pitch.midi % 12))) continue;
         const interval = event.pitch.midi - pitch.midi;
         if (interval <= 0 || interval > 12) continue;
         if (HARSH_INTERVALS.has(interval % 12)) continue;
@@ -908,6 +1034,175 @@ export function stackChordTones({
     });
   });
   return bars;
+}
+
+/**
+ * Remove consecutive fifths and octaves left behind by the repair passes.
+ *
+ * `pickWeighted` already refuses to *choose* one, but `repairNonChordTones`,
+ * `resolveClashes` and `shapeCadence` all move notes afterwards with no view
+ * of what the other hand is doing between one attack and the next, and they
+ * put them back: measured at 27-45% of tests containing at least one, even
+ * though only about half a percent of moving pairs were affected. That gap
+ * between the per-pair rate and the per-test rate is the whole point — a
+ * reader meets one test, not an average.
+ *
+ * Only the upper voice is moved, only to a neighbouring chord tone, and never
+ * the notes that close the piece: the cadence has already been settled by
+ * `shapeCadence` and is not worth trading for this. Where nothing legal
+ * removes the parallel the note is left alone.
+ */
+export function relaxParallels(upper, lower, key, barDuration, window) {
+  const timeline = outerVoiceTimeline(upper, lower, barDuration);
+  /*
+   * The closing gesture is off limits. `shapeCadence` has already settled the
+   * final tonic and its stepwise approach, and an entry in this timeline marks
+   * a *moment* rather than a note — the last moment can belong to a bass
+   * attack under a melody note that sounded earlier — so the two notes are
+   * held out by identity rather than by position.
+   */
+  const melody = upper.flatMap((bar) => bar.events.filter((e) => !e.rest && e.pitch));
+  const protectedNotes = new Set(melody.slice(-2));
+
+  for (let i = 1; i < timeline.length; i++) {
+    const before = timeline[i - 1];
+    const now = timeline[i];
+    if (!before.event || !now.event || before.bass === null || now.bass === null) continue;
+    if (!parallelPerfect(before, now)) continue;
+
+    const neighbours = upper.flatMap((bar) => bar.events.filter((e) => !e.rest && e.pitch));
+    /*
+     * Try the second note of the pair first — moving it disturbs only what
+     * follows — and fall back to the first. Either one breaks the parallel,
+     * and having both to try roughly doubles the chance that some legal note
+     * exists: on the later note alone, the chord-tone and no-clash conditions
+     * frequently leave nothing available.
+     */
+    if (!protectedNotes.has(now.event)
+      && moveOffParallel(now, before, now, neighbours, key, window)) continue;
+    if (!before.isFirst && !protectedNotes.has(before.event)) {
+      moveOffParallel(before, timeline[i - 2] ?? null, now, neighbours, key, window, true);
+    }
+  }
+}
+
+/**
+ * Shift one of the two notes making a parallel onto a neighbouring chord
+ * tone. `guardAgainst` is the moment on the *other* side of the moved note,
+ * so relieving this parallel does not write another one there instead.
+ */
+function moveOffParallel(target, guardAgainst, pair, neighbours, key, window, movingEarlier = false) {
+  const event = target.event;
+  const tones = event.chordDegrees ?? [];
+  const index = neighbours.indexOf(event);
+
+  for (const delta of [1, -1, 2, -2, 3, -3]) {
+    const dstep = event.dstep + delta;
+    if (dstep < window.low || dstep > window.high) continue;
+    if (tones.length && !tones.includes(degreeOf(dstep, key))) continue;
+    const raiseSeventh = degreeOf(dstep, key) === 6;
+    const pitch = pitchAt(dstep, key, { raiseSeventh });
+    if (target.bass !== null && pitch.midi < target.bass) continue;
+    if (clashesWith(pitch.midi, target.sounding)) continue;
+    // This pass must honour the no-doubled-leading-note rule too, or it
+    // relieves a parallel by writing the cause of another one.
+    if (degreeOf(dstep, key) === 6
+      && target.sounding.some((midi) => (midi % 12) === (pitch.midi % 12))) continue;
+
+    const moved = { ...target, top: pitch.midi };
+    if (movingEarlier ? parallelPerfect(moved, pair) : parallelPerfect(pair, moved)) continue;
+    if (guardAgainst && guardAgainst.event
+      && (movingEarlier ? parallelPerfect(guardAgainst, moved) : parallelPerfect(moved, guardAgainst))) continue;
+    // Moving a note can write an augmented 2nd against its own neighbours.
+    if (writesAugmentedSecond(neighbours, index, dstep, raiseSeventh, key)) continue;
+
+    event.dstep = dstep;
+    event.raiseSeventh = raiseSeventh;
+    event.pitch = pitch;
+    /*
+     * The notes stacked under this one were spelled against where it used to
+     * be — an interval and a chord membership that no longer hold. They are
+     * decoration and the parallel is a fault, so drop them rather than try to
+     * re-voice a chord around a note that has just moved.
+     */
+    delete event.chord;
+    return true;
+  }
+  return false;
+}
+
+function parallelPerfect(before, now) {
+  const upperDirection = Math.sign(now.top - before.top);
+  const lowerDirection = Math.sign(now.bass - before.bass);
+  if (upperDirection === 0 || upperDirection !== lowerDirection) return false;
+  const beforeInterval = (((before.top - before.bass) % 12) + 12) % 12;
+  const afterInterval = (((now.top - now.bass) % 12) + 12) % 12;
+  return beforeInterval === afterInterval && (afterInterval === 0 || afterInterval === 7);
+}
+
+function writesAugmentedSecond(notes, index, dstep, raiseSeventh, key) {
+  if (!key.isMinor) return false;
+  for (const neighbour of [notes[index - 1], notes[index + 1]]) {
+    if (!neighbour) continue;
+    if (Math.abs(neighbour.dstep - dstep) !== 1) continue;
+    const raisedHere = raiseSeventh && degreeOf(dstep, key) === 6;
+    const raisedThere = neighbour.raiseSeventh && degreeOf(neighbour.dstep, key) === 6;
+    if ((raisedHere && degreeOf(neighbour.dstep, key) === 5)
+      || (raisedThere && degreeOf(dstep, key) === 5)) return true;
+  }
+  return false;
+}
+
+/**
+ * Outer voices at every attack in *either* hand.
+ *
+ * Walking only the upper hand's attacks misses most of it. When the bass moves
+ * under a held melody note and the melody then moves, the succession the ear
+ * hears runs from the bass's new note to the next sonority — a pair this never
+ * examined, which is why an earlier version of the repair changed almost
+ * nothing while the audit went on reporting parallels. The moments that matter
+ * are wherever the sounding chord changes, whichever hand caused it.
+ */
+function outerVoiceTimeline(upper, lower, barDuration) {
+  const spans = [];
+  const collect = (bars, staff) => bars.forEach((bar, barIndex) => {
+    let offset = 0;
+    for (const event of bar.events) {
+      if (!event.rest && event.pitch) {
+        const start = barIndex * barDuration + offset;
+        spans.push({ staff, start, end: start + event.dur, event });
+      }
+      offset += event.dur;
+    }
+  });
+  collect(upper, 1);
+  collect(lower, 2);
+
+  const times = [...new Set(spans.map((s) => s.start))].sort((a, b) => a - b);
+  const entries = [];
+  for (const time of times) {
+    const sounding = spans.filter((s) => s.start <= time && s.end > time);
+    const top = sounding.filter((s) => s.staff === 1);
+    const bottom = sounding.filter((s) => s.staff === 2);
+    if (!top.length || !bottom.length) continue;
+    const highest = top.reduce((best, s) => {
+      const midi = Math.max(s.event.pitch.midi, ...(s.event.chord ?? []).map((p) => p.midi));
+      return midi > best.midi ? { midi, event: s.event } : best;
+    }, { midi: -Infinity, event: null });
+    const bassMidis = bottom.flatMap((s) => [s.event.pitch.midi, ...(s.event.chord ?? []).map((p) => p.midi)]);
+    entries.push({
+      event: highest.event,
+      top: highest.midi,
+      bass: Math.min(...bassMidis),
+      sounding: bassMidis,
+    });
+  }
+  entries.forEach((entry, i) => {
+    entry.isFirst = i === 0;
+    entry.isLast = i === entries.length - 1;
+    entry.isPenultimate = i === entries.length - 2;
+  });
+  return entries;
 }
 
 /**

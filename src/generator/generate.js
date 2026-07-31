@@ -12,6 +12,7 @@ import { createKey, dstepRange, degreeOf, pitchAt, chordDegrees } from './theory
 import { buildProgression, firstChord, lastChord, halfCadenceBar } from './harmony.js';
 import {
   assignPitches, stackChordTones, soundingTimeline, harmoniseLeadingNotes, harmoniseRepeatedLeadingNotes,
+  relaxParallels,
 } from './melody.js';
 import { DIVISIONS, cellsFor, fillBar, wholeBarRest } from './rhythm.js';
 import { meterInfo, rescaleCells } from './meter.js';
@@ -104,11 +105,24 @@ export function generateTest(rulesTable, options) {
     rng, rules, meter, barCount, hand: 'leftHand', progression, key,
     silentBars: silence.leftHand, restatement,
   });
+  /*
+   * Where the left hand actually settled. The right hand's working range was
+   * drawn independently of it, so at the upper grades — where both ranges are
+   * wide — the two could end up more than two octaves apart in 40% of moments,
+   * a gaping hole in the middle of the texture that no keyboard writing leaves.
+   */
+  const leftSteps = leftHand
+    .flatMap((bar) => bar.events.filter((event) => !event.rest && event.dstep !== undefined))
+    .map((event) => event.dstep);
   const rightHand = buildStaff({
     rng, rules, meter, barCount, hand: 'rightHand', progression, key,
     silentBars: silence.rightHand, restatement,
     against: soundingTimeline(leftHand, meter.barDuration),
+    above: leftSteps.length ? Math.max(...leftSteps) : null,
   });
+  // Consecutive fifths and octaves put back by the repair passes inside each
+  // hand — only visible now that both hands are final.
+  relaxParallels(rightHand, leftHand, key, meter.barDuration, rightHand.window);
   harmoniseLeadingNotes([rightHand, leftHand], key, meter.barDuration);
   // The cross-hand reconciliation above can itself leave a repeated note
   // disagreeing with itself within one hand (it only checks the two hands
@@ -174,7 +188,7 @@ function pickBarCount(rng, rules, timeSignature) {
   return count % 2 === 0 ? count : Math.min(count + 1, max % 2 === 0 ? max : max - 1) || min;
 }
 
-function buildStaff({ rng, rules, meter, barCount, hand, progression, key, silentBars = new Set(), restatement = [], against = null }) {
+function buildStaff({ rng, rules, meter, barCount, hand, progression, key, silentBars = new Set(), restatement = [], against = null, above = null }) {
   const isLeft = hand === 'leftHand';
   const activity = rules.generatorHints.activity ?? 0.4;
   // A supportive accompaniment role only exists once the hands actually
@@ -322,8 +336,8 @@ function buildStaff({ rng, rules, meter, barCount, hand, progression, key, silen
   const range = rules.range[hand];
   const { low, high } = dstepRange(key, range.minMidi, range.maxMidi);
   const window = rules.texture.fiveFingerPosition
-    ? fiveFingerWindow(rng, key, low, high)
-    : tessituraWindow(rng, key, low, high, 8 + rules.grade);
+    ? fiveFingerWindow(rng, key, low, high, above)
+    : tessituraWindow(rng, key, low, high, 8 + rules.grade, above);
 
   assignPitches({
     rng,
@@ -370,6 +384,9 @@ function buildStaff({ rng, rules, meter, barCount, hand, progression, key, silen
     });
   }
 
+  // The cross-hand parallel repair runs once both hands exist and has to keep
+  // its replacements inside this hand's working range, so carry it along.
+  bars.window = window;
   return bars;
 }
 
@@ -461,7 +478,7 @@ function pitchTreatment(rng, progression, sourceBarIndex, barIndex) {
  * wanders and collects ledger lines no real test would print. Pick a working
  * tessitura inside the range, wider at each grade.
  */
-function tessituraWindow(rng, key, low, high, span) {
+function tessituraWindow(rng, key, low, high, span, above = null) {
   if (high - low <= span) return { low, high };
   const starts = [];
   for (let dstep = low; dstep + span <= high; dstep++) {
@@ -470,8 +487,20 @@ function tessituraWindow(rng, key, low, high, span) {
     if (hasTonic) starts.push(dstep);
   }
   if (!starts.length) return { low, high };
-  const start = rng.pick(starts);
+  const start = rng.pick(reachableFrom(starts, above));
   return { low: start, high: start + span };
+}
+
+/**
+ * Keep a hand's working range within reach of the one already written, so the
+ * texture holds together instead of leaving a hole in the middle. A little
+ * overlap below is allowed — the hands share the middle of the keyboard — and
+ * about an octave and a half above is as far as the upper hand should sit.
+ */
+function reachableFrom(starts, above) {
+  if (above === null) return starts;
+  const near = starts.filter((dstep) => dstep >= above - 2 && dstep <= above + 8);
+  return near.length ? near : starts;
 }
 
 /**
@@ -479,13 +508,14 @@ function tessituraWindow(rng, key, low, high, span) {
  * The window must contain the tonic somewhere, or the test could not cadence
  * on it — a five-note span starting on the 2nd or 3rd degree has no tonic.
  */
-function fiveFingerWindow(rng, key, low, high) {
-  const starts = [];
+function fiveFingerWindow(rng, key, low, high, above = null) {
+  const all = [];
   for (let dstep = low; dstep + 4 <= high; dstep++) {
     const hasTonic = [0, 1, 2, 3, 4].some((step) => degreeOf(dstep + step, key) === 0);
-    if (hasTonic) starts.push(dstep);
+    if (hasTonic) all.push(dstep);
   }
-  if (!starts.length) return { low, high };
+  if (!all.length) return { low, high };
+  const starts = reachableFrom(all, above);
   const tonicStarts = starts.filter((dstep) => degreeOf(dstep, key) === 0);
   const start = tonicStarts.length && rng.chance(0.7) ? rng.pick(tonicStarts) : rng.pick(starts);
   return { low: start, high: start + 4 };

@@ -25,7 +25,7 @@ import { fileURLToPath } from 'node:url';
 
 import { generateTest } from '../src/generator/generate.js';
 import { createKey, degreeOf, chordDegrees } from '../src/generator/theory.js';
-import { firstChord, chordAt } from '../src/generator/harmony.js';
+import { firstChord, lastChord, chordAt } from '../src/generator/harmony.js';
 
 const rules = JSON.parse(
   readFileSync(fileURLToPath(new URL('../src/rules/abrsm-piano-grades.json', import.meta.url)), 'utf8'),
@@ -512,6 +512,220 @@ function auditExpression(grade, tests) {
   return lines;
 }
 
+
+/* ------------------------------------------------------------------ *
+ * 6. Voice leading — the part-writing grammar
+ *
+ * Everything above asks whether the numbers look like a real test. This asks
+ * whether the two hands move against each other the way tonal music does.
+ * These are the rules a theory examiner marks in red: consecutive fifths and
+ * octaves, a leading note that fails to rise, a dominant that falls back to
+ * the subdominant, the leading note doubled. They are invisible to both the
+ * unit tests (each note is individually legal) and to the distribution checks
+ * (the averages all look fine).
+ * ------------------------------------------------------------------ */
+
+/**
+ * The sounding texture at every attack point: outer voices, everything
+ * sounding, and which hand actually moved to get there.
+ */
+function voiceTimeline(score) {
+  const spans = [];
+  for (const staffNumber of [1, 2]) {
+    score.staves[staffNumber].forEach((bar, barIndex) => {
+      let offset = 0;
+      for (const event of bar.events) {
+        if (!event.rest && event.pitch) {
+          const start = barIndex * score.barDuration + offset;
+          spans.push({
+            staff: staffNumber,
+            start,
+            end: start + event.dur,
+            pitches: [event.pitch, ...(event.chord ?? [])],
+          });
+        }
+        offset += event.dur;
+      }
+    });
+  }
+  const times = [...new Set(spans.map((s) => s.start))].sort((a, b) => a - b);
+  return times.map((t) => {
+    const sounding = spans.filter((s) => s.start <= t && s.end > t);
+    const upper = sounding.filter((s) => s.staff === 1).flatMap((s) => s.pitches);
+    const lower = sounding.filter((s) => s.staff === 2).flatMap((s) => s.pitches);
+    return {
+      time: t,
+      soprano: upper.length ? upper.reduce((a, b) => (b.midi > a.midi ? b : a)) : null,
+      bass: lower.length ? lower.reduce((a, b) => (b.midi < a.midi ? b : a)) : null,
+      all: [...upper, ...lower],
+      attacked: new Set(sounding.filter((s) => s.start === t).map((s) => s.staff)),
+    };
+  });
+}
+
+function auditVoiceLeading(grade, tests) {
+  const lines = [];
+  let pairs = 0;
+  let parallelFifths = 0;
+  let parallelOctaves = 0;
+  let contrary = 0;
+  let similar = 0;
+  let oblique = 0;
+  let wideSpacing = 0;
+  let spacingPairs = 0;
+
+  let leadingNotes = 0;
+  let leadingResolved = 0;
+  let doubledLeading = 0;
+  let chordsWithLeading = 0;
+
+  let progressions = 0;
+  let retrogressions = 0;
+  let cadences = 0;
+  let properCadences = 0;
+
+  let melodicLeaps = 0;
+  let tritoneLeaps = 0;
+
+  for (const score of tests) {
+    const key = createKey(score.key);
+    const timeline = voiceTimeline(score);
+
+    for (let i = 1; i < timeline.length; i++) {
+      const a = timeline[i - 1];
+      const b = timeline[i];
+      if (!a.soprano || !a.bass || !b.soprano || !b.bass) continue;
+
+      const upperMoved = b.soprano.midi !== a.soprano.midi;
+      const lowerMoved = b.bass.midi !== a.bass.midi;
+      pairs += 1;
+
+
+      if (!upperMoved || !lowerMoved) { oblique += 1; continue; }
+      const upperDirection = Math.sign(b.soprano.midi - a.soprano.midi);
+      const lowerDirection = Math.sign(b.bass.midi - a.bass.midi);
+      if (upperDirection === lowerDirection) similar += 1; else contrary += 1;
+
+      // Consecutive perfect consonances between the outer voices, reached by
+      // both voices moving in the same direction.
+      const before = (a.soprano.midi - a.bass.midi) % 12;
+      const after = (b.soprano.midi - b.bass.midi) % 12;
+      if (upperDirection === lowerDirection && before === after) {
+        if (before === 7) parallelFifths += 1;
+        if (before === 0) parallelOctaves += 1;
+      }
+    }
+
+    /*
+     * Spacing, by the rule that actually applies here. Two earlier versions of
+     * this check imported four-part vocal rules that keyboard writing does not
+     * obey — outer voices more than two octaves apart, and a gap of over an
+     * octave between adjacent upper voices. Both are ordinary in melody-and-
+     * accompaniment texture: a bass at C2 under a tune at C5 is unremarkable,
+     * and an Alberti bass sits well over an octave below the melody by
+     * definition. What genuinely constrains a keyboard test is whether one
+     * hand can physically reach its own chord.
+     */
+    for (const staffNumber of [1, 2]) {
+      for (const bar of score.staves[staffNumber]) {
+        for (const event of notesOfBar(bar)) {
+          const midis = [event.pitch, ...(event.chord ?? [])].map((p) => p.midi);
+          if (midis.length < 2) continue;
+          spacingPairs += 1;
+          if (Math.max(...midis) - Math.min(...midis) > 12) wideSpacing += 1;
+        }
+      }
+    }
+
+    // Leading note: does it rise to the tonic, and is it ever doubled?
+    for (const entry of timeline) {
+      const leading = entry.all.filter((p) => degreeOf(p.dstep, key) === 6);
+      if (leading.length) chordsWithLeading += 1;
+      if (leading.length > 1) doubledLeading += 1;
+    }
+    /*
+     * The leading note is measured where theory actually requires it to
+     * resolve: at the point the dominant gives way to the tonic. Counting
+     * every degree-7 note instead demanded that a descending scale over the
+     * tonic rise, which no music does — and while the bass is still under a
+     * prolonged V it cannot step to the tonic at all without leaving the
+     * chord. Measured that way the rate looked like 20-40% and was mostly the
+     * metric's fault; at the resolution point it is the real number.
+     */
+    for (const staffNumber of [1, 2]) {
+      const flat = [];
+      score.staves[staffNumber].forEach((bar, barIndex) => {
+        let offset = 0;
+        for (const event of bar.events) {
+          if (!event.rest && event.pitch) {
+            flat.push({ event, chord: chordAt(score.progression[barIndex] ?? 'I', offset, score.barDuration) });
+          }
+          offset += event.dur;
+        }
+      });
+      for (let i = 0; i < flat.length - 1; i++) {
+        if (degreeOf(flat[i].event.dstep, key) !== 6) continue;
+        const wasDominant = flat[i].chord === 'V' || flat[i].chord === 'viio';
+        const resolves = flat[i + 1].chord === 'I' || flat[i + 1].chord === 'vi';
+        if (!wasDominant || !resolves) continue;
+        leadingNotes += 1;
+        if (flat[i + 1].event.dstep === flat[i].event.dstep + 1) leadingResolved += 1;
+      }
+      // Melodic tritones.
+      const notes = flat.map((entry) => entry.event);
+      for (let i = 0; i < notes.length - 1; i++) {
+        const semitones = Math.abs(notes[i + 1].pitch.midi - notes[i].pitch.midi);
+        if (semitones <= 2) continue;
+        melodicLeaps += 1;
+        if (semitones === 6) tritoneLeaps += 1;
+      }
+    }
+
+    // Harmonic syntax: V should not fall back to IV, and the piece should end V-I.
+    for (let bar = 1; bar < score.barCount; bar++) {
+      const from = lastChord(score.progression[bar - 1] ?? 'I');
+      const to = firstChord(score.progression[bar] ?? 'I');
+      if (from === to) continue;
+      progressions += 1;
+      if (from === 'V' && (to === 'IV' || to === 'ii')) retrogressions += 1;
+    }
+    cadences += 1;
+    const penultimate = lastChord(score.progression[score.barCount - 2] ?? 'I');
+    const finalChord = firstChord(score.progression[score.barCount - 1] ?? 'I');
+    if (penultimate === 'V' && finalChord === 'I') properCadences += 1;
+  }
+
+  lines.push(check('voiceleading', grade, 'parallel fifths (outer voices)',
+    `${fixed(pct(parallelFifths, pairs), 2)}%`,
+    pct(parallelFifths, pairs) <= 0.5, '<=0.5% of moving pairs'));
+  lines.push(check('voiceleading', grade, 'parallel octaves (outer voices)',
+    `${fixed(pct(parallelOctaves, pairs), 2)}%`,
+    pct(parallelOctaves, pairs) <= 0.5, '<=0.5% of moving pairs'));
+  lines.push(`       motion: contrary ${fixed(pct(contrary, pairs))}%  `
+    + `similar ${fixed(pct(similar, pairs))}%  oblique ${fixed(pct(oblique, pairs))}%`);
+  lines.push(check('voiceleading', grade, 'chord too wide for one hand',
+    `${fixed(pct(wideSpacing, spacingPairs), 2)}%`,
+    pct(wideSpacing, spacingPairs) === 0, '0% (a hand cannot stretch past an octave)'));
+
+  lines.push(check('voiceleading', grade, 'leading note rises at the V-I arrival',
+    `${fixed(pct(leadingResolved, leadingNotes))}%`,
+    pct(leadingResolved, leadingNotes) >= 70, '>=70% (a tendency tone at its resolution)'));
+  lines.push(check('voiceleading', grade, 'leading note doubled',
+    `${fixed(pct(doubledLeading, chordsWithLeading), 2)}%`,
+    pct(doubledLeading, chordsWithLeading) <= 2, '<=2% of chords containing it'));
+
+  lines.push(check('voiceleading', grade, 'V falling back to IV/ii',
+    `${fixed(pct(retrogressions, progressions))}%`,
+    pct(retrogressions, progressions) <= 2, '<=2% of chord changes'));
+  lines.push(check('voiceleading', grade, 'ends with a V-I cadence',
+    `${fixed(pct(properCadences, cadences))}%`,
+    pct(properCadences, cadences) >= 98, '>=98%'));
+  lines.push(check('voiceleading', grade, 'melodic tritone leaps',
+    `${fixed(pct(tritoneLeaps, melodicLeaps), 2)}%`,
+    pct(tritoneLeaps, melodicLeaps) <= 1, '<=1% of leaps'));
+  return lines;
+}
+
 /* ------------------------------------------------------------------ */
 const SECTIONS = {
   harmony: auditHarmony,
@@ -519,6 +733,7 @@ const SECTIONS = {
   melody: auditMelody,
   texture: auditTexture,
   expression: auditExpression,
+  voiceleading: auditVoiceLeading,
 };
 
 console.log(`Monte-Carlo audit — ${RUNS} tests per grade\n`);

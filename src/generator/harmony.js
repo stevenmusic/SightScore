@@ -10,6 +10,20 @@ const MIDDLE_POOL = ['IV', 'ii', 'vi', 'I', 'V', 'iii'];
 const MIDDLE_POOL_SIMPLE = ['IV', 'V', 'I', 'vi'];
 
 /**
+ * What may follow a given chord. Only one restriction, but it is the one rule
+ * of functional syntax that a free walk breaks audibly: the dominant does not
+ * fall back to the subdominant. V-IV undoes the tension the dominant just
+ * built and is heard as the progression losing its footing — every textbook
+ * calls it a retrogression. Once a bar could split into two chords (Grade 5+)
+ * a free pick produced it in 3-4% of chord changes.
+ */
+function mayFollow(pool, previous) {
+  const allowed = previous === 'V' ? pool.filter((chord) => chord === 'I' || chord === 'vi') : pool;
+  const usable = allowed.filter((chord) => chord !== previous);
+  return usable.length ? usable : pool.filter((chord) => chord !== previous);
+}
+
+/**
  * One chord per bar (occasionally two — see `twoChordBarChance`): opens on
  * I, closes with a V–I cadence.
  *
@@ -61,9 +75,9 @@ export function buildProgression(rng, barCount, options = {}) {
       previous = 'I';
       continue;
     }
-    const first = rng.pick(pool.filter((chord) => chord !== previous));
+    const first = rng.pick(mayFollow(pool, previous));
     if (twoChordBarChance > 0 && rng.chance(twoChordBarChance)) {
-      const second = rng.pick(pool.filter((chord) => chord !== first));
+      const second = rng.pick(mayFollow(pool, first));
       progression[bar] = [first, second];
       previous = second;
     } else {
