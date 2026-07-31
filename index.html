@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="src/app/styles.css?v=14">
+  <link rel="stylesheet" href="src/app/styles.css?v=15">
   <!--
     Loaded from vendor/ rather than node_modules/ so the page works as a plain
     static site (GitHub Pages) with no build step and no npm install.
@@ -18,28 +18,18 @@
   <script src="vendor/opensheetmusicdisplay.min.js"></script>
 </head>
 <body>
+  <!--
+    Title left, transport right, one row, always. There is no fullscreen mode
+    to hide this row or rearrange it — the whole page already shows nothing
+    but the title bar, the key/tempo line and the score, so a distraction-free
+    view would have nothing left to strip away. Since the buttons never move
+    or disappear, generating a new test can only ever change the meta strip
+    below, never this row.
+  -->
   <header class="topbar">
     <div class="title-block">
       <h1>Sight<span>Score</span></h1>
     </div>
-  </header>
-
-  <!--
-    Countdown + metadata on the left, transport on the right, sharing one row.
-    The controls sit here rather than in the title bar so that they survive
-    fullscreen, which hides the title bar entirely — and so that the buttons
-    line up with the tempo reading rather than floating above it.
-    `.statusbar` is always present; only `#status` inside it is hidden until
-    there is a test to describe, which is why the controls are its sibling
-    rather than its child.
-  -->
-  <div class="statusbar">
-    <section id="status" class="status" hidden>
-      <div class="countdown" id="countdown">
-        <span id="countdown-value">30</span><span class="unit">秒</span>
-      </div>
-      <div class="meta" id="meta"></div>
-    </section>
 
     <section class="controls">
       <button class="btn primary" id="generate">
@@ -59,12 +49,16 @@
       <button class="btn icon-only" id="stop" disabled aria-label="停止" title="停止並回到開頭">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 6h2.6v12H6zm4.4 6l8.6 6V6z"/></svg>
       </button>
-
-      <button class="btn icon-only" id="fullscreen" disabled aria-label="全螢幕顯示" title="全螢幕顯示">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path id="fullscreenIcon" d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
-      </button>
     </section>
-  </div>
+  </header>
+
+  <!--
+    Key/time signature/bar count/tempo, directly below the title bar so it
+    reads as "what this page is about" — never inside the controls row, so
+    generating a new test (which changes this text's length) can never move
+    a button. Hidden until there is a test to describe.
+  -->
+  <section id="meta" class="meta" hidden></section>
 
   <main>
     <div class="score-frame" id="score-frame">
@@ -78,6 +72,16 @@
         <option value="7">Grade 7</option>
         <option value="8">Grade 8</option>
       </select>
+      <!--
+        Preparation countdown, pinned to the score's own top-right corner —
+        symmetric with the grade selector at the top-left. Both read as
+        "controls for this sheet of paper" rather than page chrome, and
+        pinning them to its corners leaves the rest of the frame free for
+        the engraving. Hidden until there is a test to prepare for.
+      -->
+      <div class="countdown" id="countdown" hidden>
+        <span id="countdown-value">30</span><span class="unit">秒</span>
+      </div>
       <div class="stage" id="stage">
         <div class="measure-highlight" id="measure-highlight"></div>
         <div id="score" class="score"></div>
@@ -96,6 +100,6 @@
 
   <span id="history-info" class="history-badge"></span>
 
-  <script type="module" src="src/app/app.js?v=13"></script>
+  <script type="module" src="src/app/app.js?v=14"></script>
 </body>
 </html>

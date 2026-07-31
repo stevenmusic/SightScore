@@ -37,7 +37,7 @@ Pages 只要指向含有 `index.html` 的分支根目錄即可。注意兩件事
 | `src/generator/musicxml.js` | MusicXML 4.0 大譜表序列化 |
 | `src/generator/fingerprint.js` | 題目指紋與出題紀錄，避免短期重複 |
 | `src/app/` | 瀏覽器介面：OSMD 渲染、30 秒倒數、取樣鋼琴播放 |
-| `src/app/stage.js` | 播放跟譜：小節色塊、播放軸、兩行捲動視窗、全螢幕 |
+| `src/app/stage.js` | 播放跟譜：小節色塊、播放軸 |
 
 ## 已完成
 

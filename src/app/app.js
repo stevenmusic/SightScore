@@ -13,9 +13,6 @@ const elements = {
   play: document.getElementById('play'),
   playIcon: document.getElementById('playIcon'),
   stop: document.getElementById('stop'),
-  fullscreen: document.getElementById('fullscreen'),
-  fullscreenIcon: document.getElementById('fullscreenIcon'),
-  status: document.getElementById('status'),
   countdown: document.getElementById('countdown'),
   countdownValue: document.getElementById('countdown-value'),
   meta: document.getElementById('meta'),
@@ -32,8 +29,6 @@ const elements = {
 /* ScrollScore's icon paths, so the two apps show the same glyphs. */
 const PLAY_ICON_D = 'M8 5v14l11-7z';
 const PAUSE_ICON_D = 'M6 5h4v14H6zM14 5h4v14h-4z';
-const EXPAND_ICON_D = 'M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3';
-const COMPRESS_ICON_D = 'M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3';
 
 const player = createPlayer({
   // Only loading progress and failures; play() reports the rest.
@@ -123,7 +118,6 @@ async function init() {
     return;
   }
   window.__osmd = osmd; // debugging hook, also used by scripts/smoke.js
-  window.__isFullscreen = isFullscreenActive; // debugging hook, also used by scripts/devices.js
 
   stage = createStage({
     score: elements.score,
@@ -141,10 +135,6 @@ async function init() {
     stopFollowing();
     setPlayState(false);
   });
-  elements.fullscreen.addEventListener('click', toggleFullscreen);
-  bindDoubleTapFullscreen();
-  document.addEventListener('fullscreenchange', () => onFullscreenChange(!!document.fullscreenElement));
-  document.addEventListener('webkitfullscreenchange', () => onFullscreenChange(!!document.webkitFullscreenElement));
   elements.clearHistory.addEventListener('click', () => {
     history.clear();
     updateHistoryInfo();
@@ -198,10 +188,10 @@ async function newTest() {
 
   await fitScore();
   showMeta(score);
-  elements.status.hidden = false;
+  elements.meta.hidden = false;
+  elements.countdown.hidden = false;
   elements.play.disabled = false;
   elements.stop.disabled = false;
-  elements.fullscreen.disabled = false;
   elements.countdownValue.textContent = String(rules.exam.preparationSeconds);
   elements.countdown.className = 'countdown';
   elements.checklist.hidden = true;
@@ -280,86 +270,6 @@ function setPlayState(playing) {
   elements.play.title = playing ? '停止播放' : '播放正確版本';
 }
 
-/*
- * Fullscreen goes on <html>, not just the score frame — the countdown, the
- * controls and the score are then all still the same page, nothing hidden or
- * reparented, so nothing needs a separate "show this while fullscreen too"
- * path. Only the browser chrome (address bar, tab strip) goes away.
- *
- * iOS Safari (pre-16.4) has no Element.requestFullscreen at all, so a missing
- * or rejected request falls back to a CSS class that pins the page to the
- * viewport instead — same effect, no native API required.
- */
-function isFullscreenActive() {
-  return !!(document.fullscreenElement || document.webkitFullscreenElement)
-    || document.body.classList.contains('pseudo-fullscreen');
-}
-
-function toggleFullscreen() {
-  if (isFullscreenActive()) {
-    exitFullscreen();
-  } else {
-    enterFullscreen();
-  }
-}
-
-function enterFullscreen() {
-  const root = document.documentElement;
-  const request = root.requestFullscreen?.bind(root) ?? root.webkitRequestFullscreen?.bind(root);
-  if (!request) {
-    enterPseudoFullscreen();
-    return;
-  }
-  const result = request();
-  if (result?.catch) result.catch(() => enterPseudoFullscreen());
-  /*
-   * Catching a rejection is not enough. A browser can accept the request,
-   * resolve it, and still not go fullscreen — iOS Safari does exactly that on
-   * iPhone, where element fullscreen is unsupported but the call is not
-   * refused outright. Verify shortly afterwards and fall back to the CSS
-   * pinning if nothing happened, so the gesture always does something.
-   */
-  window.setTimeout(() => {
-    if (!isFullscreenActive()) enterPseudoFullscreen();
-  }, 150);
-}
-
-function exitFullscreen() {
-  if (document.fullscreenElement || document.webkitFullscreenElement) {
-    (document.exitFullscreen ?? document.webkitExitFullscreen)?.call(document);
-  } else {
-    exitPseudoFullscreen();
-  }
-}
-
-function enterPseudoFullscreen() {
-  document.body.classList.add('pseudo-fullscreen');
-  onFullscreenChange(true);
-}
-
-function exitPseudoFullscreen() {
-  document.body.classList.remove('pseudo-fullscreen');
-  onFullscreenChange(false);
-}
-
-/** Also fires from the browser's own Esc-to-exit, not just our button. */
-function onFullscreenChange(active) {
-  elements.fullscreenIcon.setAttribute('d', active ? COMPRESS_ICON_D : EXPAND_ICON_D);
-  elements.fullscreen.setAttribute('aria-label', active ? '退出全螢幕' : '全螢幕顯示');
-  elements.fullscreen.title = active ? '退出全螢幕' : '全螢幕顯示';
-  elements.fullscreen.classList.toggle('is-active', active);
-  if (active) {
-    // Fullscreen pins the page to exactly one screen (only the score scrolls,
-    // inside <main>) — a scroll position left over from before entering can
-    // otherwise push the whole grid, top bar included, out of view.
-    window.scrollTo(0, 0);
-  }
-  // The available width just changed (relaxed max-width, or the address bar
-  // disappearing); re-run the same fit used on resize so lines don't strand
-  // a single bar.
-  if (current) requestAnimationFrame(() => fitScore());
-}
-
 /**
  * Shrinks zoom, re-rendering each step, until no line holds only a single
  * bar (unreadable) or the legibility floor is hit. Returns the layout from
@@ -430,60 +340,9 @@ function hasSingleBarLine(layout) {
 }
 
 /**
- * Double-tapping the score toggles fullscreen, which is how a touch device
- * gets there at all — the button is hidden on those (see `styles.css`), where
- * the transport row has no width to spare for a control that duplicates a
- * gesture.
- *
- * `dblclick` is not enough on its own: iOS Safari does not fire it reliably
- * for taps, so the two-tap timing is recognised from `pointerup` as well. A
- * second tap only counts if it lands near the first and within the usual
- * double-tap window — otherwise two unrelated taps a second apart while
- * reading would throw the view in and out of fullscreen.
- */
-/*
- * Deliberately toward the generous end of what counts as a double tap — iOS
- * allows about half a second for its own double-tap-to-zoom, and a reader
- * tapping a tablet propped on a music stand is not quick.
- */
-const DOUBLE_TAP_MS = 500;
-const DOUBLE_TAP_SLOP = 40;
-
-function bindDoubleTapFullscreen() {
-  const frame = document.getElementById('score-frame');
-  if (!frame) return;
-  let lastTap = 0;
-  let lastX = 0;
-  let lastY = 0;
-
-  const isControl = (target) => target.closest('button, select, a, input');
-
-  frame.addEventListener('dblclick', (event) => {
-    if (isControl(event.target)) return;
-    toggleFullscreen();
-  });
-
-  frame.addEventListener('pointerup', (event) => {
-    if (event.pointerType === 'mouse') return; // `dblclick` covers the mouse
-    if (isControl(event.target)) return;
-    const now = event.timeStamp;
-    const near = Math.abs(event.clientX - lastX) < DOUBLE_TAP_SLOP
-      && Math.abs(event.clientY - lastY) < DOUBLE_TAP_SLOP;
-    if (now - lastTap < DOUBLE_TAP_MS && near) {
-      lastTap = 0;
-      event.preventDefault();
-      toggleFullscreen();
-      return;
-    }
-    lastTap = now;
-    lastX = event.clientX;
-    lastY = event.clientY;
-  });
-}
-
-/**
- * The whole test always renders on the page — no fullscreen step, no cropped
- * follow-window — so the only fitting left to do is layout. OSMD's own line
+ * The whole test always renders on the page in normal flow — no fullscreen
+ * step, no cropped follow-window — so the only fitting left to do is layout.
+ * OSMD's own line
  * breaking is also a greedy fill (pack bars onto a line until the next one
  * doesn't fit), which leaves a lone bar on a line when the content doesn't
  * happen to divide evenly, and tends to front-load earlier lines since

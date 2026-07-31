@@ -57,10 +57,10 @@ body {
   line-height: 1.6;
   max-width: 64rem;
   margin: 0 auto;
-  /* The full-bleed rule below widens two children to the whole viewport,
-     which on a screen wider than `max-width` reaches past this element.
-     `clip` contains that without the side effects `hidden` has on sticky
-     positioning and programmatic scrolling. */
+  /* The full-bleed rule below widens `.topbar`/`.score-frame` to the whole
+     viewport, which on a screen wider than `max-width` reaches past this
+     element. `clip` contains that without the side effects `hidden` has on
+     sticky positioning and programmatic scrolling. */
   overflow-x: clip;
   /* No top padding: `.topbar` is the first thing on the page and should
      sit flush against the viewport's top edge, matching ScrollScore
@@ -72,14 +72,13 @@ body {
 /* ---------- header ---------- */
 
 /*
- * Title and controls live in one shared flex row (`.topbar`) — the same
- * markup and the same CSS in both normal and fullscreen mode. Earlier
- * versions gave fullscreen its own grid rearrangement of title/controls
- * (a separate area layout, right-alignment on narrow screens); that meant
- * two different layouts could put the buttons in two different places
- * depending on fullscreen state, which is exactly the bug reported. There
- * is now exactly one layout definition, so toggling fullscreen can change
- * what's hidden/compacted around it but never where the row itself sits.
+ * Title left, transport right, one row — the only layout this row ever has.
+ * There is no fullscreen mode to hide or rearrange it: the page has nothing
+ * left to strip away once the title bar, the meta line and the score are all
+ * that is on it, so a distraction-free view would have no extra chrome to
+ * remove. Because the buttons live here and nowhere else, they cannot move or
+ * disappear when a test is generated — only the meta strip below reacts to
+ * that.
  *
  * Styled after ScrollScore's own toolbar: a flat full-width band with a
  * hairline underneath, not a rounded, shadowed card floating with margin
@@ -104,9 +103,7 @@ body {
   margin-right: calc(50% - 50vw);
   margin-bottom: 20px;
   /* Inset from the true viewport edge, not from the centred content column,
-     so the row reads as a full-width toolbar. The value depends only on the
-     viewport, so it is identical in and out of fullscreen and the controls
-     never shift when it is toggled. */
+     so the row reads as a full-width toolbar. */
   padding: 12px var(--body-px);
   background: var(--panel);
   border-bottom: 1px solid var(--line);
@@ -138,11 +135,11 @@ h1 span { color: var(--ivory); font-weight: 600; }
 
 /*
  * One row, always. Wrapping pushed a control onto a second line on a phone,
- * which cost vertical space the score needs, so the labels give way instead.
- * The panel background/border/shadow live on `.topbar` now (shared with the
- * title, matching ScrollScore's toolbar, which is one continuous band
- * rather than a separate panel just behind the buttons) — `.controls` is
- * just the flex row of buttons within it.
+ * which cost vertical space the score needs, so the labels give way instead
+ * (see the icon-only breakpoint below). The panel background/border/shadow
+ * live on `.topbar` (shared with the title, matching ScrollScore's toolbar,
+ * which is one continuous band rather than a separate panel just behind the
+ * buttons) — `.controls` is just the flex row of buttons within it.
  */
 .controls {
   display: flex;
@@ -219,73 +216,7 @@ button.link {
 
 button.link:hover { color: var(--gold); }
 
-/* ---------- status strip ---------- */
-
-/*
- * Metadata on the left, transport on the right, one row. The buttons used to
- * live in the title bar; they sit here so they line up with the tempo reading
- * and, more importantly, so they survive fullscreen — which now hides the
- * title bar altogether. `.statusbar` is always rendered even before a test
- * exists, since `#status` alone is what gets hidden until there is something
- * to describe; the controls must not disappear with it.
- */
-.statusbar {
-  display: flex;
-  /* The metadata and five buttons do not both fit across a phone. Wrapping
-     drops the transport onto its own line there — still right-aligned — while
-     a tablet or desktop keeps everything on one row beside the tempo. */
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px 20px;
-  /* Full width, like the toolbar above it. Left inside the page's centred
-     64rem column the row was only ~984px on a 1366px tablet, and a long tempo
-     term ("Andantino grazioso (♩≈84)") was enough to push the buttons onto a
-     second line with the right third of the screen standing empty. */
-  margin: 20px calc(50% - 50vw) 10px;
-  padding-inline: var(--body-px);
-}
-
-.statusbar .controls {
-  /* Right-aligned whether or not the status half is present, and in portrait
-     as much as in landscape — one rule, no orientation branch. */
-  margin-left: auto;
-  flex: 0 0 auto;
-}
-
-.status {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 14px 28px;
-  /* Shrink rather than push the transport onto its own line: the tempo term
-     can be long ("Cantabile ed espressivo (♩≈72)") and the strip already
-     scrolls internally, so giving up width here costs nothing while wrapping
-     costs the whole row. */
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.countdown {
-  font-family: "Noto Serif TC", serif;
-  font-variant-numeric: tabular-nums;
-  font-size: 44px;
-  font-weight: 700;
-  line-height: 1;
-  min-width: 74px;
-  color: var(--gold);
-  transition: color .2s;
-}
-
-.countdown .unit {
-  font-family: "Noto Sans TC", sans-serif;
-  font-size: var(--fs-sm);
-  font-weight: 400;
-  color: var(--muted);
-  margin-left: 3px;
-}
-
-.countdown.running { color: var(--gold-bright); }
-.countdown.done { color: var(--muted-bright); }
+/* ---------- meta strip ---------- */
 
 /*
  * No labels — just the four values in a fixed reading order, separated by
@@ -294,12 +225,18 @@ button.link:hover { color: var(--gold); }
  * comments below), so the separators sit at the same horizontal position
  * on every generated test; only the tempo field (last, nothing after it)
  * is allowed to vary in width.
+ *
+ * This sits directly below `.topbar` and is the *only* thing a new test
+ * changes above the score — the controls row is a fixed sibling, never a
+ * parent or neighbour this has to share space with, so its own width
+ * changing can never push a button anywhere.
  */
 .meta {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
-  flex: 1;
-  min-width: 0;
+  gap: 4px 0;
+  margin: 16px 4px 8px;
   overflow-x: auto;
 }
 
@@ -326,9 +263,7 @@ button.link:hover { color: var(--gold); }
  * ellipsis here used to hide the BPM value entirely on a narrow phone
  * ("Con moto (♩…" with the number cut off) — wrapping to a second line
  * keeps that visible far more often, and clamping at 2 lines (rather than
- * letting it grow unbounded) keeps the added height small: at this
- * line-height two lines together are still shorter than the countdown
- * digit beside them, so the status row's overall height doesn't grow.
+ * letting it grow unbounded) keeps the added height small.
  * `-webkit-line-clamp` still ellipsizes the rare case that needs a 3rd
  * line, same as the old single-line version did, just with more headroom
  * first.
@@ -354,26 +289,24 @@ button.link:hover { color: var(--gold); }
  * score gets as much width as the screen actually has to give it.
  */
 .score-frame {
-  /* Hand double taps to the app instead of the browser's tap-to-zoom, which
-     otherwise swallows or delays the second tap — the gesture that toggles
-     fullscreen on a touch device now that the button is hidden there. */
-  touch-action: manipulation;
   position: relative;
   margin-top: 10px;
   margin-left: calc(50% - 50vw);
   margin-right: calc(50% - 50vw);
   /* The score itself takes the whole width rather than lining up with the
      page's content column: a wider system means larger notes, which is the
-     entire point of the reading view. */
+     entire point of the reading view. Extra top padding leaves room for the
+     grade selector and countdown pinned to its two top corners without
+     either overlapping the first system. */
   padding: 56px var(--body-px) 22px;
 }
 
 /*
  * The grade selector lives over the score's own white area rather than in
- * the controls row — it's a "what to generate next" input, not a playback
- * control, so it reads more clearly pinned to the paper it's about to fill.
- * The extra top padding above makes room for it without overlapping the
- * first system.
+ * the controls row — it's a "what to generate onto this paper" input, not a
+ * playback control, so it reads more clearly pinned to the paper it's about
+ * to fill. The countdown (below) mirrors it at the opposite top corner, for
+ * the same reason: both are about this particular sheet, not the page.
  */
 .grade-select {
   position: absolute;
@@ -382,12 +315,37 @@ button.link:hover { color: var(--gold); }
   z-index: 2;
 }
 
+.countdown {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  z-index: 2;
+  font-family: "Noto Serif TC", serif;
+  font-variant-numeric: tabular-nums;
+  font-size: 44px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--gold);
+  text-align: right;
+  transition: color .2s;
+}
+
+.countdown .unit {
+  font-family: "Noto Sans TC", sans-serif;
+  font-size: var(--fs-sm);
+  font-weight: 400;
+  color: var(--muted);
+  margin-left: 3px;
+}
+
+.countdown.running { color: var(--gold-bright); }
+.countdown.done { color: var(--muted-bright); }
+
 /* ---------- playback highlight + playhead ---------- */
 
 /*
- * The whole test renders here in normal page flow — no fullscreen, no
- * cropped follow-window. The highlight block and playhead are absolutely
- * positioned within it, over the notes.
+ * The whole test renders here in normal page flow. The highlight block and
+ * playhead are absolutely positioned within it, over the notes.
  */
 .stage { position: relative; }
 
@@ -489,161 +447,6 @@ footer {
   z-index: 1;
 }
 
-/* ---------- fullscreen ---------- */
-
-/*
- * Fullscreen is a dedicated distraction-free reading view. It reuses the
- * exact same `.topbar` (title left, controls right) as normal mode — no
- * separate grid rearrangement of title vs. controls, and no fullscreen-only
- * right-alignment — because two different layouts for the same row is what
- * previously put the buttons in two different places depending on
- * fullscreen state. Fullscreen only hides extra text the view has no room
- * for (footer, message, checklist) and compacts the status strip; the row
- * holding the title and buttons is untouched, so its position never
- * shifts when fullscreen is toggled. `.pseudo-fullscreen` gives browsers
- * with no Element.requestFullscreen (older iOS Safari) the same layout by
- * pinning the page to the viewport instead of asking the browser to go
- * fullscreen.
- */
-html:fullscreen, html:-webkit-full-screen { overflow: hidden; }
-
-/*
- * No max-width or padding overrides here on purpose — normal mode's
- * existing max-width/padding rules (and their @media breakpoints) apply
- * completely unchanged, so the topbar sits at the exact same horizontal
- * position it does outside fullscreen. Only the height/overflow behaviour
- * changes: the page itself is pinned to one screen and only <main> scrolls.
- */
-html:fullscreen body,
-html:-webkit-full-screen body,
-body.pseudo-fullscreen {
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  height: 100dvh;
-  overflow: hidden;
-}
-
-body.pseudo-fullscreen {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-  background: var(--bg);
-}
-
-html:fullscreen body > footer,
-html:fullscreen #message,
-html:fullscreen #checklist,
-html:fullscreen #history-info,
-body.pseudo-fullscreen > footer,
-body.pseudo-fullscreen #message,
-body.pseudo-fullscreen #checklist,
-body.pseudo-fullscreen #history-info {
-  display: none;
-}
-
-html:fullscreen .topbar, body.pseudo-fullscreen /*
- * Full bleed. Cancelling `--body-px` alone only reaches the edge of the
- * page's *content column*, and `body` is capped at 64rem and centred — so on
- * anything wider (an iPad in landscape is about 1366px) the band stopped
- * short of the screen with a gutter either side, which is not the flat
- * edge-to-edge toolbar this is supposed to be. Widening to `100vw` about the
- * element's own centre cancels the centring gutter as well as the inset.
- */
-.topbar {
-  flex: none;
-  margin-bottom: 6px;
-}
-
-html:fullscreen h1, body.pseudo-fullscreen h1 {
-  font-size: var(--fs-lg);
-}
-
-html:fullscreen #status, body.pseudo-fullscreen #status {
-  flex: none;
-  margin: 0 0 6px;
-  flex-wrap: nowrap;
-  overflow-x: auto;
-}
-html:fullscreen .meta span, body.pseudo-fullscreen .meta span { font-size: var(--fs-xs); }
-html:fullscreen .countdown, body.pseudo-fullscreen .countdown {
-  font-size: 26px;
-  min-width: 0;
-}
-
-html:fullscreen main, body.pseudo-fullscreen main {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow-y: auto;
-}
-
-/*
- * In fullscreen the page is not a centred column of reading width — it is a
- * screen to put a score on, and capping it at 64rem left a third of a
- * landscape tablet empty with the notes correspondingly small.
- *
- * Dropping the cap also fixes the score frame, which cannot use the viewport
- * bleed here: `main` becomes a scroll container (`overflow-y: auto` forces the
- * horizontal axis to match), so anything reaching past its box is clipped —
- * which silently took the grade selector, sitting at the frame's left edge,
- * off the screen with it. With the cap gone the frame is full width anyway
- * and only needs to cancel the page's own inset.
- */
-html:fullscreen body,
-html:-webkit-full-screen body,
-body.pseudo-fullscreen {
-  max-width: none;
-}
-
-/*
- * Fullscreen shows the music and nothing else: the title band goes, leaving
- * the plain page and one row of transport controls above the score. The row
- * that remains is `.statusbar`, which is why the buttons were moved into it.
- */
-html:fullscreen .topbar,
-html:-webkit-full-screen .topbar,
-body.pseudo-fullscreen .topbar {
-  display: none;
-}
-
-html:fullscreen .statusbar,
-html:-webkit-full-screen .statusbar,
-body.pseudo-fullscreen .statusbar {
-  margin-top: 8px;
-}
-
-/*
- * On a touch device the fullscreen button is dead weight in a row that has
- * little room to spare — a double tap on the score does the same job (see
- * `app.js`). Pointer-based devices keep the button, where there is room and
- * no double-tap convention to lean on.
- */
-@media (hover: none) and (pointer: coarse) {
-  #fullscreen { display: none; }
-}
-
-html:fullscreen .score-frame,
-html:-webkit-full-screen .score-frame,
-body.pseudo-fullscreen .score-frame {
-  margin-left: calc(-1 * var(--body-px));
-  margin-right: calc(-1 * var(--body-px));
-}
-
-/*
- * No flex:1 here: that would clamp the box to whatever height <main>
- * happens to have room for, so its rounded-corner background/border ended
- * a screen-height down while the rest of the (longer) score kept rendering
- * past it, unstyled. The box has to size to its actual content — the whole
- * score — and <main>'s overflow-y:auto is what scrolls that into view.
- */
-html:fullscreen .score-frame, body.pseudo-fullscreen .score-frame {
-  margin-top: 0;
-}
-
-::backdrop { background: var(--bg); }
-
 /*
  * The full-label controls need about 604px to lay out on one line; below
  * that (but above the phone breakpoint) they used to silently overflow
@@ -651,23 +454,12 @@ html:fullscreen .score-frame, body.pseudo-fullscreen .score-frame {
  * by resizing the window through it, not by any of the fixed device widths
  * this app is normally checked against. 680px leaves a safety margin.
  */
-/*
- * The transport shares its row with the countdown and the metadata, and the
- * two full button labels ("產生新題目", "開始 30 秒準備") are what tip that row
- * over: at 820-950px the buttons wrapped onto a second line with the meta
- * strip alone on the first. Dropping to icons keeps everything beside the
- * tempo, which is where the row is meant to read from. The threshold is wide
- * enough to cover a portrait tablet and a phone held sideways.
- */
-@media (max-width: 950px) {
+@media (max-width: 680px) {
+  .topbar { padding: 10px 8px; }
   .controls { gap: 6px; }
   /* Every button becomes its icon so the row still fits on one line. */
   .btn { width: 36px; height: 36px; padding: 0; }
   .btn .btn-label { display: none; }
-}
-
-@media (max-width: 680px) {
-  .topbar { padding: 10px 8px; }
   .grade-select { font-size: var(--fs-xs); padding: 6px 4px; }
 }
 
@@ -681,9 +473,7 @@ html:fullscreen .score-frame, body.pseudo-fullscreen .score-frame {
    */
   h1 { font-size: 15px; }
 
-  .statusbar { gap: 8px 12px; margin: 14px 2px 8px; }
-  .status { gap: 10px 18px; }
-  .countdown { font-size: 32px; min-width: 52px; }
+  .meta { margin: 12px 2px 6px; gap: 2px 0; }
   /* Smaller fixed columns leave more of the strip for the tempo field,
      which is the one part allowed to ellipsize on a narrow phone. */
   .meta span { font-size: var(--fs-sm); }
@@ -694,6 +484,7 @@ html:fullscreen .score-frame, body.pseudo-fullscreen .score-frame {
 
   .score-frame { padding: 48px 8px 12px; }
   .grade-select { top: 10px; left: 8px; }
+  .countdown { top: 10px; right: 8px; font-size: 32px; }
   .message { font-size: var(--fs-xs); }
 }
 
