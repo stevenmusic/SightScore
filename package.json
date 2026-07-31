@@ -8,6 +8,7 @@
     "test": "node --test \"test/*.test.js\"",
     "serve": "node scripts/serve.js",
     "sample": "node scripts/sample.js",
+    "audit": "node scripts/audit.js",
     "devices": "node scripts/devices.js",
     "smoke": "node scripts/smoke.js"
   },

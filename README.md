@@ -8,6 +8,7 @@ npm install
 npm run serve     # http://localhost:5173
 npm test          # 生成器與 MusicXML 的單元測試
 npm run sample -- --grade 3 --seed 42 --out test.musicxml
+npm run audit     # 蒙地卡羅：每級大量生成，檢查和聲／節奏／旋律／織體的分布
 node scripts/smoke.js --screenshot app.png   # 用瀏覽器實際渲染每個級數
 ```
 

@@ -71,6 +71,20 @@ export function assignPitches({ rng, key, bars, progression, window, options, ag
   // steps — see pickWeighted for why this matters.
   let runDirection = 0;
   let runLength = 0;
+  // The chord the previous note belonged to, so a harmony arrival can be told
+  // from a note merely continuing under the same chord.
+  let previousChord = null;
+  /*
+   * Whether the previous note was a chord tone *of the chord that was
+   * sounding when it was chosen*. `pickWeighted` used to recompute this
+   * against the incoming note's chord, which is a different question: at
+   * every harmony change the previous note usually does not belong to the new
+   * chord, so a perfectly good chord tone was read as an unresolved passing
+   * tone and the resolution force fired. That override beat every other
+   * preference — motif, cadence, and the bass's root — and it fired at
+   * exactly the moments those matter most, the harmony arrivals.
+   */
+  let previousWasChordTone = true;
 
   bars.forEach((bar, barIndex) => {
     const entry = progression[barIndex] ?? 'I';
@@ -98,6 +112,10 @@ export function assignPitches({ rng, key, bars, progression, window, options, ag
       : null;
     let motifIndex = 0;
     let motifOctave = null;
+    // The bar carrying the cadential dominant, where the bass must take the
+    // root: a V-I whose bass is on the leading note or the second degree is
+    // not the cadence the rest of the test has been heading toward.
+    const isCadentialBar = barIndex === bars.length - 2;
 
     bar.events.forEach((event) => {
       if (event.rest) {
@@ -126,8 +144,27 @@ export function assignPitches({ rng, key, bars, progression, window, options, ag
        * — and both of those degrees belong to the V chord that is virtually
        * always sounding underneath, so the preference usually survives.
        */
+      /*
+       * The bass takes the root of the chord where the harmony arrives. Not
+       * doing so was the single largest fault the Monte-Carlo audit found:
+       * the bass line was picked as *melody* — nearest chord tone, weighted
+       * for stepwise motion — with no notion of root position at all, so only
+       * the very first note of a piece ever deliberately took a root. The
+       * cadential V got its own root barely a third of the time, which is why
+       * the closing V-I did not sound like a cadence.
+       *
+       * Root position is the norm rather than the rule: leaving a fifth of
+       * harmony arrivals to the ordinary weighting is what keeps first and
+       * second inversions in the language. The cadence is not up for a roll.
+       */
+      const chordHere = chordAt(entry, offset, barDuration);
+      const harmonyArrives = isDownbeat || chordHere !== previousChord;
+      previousChord = chordHere;
+
       let preferred = null;
-      if (event === penultimateEvent && cadenceTonic !== null) {
+      if (chordToneOnly && harmonyArrives && (isCadentialBar || rng.chance(0.8))) {
+        preferred = nearestWithDegree(allSteps, key, tones[0], previous ?? target);
+      } else if (event === penultimateEvent && cadenceTonic !== null) {
         preferred = cadenceApproach(cadenceTonic, previous, window);
       } else if (motifSource && !isFinalNote) {
         const source = motifSource[motifIndex];
@@ -173,6 +210,7 @@ export function assignPitches({ rng, key, bars, progression, window, options, ag
           repeatRun,
           runDirection,
           runLength,
+          previousWasChordTone,
           tones,
           onBeat,
           isDownbeat,
@@ -188,6 +226,7 @@ export function assignPitches({ rng, key, bars, progression, window, options, ag
       if (motifSource) motifIndex += 1;
       noteIndex += 1;
 
+      previousWasChordTone = tones.includes(degreeOf(chosen, key));
       const interval = previous === null ? 0 : chosen - previous;
       repeatRun = interval === 0 ? repeatRun + 1 : 0;
       const stepDirection = Math.abs(interval) === 1 ? Math.sign(interval) : 0;
@@ -416,15 +455,11 @@ function pickWeighted(ctx) {
   const {
     rng, key, allSteps, previous, previousLeap, repeatRun, runDirection, runLength, tones,
     onBeat, isDownbeat, centre, stepwiseBias, maxLeapSemitones, chordToneOnly, sounding,
-    preferred = null,
+    previousWasChordTone, preferred = null,
   } = ctx;
 
   const previousMidi = soundingMidi(previous, key);
   const ceiling = sounding.length ? Math.max(...sounding) : null;
-  // Was the note we're stepping from itself a passing/neighbour tone? If so,
-  // continuing the same direction is how it resolves — see the weighting
-  // comment below for why this matters.
-  const previousWasChordTone = tones.includes(degreeOf(previous, key));
 
   const repeats = [];
   const steps = [];
@@ -806,7 +841,7 @@ function fixAugmentedSeconds(bars, key) {
  */
 export function stackChordTones({
   bars, key, progression, maxNotes, rng, window, density = 0.4, barDuration = 0,
-  against = null, maxTotal = Infinity,
+  against = null, maxTotal = Infinity, bassVoicing = false,
 }) {
   bars.forEach((bar, barIndex) => {
     const entry = progression[barIndex] ?? 'I';
@@ -833,11 +868,24 @@ export function stackChordTones({
       let want = 2;
       while (want < room && rng.chance(0.35)) want += 1;
 
+      /*
+       * In the bass, a stacked note becomes the *lowest* sounding note and so
+       * decides the chord's inversion. Adding the third below a root-position
+       * chord silently turns it into first inversion — which is how a
+       * cadential V that had correctly taken its root in the bass still ended
+       * up sounding inverted a third of the time. Under the bass, only the
+       * chord root may go below; everything else would rewrite the harmony
+       * the bass line was just at pains to state.
+       */
+      const rootDegree = tones[0];
+      const mainIsRoot = degreeOf(event.dstep, key) === rootDegree;
+
       const extras = [];
       for (let below = event.dstep - 1; below >= event.dstep - 7; below--) {
         if (extras.length >= want - 1) break;
         if (below < window.low) break;
         if (!tones.includes(degreeOf(below, key))) continue;
+        if (bassVoicing && mainIsRoot && degreeOf(below, key) !== rootDegree) continue;
         // A stacked note can itself land on the leading note (a V or vii°
         // chord contains it) — harmonic minor raises it there same as anywhere.
         const pitch = pitchAt(below, key, { raiseSeventh: degreeOf(below, key) === 6 });

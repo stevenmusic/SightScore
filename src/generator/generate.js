@@ -224,7 +224,17 @@ function buildStaff({ rng, rules, meter, barCount, hand, progression, key, silen
         restBudget: 0,
         activity: activity * 0.4,
       }).events;
-    } else if (ostinato) {
+    } else if (ostinato && (ostinatoSource === null || rng.chance(0.55))) {
+      /*
+       * The accompaniment figure, but not in *every* bar. Reusing it
+       * unconditionally — which is what this did — put 85-89% of an
+       * accompaniment's bars on one identical rhythm, and a Grade 2 test came
+       * out with the same half-plus-quarter in all six bars. A real Alberti or
+       * chordal accompaniment is a recognisable figure that still breaks: at
+       * phrase ends, where the harmony moves faster, or simply for variety.
+       * Keeping the figure in a clear majority of bars leaves it recognisable
+       * while giving the hand somewhere to go.
+       */
       events = ostinato.map((event) => ({ ...event }));
       // An accompaniment figure keeps its *shape* from chord to chord — that
       // is what makes an Alberti-style bass one recognisable pattern rather
@@ -323,6 +333,8 @@ function buildStaff({ rng, rules, meter, barCount, hand, progression, key, silen
       barDuration: meter.barDuration,
       against,
       maxTotal: rules.texture.maxNotesTotal ?? Infinity,
+      // Only the lower hand actually sets the bass, and so the inversion.
+      bassVoicing: isLeft,
     });
   }
 
@@ -451,7 +463,9 @@ function applyExpression(rng, rules, score) {
       const start = Math.floor(score.barCount / 2) - 1;
       bars[start].directions.push({ kind: 'wedge', value: wedge, type: 'start' });
       bars[Math.min(start + 1, score.barCount - 1)].directions.push({ kind: 'wedge', type: 'stop' });
-      const target = wedge === 'crescendo' ? lastLouder(rules.dynamics, opening) : lastSofter(rules.dynamics, opening);
+      const target = wedge === 'crescendo'
+        ? louderThan(rules.dynamics, opening, rng)
+        : softerThan(rules.dynamics, opening, rng);
       if (target) {
         bars[Math.min(start + 2, score.barCount - 1)].directions.push({ kind: 'dynamics', value: target });
       }
@@ -610,11 +624,21 @@ function addOrnaments(rng, score) {
 }
 
 const ORDER = ['ppp', 'pp', 'p', 'mp', 'mf', 'f', 'ff', 'fff'];
-function lastLouder(allowed, from) {
+
+/*
+ * Where a wedge lands. One step is the norm, but always taking exactly one
+ * step means a grade's extreme markings can never be reached from any opening
+ * dynamic the generator will pick — Grade 8 declared fff and printed it in
+ * none of 1500 tests. An occasional wider swing is also simply how a
+ * crescendo behaves.
+ */
+function louderThan(allowed, from, rng) {
   const candidates = allowed.filter((d) => ORDER.indexOf(d) > ORDER.indexOf(from));
-  return candidates[0] ?? null;
+  if (!candidates.length) return null;
+  return rng.chance(0.8) ? candidates[0] : rng.pick(candidates);
 }
-function lastSofter(allowed, from) {
+function softerThan(allowed, from, rng) {
   const candidates = allowed.filter((d) => ORDER.indexOf(d) < ORDER.indexOf(from));
-  return candidates[candidates.length - 1] ?? null;
+  if (!candidates.length) return null;
+  return rng.chance(0.8) ? candidates[candidates.length - 1] : rng.pick(candidates);
 }

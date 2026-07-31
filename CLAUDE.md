@@ -15,6 +15,8 @@ npm install
 npm test                                                     # generator + MusicXML unit tests (node --test)
 npm run serve                                                # local static server, http://localhost:5173
 npm run sample -- --grade 3 --seed 42 --out test.musicxml   # print/save one generated test as MusicXML
+npm run audit                                                # Monte-Carlo distribution audit, all grades
+npm run audit -- --grade 2 --section rhythm --runs 5000       # narrow it down
 npm run devices                                              # Playwright layout/behaviour check across 5 device sizes
 npm run smoke                                                # Playwright render check across all 8 grades
 npm run smoke -- --grade 3 --screenshot app.png              # smoke test a single grade, with a screenshot
@@ -48,6 +50,20 @@ Key data structures/conventions to know before touching the generator:
 - **fingerprinting** (`fingerprint.js`): hashes musical content (key, metre, bar count, every pitch/duration), not the MusicXML text, so two renders differing only in dynamics still dedup as the same test (`generateUnique` + the browser's localStorage history).
 - **`pickWeighted` (`melody.js`) picks a move category before a pitch**: step vs. leap vs. repeat is weighted first (via `generatorHints.stepwiseBiasPercent`), then a candidate is picked within that category — scoring every candidate on one shared scale let `stepwiseBias` mean nothing, since leap candidates usually outnumber the two step candidates. A passing/neighbour tone's resolution (continuing in its approach direction) is *forced* when a non-clashing option exists, or `repairNonChordTones` would later silently turn an intended stepwise pair into two leaps.
 - **Run-continuation bias** (`runDirection`/`runLength` in `melody.js`): `pickWeighted` tracks how long the current same-direction step run is and grows the weight of continuing it (capped, tapering off), so scale-run figures read as real runs instead of independently-scored single steps. Layered on top of every other constraint — clash avoidance, range, chord-tone-only for the bass — not a bypass of them.
+
+### The audit is how musical faults get found (`scripts/audit.js`)
+
+`npm test` answers "is this legal?" — bars add up, no augmented seconds, nothing out of range. It cannot answer "is this a plausible test?", because that is a question about **distributions**, and every musical fault found in this project so far has been a distribution that was wrong rather than a rule that was broken. `npm run audit` generates thousands of tests per grade and prints observed numbers against expectations, in five sections: `harmony`, `rhythm`, `melody`, `texture`, `expression`. It exits non-zero when something disagrees. **Run it after any generator change**, and prefer adding a check there over reasoning about whether an isolated example looks right.
+
+Faults it has caught that no unit test could:
+
+- **The bass had no notion of root position.** It was picked as melody — nearest chord tone, weighted for stepwise motion — so only a piece's very first note ever deliberately took a root. The cadential V had its own root about a third of the time, which is why the closing V–I did not sound like a cadence. Fixed in `assignPitches`: where the harmony arrives (`harmonyArrives` — a downbeat, or the second half of a split bar), a `chordToneOnly` hand prefers the chord root, forced on the cadential bar and left to the ordinary weighting a fifth of the time so inversions survive.
+- **`previousWasChordTone` was computed against the wrong chord.** `pickWeighted` recomputed it from the *incoming* note's chord, so at every harmony change the previous note — a perfectly good chord tone of the chord it belonged to — read as an unresolved passing tone and the resolution force fired. That override beats motif, cadence and bass-root preferences alike, and it fired exactly where those matter most. It is now tracked in `assignPitches` against the chord each note actually belonged to. This one fix improved bass roots, motif survival and restatement rates together.
+- **Stacking below the bass rewrote the inversion.** `stackChordTones` adds notes *below* the main note; under the bass that makes the added note the lowest, so a third below a root-position chord silently produced first inversion. `bassVoicing` allows only the chord root below in the lower hand.
+- **The accompaniment was one figure for the whole piece** (85-89% of bars on one rhythm). `ostinato` now applies to a clear majority of bars rather than all of them.
+- **Declared features that never appeared**: Grade 8's `fff` was unreachable because the wedge target always stepped exactly one dynamic.
+
+Two things the audit deliberately does *not* flag, because they are constraints rather than faults — do not "fix" them: in a five-finger grade the chord root is outside the hand's five notes in 14-19% of bars (so the root rate is measured only where it is reachable), and `stepwiseBiasPercent` is the weight the step *category* gets before the harmonic filters run, not a target for the finished line, so the realised rate always sits below it.
 
 ### Phrase structure, motif restatement and cadence
 
