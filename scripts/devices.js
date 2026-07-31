@@ -24,6 +24,9 @@ const DEVICES = [
   { name: 'iPhone 15 Pro Max', width: 430, height: 932, scale: 3 },
   { name: 'iPhone Pro landscape', width: 852, height: 393, scale: 3 },
   { name: 'iPad', width: 820, height: 1180, scale: 2 },
+  // Landscape, and wider than the page's 64rem cap — the size at which the
+  // topbar was reported stopping short of the screen edge.
+  { name: 'iPad landscape', width: 1366, height: 1024, scale: 2 },
   { name: 'Desktop', width: 1440, height: 900, scale: 2 },
 ];
 
@@ -93,6 +96,7 @@ for (const device of DEVICES) {
     const controlsBox = controls.getBoundingClientRect();
     const gradeBox = grade.getBoundingClientRect();
     const scoreFrameBox = scoreFrame.getBoundingClientRect();
+    const topbarBox = document.querySelector('.topbar').getBoundingClientRect();
 
     return {
       fullscreenButtonUsable: !!fullscreenButton && !fullscreenButton.disabled,
@@ -116,6 +120,20 @@ for (const device of DEVICES) {
       // in the controls row.
       gradeInsideScoreFrame: gradeBox.left >= scoreFrameBox.left - 1 && gradeBox.top >= scoreFrameBox.top - 1,
       gradeNotInControls: !controls.contains(grade),
+      /*
+       * The topbar is meant to be a flat band spanning the whole screen. It
+       * used to cancel only the page's own inset, which stops at the edge of
+       * the content column — and `body` is capped at 64rem and centred, so on
+       * anything wider the band stopped short with a gutter either side.
+       */
+      topbarSpansViewport:
+        topbarBox.left <= 1 && topbarBox.right >= document.documentElement.clientWidth - 1,
+      /*
+       * Bars per line, so an uneven split shows up: six bars laid out 4+2
+       * leaves the second line half as long as the first, since OSMD does not
+       * stretch a final short system to full width.
+       */
+      barsPerRow: layout.systems.map((system) => system.bars.length),
     };
   });
 
@@ -175,11 +193,28 @@ for (const device of DEVICES) {
     problems.push(`${device.name}: playhead start doesn't match the first note in bar(s) ${playheadStart.join(', ')}`);
   }
 
+  if (!idle.topbarSpansViewport) {
+    problems.push(`${device.name}: topbar does not reach the viewport edges`);
+  }
+  /*
+   * The last line may hold fewer bars than the others, but not less than half
+   * of them — that is the 4+2 split that looked wrong on a tablet.
+   */
+  const rows = idle.barsPerRow;
+  if (rows.length > 1) {
+    const full = Math.max(...rows);
+    const last = rows[rows.length - 1];
+    if (last * 2 < full) {
+      problems.push(`${device.name}: bars split unevenly across lines (${rows.join('+')})`);
+    }
+  }
+
   console.log(
     `${device.name.padEnd(22)} ${device.width}x${device.height}  `
     + `橫向捲動:${idle.pageScrollsX ? 'yes' : 'no'}  `
-    + `總行數:${idle.totalRows}  `
+    + `每行小節:${idle.barsPerRow.join('+')}  `
     + `單小節一行:${idle.singleBarRows}  `
+    + `上方滿版:${idle.topbarSpansViewport ? 'yes' : 'no'}  `
     + `縮放:${idle.zoom.toFixed(2)}`,
   );
 
@@ -286,6 +321,7 @@ for (const device of DEVICES) {
       const controlsBox = controls.getBoundingClientRect();
       const statusBox = status.getBoundingClientRect();
       const scoreFrameBox = scoreFrame.getBoundingClientRect();
+    const topbarBox = document.querySelector('.topbar').getBoundingClientRect();
       const gradeBox = grade.getBoundingClientRect();
       const gradeReachable = (() => {
         const atPoint = document.elementFromPoint(gradeBox.x + gradeBox.width / 2, gradeBox.y + gradeBox.height / 2);

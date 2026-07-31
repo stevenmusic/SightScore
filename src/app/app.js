@@ -55,8 +55,15 @@ let resizeTimer = null;
 const BASE_ZOOM = 1;
 /** Below this, engraving reads as too small to sight-read from. */
 const MIN_ZOOM = 0.5;
-/** Past this, a line of a short/simple test starts reading as cramped. */
-const MAX_MEASURES_PER_LINE = 4;
+/*
+ * Past this, a line of a short/simple test starts reading as cramped. Five
+ * rather than four so that a ten-bar test — a common length from Grade 5 up,
+ * and one with no even divisor at four or below — can split 5+5 instead of
+ * 4+4+2. On a narrow screen the zoom floor rejects it and the search falls
+ * through to a smaller count, so this only takes effect where there is width
+ * for it.
+ */
+const MAX_MEASURES_PER_LINE = 5;
 
 const CONFIDENCE_LABEL = {
   verified: null,
@@ -397,15 +404,33 @@ async function fitScore() {
   const natural = shrinkUntilNoSingleBarLines(BASE_ZOOM);
   const totalBars = natural.layout.bars.size;
 
-  let chosen = null;
-  for (let n = Math.min(MAX_MEASURES_PER_LINE, totalBars); n >= 2; n--) {
-    if (totalBars % n === 1) continue; // would strand one bar on its own line
+  const tryCount = (n) => {
     osmd.EngravingRules.RenderXMeasuresPerLineAkaSystem = n;
     const attempt = shrinkUntilNoSingleBarLines(BASE_ZOOM);
-    if (attempt.zoom >= MIN_ZOOM && !hasSingleBarLine(attempt.layout)) {
-      chosen = attempt;
-      break;
-    }
+    return attempt.zoom >= MIN_ZOOM && !hasSingleBarLine(attempt.layout) ? attempt : null;
+  };
+
+  /*
+   * A count that divides the bars evenly comes first. Taking merely the most
+   * compact count that avoids a lone bar is not the same thing: six bars at
+   * four per line gives 4+2, and OSMD does not stretch a final short line to
+   * the full width, so the second line ends up half the length of the first
+   * and its bars visibly smaller. 3+3 fills both lines instead — squarer, and
+   * the bars come out wider because the width is shared evenly. Counts below
+   * three are not worth evenness on its own: two bars a line turns a ten-bar
+   * test into five lines to avoid one short one.
+   */
+  let chosen = null;
+  for (let n = Math.min(MAX_MEASURES_PER_LINE, totalBars); n >= 3 && !chosen; n--) {
+    if (totalBars % n === 0) chosen = tryCount(n);
+  }
+
+  // Nothing divided evenly and legibly — fall back to the most compact count
+  // that at least leaves no bar stranded on a line of its own.
+  for (let n = Math.min(MAX_MEASURES_PER_LINE, totalBars); n >= 2 && !chosen; n--) {
+    if (totalBars % n === 1) continue; // would strand one bar on its own line
+    if (totalBars % n === 0) continue; // already tried above
+    chosen = tryCount(n);
   }
 
   if (!chosen) {

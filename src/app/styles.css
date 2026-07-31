@@ -57,6 +57,11 @@ body {
   line-height: 1.6;
   max-width: 64rem;
   margin: 0 auto;
+  /* The full-bleed rule below widens two children to the whole viewport,
+     which on a screen wider than `max-width` reaches past this element.
+     `clip` contains that without the side effects `hidden` has on sticky
+     positioning and programmatic scrolling. */
+  overflow-x: clip;
   /* No top padding: `.topbar` is the first thing on the page and should
      sit flush against the viewport's top edge, matching ScrollScore
      exactly, rather than floating below a gap of page padding. */
@@ -78,10 +83,16 @@ body {
  *
  * Styled after ScrollScore's own toolbar: a flat full-width band with a
  * hairline underneath, not a rounded, shadowed card floating with margin
- * on either side. The negative margin cancels exactly the page's own
- * `--body-px` inset so the bar reaches the true viewport edge (its own
- * padding puts the title/controls back at a normal inset); `.score-frame`
- * below uses the same trick for the same reason.
+ * on either side; `.score-frame` below uses the same full-bleed trick for
+ * the same reason.
+ */
+/*
+ * Full bleed. Cancelling `--body-px` alone only reaches the edge of the
+ * page's *content column*, and `body` is capped at 64rem and centred — so on
+ * anything wider (an iPad in landscape is about 1366px) the band stopped
+ * short of the screen with a gutter either side, which is not the flat
+ * edge-to-edge toolbar this is supposed to be. Widening to `100vw` about the
+ * element's own centre cancels the centring gutter as well as the inset.
  */
 .topbar {
   display: flex;
@@ -89,9 +100,13 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 10px 16px;
-  margin-left: calc(-1 * var(--body-px));
-  margin-right: calc(-1 * var(--body-px));
+  margin-left: calc(50% - 50vw);
+  margin-right: calc(50% - 50vw);
   margin-bottom: 20px;
+  /* Inset from the true viewport edge, not from the centred content column,
+     so the row reads as a full-width toolbar. The value depends only on the
+     viewport, so it is identical in and out of fullscreen and the controls
+     never shift when it is toggled. */
   padding: 12px var(--body-px);
   background: var(--panel);
   border-bottom: 1px solid var(--line);
@@ -305,8 +320,11 @@ button.link:hover { color: var(--gold); }
 .score-frame {
   position: relative;
   margin-top: 10px;
-  margin-left: calc(-1 * var(--body-px));
-  margin-right: calc(-1 * var(--body-px));
+  margin-left: calc(50% - 50vw);
+  margin-right: calc(50% - 50vw);
+  /* The score itself takes the whole width rather than lining up with the
+     page's content column: a wider system means larger notes, which is the
+     entire point of the reading view. */
   padding: 56px var(--body-px) 22px;
 }
 
@@ -484,7 +502,15 @@ body.pseudo-fullscreen #history-info {
   display: none;
 }
 
-html:fullscreen .topbar, body.pseudo-fullscreen .topbar {
+html:fullscreen .topbar, body.pseudo-fullscreen /*
+ * Full bleed. Cancelling `--body-px` alone only reaches the edge of the
+ * page's *content column*, and `body` is capped at 64rem and centred — so on
+ * anything wider (an iPad in landscape is about 1366px) the band stopped
+ * short of the screen with a gutter either side, which is not the flat
+ * edge-to-edge toolbar this is supposed to be. Widening to `100vw` about the
+ * element's own centre cancels the centring gutter as well as the inset.
+ */
+.topbar {
   flex: none;
   margin-bottom: 6px;
 }
@@ -511,6 +537,31 @@ html:fullscreen main, body.pseudo-fullscreen main {
   flex-direction: column;
   min-height: 0;
   overflow-y: auto;
+}
+
+/*
+ * In fullscreen the page is not a centred column of reading width — it is a
+ * screen to put a score on, and capping it at 64rem left a third of a
+ * landscape tablet empty with the notes correspondingly small.
+ *
+ * Dropping the cap also fixes the score frame, which cannot use the viewport
+ * bleed here: `main` becomes a scroll container (`overflow-y: auto` forces the
+ * horizontal axis to match), so anything reaching past its box is clipped —
+ * which silently took the grade selector, sitting at the frame's left edge,
+ * off the screen with it. With the cap gone the frame is full width anyway
+ * and only needs to cancel the page's own inset.
+ */
+html:fullscreen body,
+html:-webkit-full-screen body,
+body.pseudo-fullscreen {
+  max-width: none;
+}
+
+html:fullscreen .score-frame,
+html:-webkit-full-screen .score-frame,
+body.pseudo-fullscreen .score-frame {
+  margin-left: calc(-1 * var(--body-px));
+  margin-right: calc(-1 * var(--body-px));
 }
 
 /*
