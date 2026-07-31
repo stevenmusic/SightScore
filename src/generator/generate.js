@@ -58,28 +58,6 @@ const TEMPO_BPM = {
 };
 
 /**
- * From Grade 6 the specimen books print an actual piece title above the
- * tempo/character word, not just the tempo word on its own (confirmed
- * against the Grade 6-8 specimen books — "Aria" / Molto moderato, "Prelude" /
- * Allegro giusto, "Procession" / Alla marcia, etc.). Original titles in the
- * same spirit — dance forms and short character pieces — not the specific
- * titles those books use.
- */
-const TITLES = [
-  'Prelude', 'Nocturne', 'Impromptu', 'Reverie', 'Caprice', 'Intermezzo', 'Arabesque',
-  'Barcarolle', 'Berceuse', 'Elegy', 'Serenade', 'Aubade', 'Rhapsody', 'Toccata',
-  'Minuet', 'Waltz', 'Gigue', 'Bolero', 'Mazurka', 'Polka', 'Gavotte', 'Sarabande',
-  'Tarantella', 'Habanera', 'Polonaise',
-  'Morning Light', 'Evening Song', 'Distant Bells', 'Running Stream', 'Mountain Path',
-  'City Lights', 'Falling Snow', 'Summer Breeze', 'Autumn Leaves', "Winter's Tale",
-  'Clockwork Toy', 'Puppet Dance', 'Midnight Journey', 'Whirlwind', 'Lantern Festival',
-  'Silver Moon', 'Garden Path', 'Storm Clouds', 'Quiet Harbour', 'Wandering Star',
-  'Forest Whisper', 'Village Fair', 'Market Square', 'Old Clock Tower', 'Sunlit Meadow',
-  'Rolling Waves', 'Frosty Morning', 'Firefly Dance', 'Hidden Valley', 'Carnival',
-  'Shadow Play', 'Restless Spirit', 'Homeward Bound', 'Fleeting Moment', 'Golden Hour',
-];
-
-/**
  * @param {object} rulesTable parsed abrsm-piano-grades.json
  * @param {{grade: number, seed?: number}} options
  */
@@ -134,7 +112,6 @@ export function generateTest(rulesTable, options) {
     barDuration: meter.barDuration,
     tempoTerm,
     tempoBpm: TEMPO_BPM[tempoTerm] ?? 96,
-    title: grade >= 6 ? rng.pick(TITLES) : null,
     progression,
     staves: { 1: rightHand, 2: leftHand },
   };
@@ -428,8 +405,17 @@ function applyExpression(rng, rules, score) {
 }
 
 /**
- * One sustain-pedal span over a legato passage, shown under the bass staff
- * (real engraving convention) rather than tied to any one hand's notes.
+ * A sustain-pedal span over a legato passage, shown under the bass staff
+ * (real engraving convention) rather than tied to any one hand's notes).
+ * Holding one continuous pedal across a span used to ignore the harmony
+ * changing underneath it entirely — with one chord per bar and the
+ * progression essentially never repeating a chord bar-to-bar, a plain
+ * start/stop pair could smear three or four unrelated harmonies together,
+ * something no real pedalling would do. A real legato pedal instead lifts
+ * and immediately redepresses at every harmony change — MusicXML's
+ * `<pedal type="change"/>` is exactly that notch — so this now walks the
+ * span and drops one wherever the chord actually changes, only using a
+ * plain `stop` at the very end.
  */
 function addPedalMarking(rng, score) {
   if (score.barCount < 3) return;
@@ -437,6 +423,11 @@ function addPedalMarking(rng, score) {
   const start = rng.int(0, score.barCount - 1 - span);
   const end = start + span;
   score.staves[2][start].directions.push({ kind: 'pedal', type: 'start' });
+  for (let bar = start + 1; bar < end; bar++) {
+    if (score.progression[bar] !== score.progression[bar - 1]) {
+      score.staves[2][bar].directions.push({ kind: 'pedal', type: 'change' });
+    }
+  }
   score.staves[2][end].directions.push({ kind: 'pedal', type: 'stop' });
 }
 

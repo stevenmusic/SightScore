@@ -343,6 +343,68 @@ test('a repeated note never disagrees with itself on the raised 7th', () => {
   }
 });
 
+test('minor keys are written as harmonic minor by default', () => {
+  // The 7th degree used to raise only under a dominant-function chord (V or
+  // vii°) — a tonic-function bar's own leading-tone passing/neighbour tone
+  // stayed natural even though harmonic minor raises it everywhere. Now the
+  // raise is unconditional by degree; the only notes that should still come
+  // out natural are the deliberate exceptions (avoiding an augmented 2nd
+  // next to the natural 6th, or an unavoidable clash against the other
+  // hand — see fixAugmentedSeconds/resolveClashes), not "this bar's chord
+  // wasn't V". Measured at ~70% raised across the full grade/seed matrix.
+  let raised = 0;
+  let total = 0;
+
+  eachTest((score) => {
+    if (score.key.mode !== 'minor') return;
+    const seventhLetter = (letterIndexOf(score.key.tonic) + 6) % 7;
+    for (const staffNumber of [1, 2]) {
+      for (const event of soundingEvents({ events: score.staves[staffNumber].flatMap((bar) => bar.events) })) {
+        const letter = ((event.dstep % 7) + 7) % 7;
+        if (letter !== seventhLetter) continue;
+        total += 1;
+        if (event.raiseSeventh) raised += 1;
+      }
+    }
+  });
+
+  const rate = raised / total;
+  assert.ok(
+    rate >= 0.6,
+    `only ${(rate * 100).toFixed(1)}% of degree-7 notes in minor keys are raised`,
+  );
+});
+
+function letterIndexOf(tonic) {
+  return 'CDEFGAB'.indexOf(tonic[0].toUpperCase());
+}
+
+test('a pedal span never holds through an unmarked harmony change', () => {
+  // With one chord per bar and the progression essentially never repeating
+  // a chord in consecutive bars, a plain start/stop pedal pair spanning
+  // several bars used to hold straight through whatever harmony changed
+  // underneath it — real pedalling lifts and reapplies at each change
+  // instead (MusicXML's `<pedal type="change"/>`, addPedalMarking).
+  eachTest((score) => {
+    const bars = score.staves[2];
+    let pedalOpen = false;
+    bars.forEach((bar, barIndex) => {
+      const kinds = bar.directions.filter((d) => d.kind === 'pedal').map((d) => d.type);
+      const harmonyChanged = barIndex > 0 && score.progression[barIndex] !== score.progression[barIndex - 1];
+      if (pedalOpen && harmonyChanged) {
+        assert.ok(
+          kinds.includes('change') || kinds.includes('stop'),
+          `bar ${barIndex}: pedal held through a harmony change with no change/stop mark`,
+        );
+      }
+      for (const type of kinds) {
+        if (type === 'start' || type === 'change') pedalOpen = true;
+        if (type === 'stop') pedalOpen = false;
+      }
+    });
+  });
+});
+
 test('a melodic hand develops fresh rhythm rather than leaning on repetition', () => {
   // A genuine accompaniment (Grade 2-3's left hand, once the hands play
   // together) is *supposed* to repeat one figure for the whole piece — real

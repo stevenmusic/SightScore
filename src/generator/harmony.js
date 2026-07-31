@@ -39,8 +39,3 @@ export function buildProgression(rng, barCount, options = {}) {
   }
   return progression;
 }
-
-/** True when the chord contains the leading note (so the 7th should be raised). */
-export function raisesSeventh(roman) {
-  return roman === 'V' || roman === 'viio';
-}

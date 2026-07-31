@@ -13,7 +13,6 @@
  */
 
 import { chordDegrees, degreeOf, pitchAt } from './theory.js';
-import { raisesSeventh } from './harmony.js';
 
 /**
  * Interval classes that read as dissonant against the bass. A second, tritone
@@ -64,7 +63,6 @@ export function assignPitches({ rng, key, bars, progression, window, options, ag
   bars.forEach((bar, barIndex) => {
     const roman = progression[barIndex] ?? 'I';
     const tones = chordDegrees(roman);
-    const raiseSeventh = raisesSeventh(roman);
     let offset = 0;
 
     bar.events.forEach((event) => {
@@ -128,7 +126,11 @@ export function assignPitches({ rng, key, bars, progression, window, options, ag
       previous = chosen;
 
       event.dstep = chosen;
-      event.raiseSeventh = raiseSeventh && degreeOf(chosen, key) === 6;
+      // Written as harmonic minor throughout: the leading note is raised
+      // wherever it occurs, not just under a dominant-function chord.
+      // `pitchAt` only actually applies this for a minor key, so the flag
+      // is harmless (a no-op) in major keys.
+      event.raiseSeventh = degreeOf(chosen, key) === 6;
       event.chordDegrees = tones;
       event.pitch = pitchAt(chosen, key, { raiseSeventh: event.raiseSeventh });
       offset += event.dur;
@@ -176,13 +178,18 @@ function soundingAt(timeline, start, duration) {
   return midis;
 }
 
+/** The pitch a dstep will actually sound at, per the always-raised harmonic-minor policy. */
+function soundingMidi(dstep, key) {
+  return pitchAt(dstep, key, { raiseSeventh: degreeOf(dstep, key) === 6 }).midi;
+}
+
 function pickWeighted(ctx) {
   const {
     rng, key, allSteps, previous, previousLeap, repeatRun, runDirection, runLength, tones,
     onBeat, isDownbeat, centre, stepwiseBias, maxLeapSemitones, chordToneOnly, sounding,
   } = ctx;
 
-  const previousMidi = pitchAt(previous, key).midi;
+  const previousMidi = soundingMidi(previous, key);
   const ceiling = sounding.length ? Math.max(...sounding) : null;
   // Was the note we're stepping from itself a passing/neighbour tone? If so,
   // continuing the same direction is how it resolves — see the weighting
@@ -196,7 +203,16 @@ function pickWeighted(ctx) {
   for (const dstep of allSteps) {
     const interval = dstep - previous;
     const distance = Math.abs(interval);
-    const midi = pitchAt(dstep, key).midi;
+    // The pitch this candidate will actually sound at — harmonic minor
+    // raises the leading note unconditionally (see assignPitches), so a
+    // degree-7 candidate has to be clash-checked at its raised pitch here,
+    // not its natural one. Screening against the natural form let this
+    // function happily pick a degree-7 dstep that clashed once raised,
+    // leaving a later repair pass (resolveClashes) to quietly un-raise it
+    // back to natural — which defeated the harmonic-minor policy far more
+    // than the rare, deliberate exceptions (an unavoidable clash, or
+    // avoiding an augmented 2nd) ever should.
+    const midi = soundingMidi(dstep, key);
     const semitones = Math.abs(midi - previousMidi);
     if (semitones > maxLeapSemitones) continue;
 
@@ -421,7 +437,9 @@ function repairNonChordTones(bars, key, window) {
 
     const replacement = leastDistant(options, note.dstep);
     note.dstep = replacement;
-    note.raiseSeventh = note.raiseSeventh && degreeOf(replacement, key) === 6;
+    // Harmonic minor throughout — the leading note is raised by degree
+    // alone, not carried over from whatever the note being replaced had.
+    note.raiseSeventh = degreeOf(replacement, key) === 6;
     note.pitch = pitchAt(replacement, key, { raiseSeventh: note.raiseSeventh });
   });
 }
@@ -486,9 +504,12 @@ export function stackChordTones({ bars, key, progression, maxNotes, rng, window,
       // The added note has to stay inside the hand's range too.
       if (below >= window.low && tones.includes(degreeOf(below, key))) extras.push(below);
       if (extras.length) {
+        // A stacked third below can itself land on the leading note (e.g.
+        // a V or vii° chord contains it) — harmonic minor raises it there
+        // same as anywhere else.
         event.chord = extras
           .slice(0, maxNotes - 1)
-          .map((dstep) => pitchAt(dstep, key, { raiseSeventh: false }));
+          .map((dstep) => pitchAt(dstep, key, { raiseSeventh: degreeOf(dstep, key) === 6 }));
       }
     });
   });

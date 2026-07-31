@@ -55,26 +55,10 @@ export function toMusicXml(score, options = {}) {
       lines.push('        <clef number="1"><sign>G</sign><line>2</line></clef>');
       lines.push('        <clef number="2"><sign>F</sign><line>4</line></clef>');
       lines.push('      </attributes>');
-      // From Grade 6, a piece title sits above the tempo/character word,
-      // which then drops to plain (non-bold) weight — matching the two-line
-      // heading real specimens print from that grade on. OSMD hoists
-      // whichever <direction> carries <sound tempo> above any other
-      // same-measure direction regardless of XML order, so that element has
-      // to move with the title, not stay on the tempo-term words.
-      if (score.title) {
-        lines.push('      <direction placement="above">');
-        lines.push(`        <direction-type><words font-weight="bold" font-size="16">${escapeXml(score.title)}</words></direction-type>`);
-        lines.push(`        <sound tempo="${score.tempoBpm}"/>`);
-        lines.push('      </direction>');
-        lines.push('      <direction placement="above">');
-        lines.push(`        <direction-type><words>${escapeXml(score.tempoTerm)}</words></direction-type>`);
-        lines.push('      </direction>');
-      } else {
-        lines.push('      <direction placement="above">');
-        lines.push(`        <direction-type><words font-weight="bold">${escapeXml(score.tempoTerm)}</words></direction-type>`);
-        lines.push(`        <sound tempo="${score.tempoBpm}"/>`);
-        lines.push('      </direction>');
-      }
+      lines.push('      <direction placement="above">');
+      lines.push(`        <direction-type><words font-weight="bold">${escapeXml(score.tempoTerm)}</words></direction-type>`);
+      lines.push(`        <sound tempo="${score.tempoBpm}"/>`);
+      lines.push('      </direction>');
     }
 
     for (const staffNumber of [1, 2]) {
