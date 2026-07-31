@@ -8,8 +8,8 @@
  */
 
 import { createRandom, randomSeed } from './random.js';
-import { createKey, dstepRange, degreeOf, pitchAt } from './theory.js';
-import { buildProgression, firstChord, lastChord } from './harmony.js';
+import { createKey, dstepRange, degreeOf, pitchAt, chordDegrees } from './theory.js';
+import { buildProgression, firstChord, lastChord, halfCadenceBar } from './harmony.js';
 import {
   assignPitches, stackChordTones, soundingTimeline, harmoniseLeadingNotes, harmoniseRepeatedLeadingNotes,
 } from './melody.js';
@@ -80,6 +80,17 @@ export function generateTest(rulesTable, options) {
     twoChordBarChance: grade >= 5 ? 0.3 : 0,
   });
 
+  /*
+   * Which bars of the consequent restate the antecedent's opening, decided
+   * once for the whole texture rather than per hand. Rolling it separately in
+   * each hand meant the two agreed only about half the time, and a restated
+   * melody over a left hand that had moved on is not a restatement the ear
+   * can hear — worse, the right hand is checked against the left, so the
+   * notes it is trying to bring back keep getting rejected against a bass
+   * that no longer matches. A real period brings both hands back together.
+   */
+  const restatement = planRestatement(rng, barCount);
+
   // Grade 1 only: the hands never sound together, so each takes half the
   // test. The split is decided up front so that each hand's line is written
   // over the bars it actually plays and cadences properly.
@@ -91,11 +102,11 @@ export function generateTest(rulesTable, options) {
   // checked against; writing them independently is what produced clashes.
   const leftHand = buildStaff({
     rng, rules, meter, barCount, hand: 'leftHand', progression, key,
-    silentBars: silence.leftHand,
+    silentBars: silence.leftHand, restatement,
   });
   const rightHand = buildStaff({
     rng, rules, meter, barCount, hand: 'rightHand', progression, key,
-    silentBars: silence.rightHand,
+    silentBars: silence.rightHand, restatement,
     against: soundingTimeline(leftHand, meter.barDuration),
   });
   harmoniseLeadingNotes([rightHand, leftHand], key, meter.barDuration);
@@ -163,7 +174,7 @@ function pickBarCount(rng, rules, timeSignature) {
   return count % 2 === 0 ? count : Math.min(count + 1, max % 2 === 0 ? max : max - 1) || min;
 }
 
-function buildStaff({ rng, rules, meter, barCount, hand, progression, key, silentBars = new Set(), against = null }) {
+function buildStaff({ rng, rules, meter, barCount, hand, progression, key, silentBars = new Set(), restatement = [], against = null }) {
   const isLeft = hand === 'leftHand';
   const activity = rules.generatorHints.activity ?? 0.4;
   // A supportive accompaniment role only exists once the hands actually
@@ -195,12 +206,14 @@ function buildStaff({ rng, rules, meter, barCount, hand, progression, key, silen
   const ostinato = isAccompaniment
     ? fillBar(rng, cells, meter.cellBeats, { restBudget, activity: activity * 0.7 }).events
     : null;
+  let ostinatoSource = null;
 
   for (let barIndex = 0; barIndex < barCount; barIndex++) {
     const isFinalBar = barIndex === barCount - 1;
     const isCadenceBar = isFinalBar || (silentBars.size && silentBars.has(barIndex + 1));
     const isRegularBar = !silentBars.has(barIndex) && !isCadenceBar && !ostinato;
     let events;
+    let motif = null;
 
     if (silentBars.has(barIndex)) {
       events = wholeBarRest(meter.barDuration);
@@ -213,7 +226,27 @@ function buildStaff({ rng, rules, meter, barCount, hand, progression, key, silen
       }).events;
     } else if (ostinato) {
       events = ostinato.map((event) => ({ ...event }));
-    } else if (barIndex >= 2 && bank[barIndex % 2] && rng.chance(0.3)) {
+      // An accompaniment figure keeps its *shape* from chord to chord — that
+      // is what makes an Alberti-style bass one recognisable pattern rather
+      // than a new arpeggio every bar. The restatement is anchor-relative
+      // (see melody.js), so each bar re-seats the same shape on whatever
+      // chord tone the new harmony offers.
+      if (ostinatoSource === null) ostinatoSource = barIndex;
+      else motif = pitchTreatment(rng, progression, ostinatoSource, barIndex) ?? { sourceBarIndex: ostinatoSource, transpose: 0 };
+    } else if (restatement[barIndex] !== undefined && !silentBars.has(restatement[barIndex])) {
+      /*
+       * The consequent phrase opens by restating the antecedent's opening —
+       * bar 5 saying again what bar 1 said, which is the most recognisable
+       * single feature of a real sight-reading test and the clearest answer
+       * to a test reading as unrelated bars laid end to end. `buildProgression`
+       * has already arranged for these two bars to carry the same chords as
+       * their counterparts, so the restatement transposes by nothing and the
+       * pitches come through intact rather than being bent to a new harmony.
+       */
+      const source = restatement[barIndex];
+      events = bars[source].events.map((event) => ({ ...event }));
+      motif = { sourceBarIndex: source, transpose: 0 };
+    } else if (barIndex >= 2 && bank[barIndex % 2] && rng.chance(0.18)) {
       /*
        * Phrase echo: this bar restates the rhythm of the same position two
        * bars back (bar 3 echoing bar 1, bar 4 echoing bar 2, and so on).
@@ -226,7 +259,9 @@ function buildStaff({ rng, rules, meter, barCount, hand, progression, key, silen
        * whole test's bars ending up an exact rhythmic clone of an earlier
        * one, which read as far more repetitive than a real test.
        */
-      events = bank[barIndex % 2].map((event) => ({ ...event }));
+      const source = bank[barIndex % 2];
+      events = source.events.map((event) => ({ ...event }));
+      motif = pitchTreatment(rng, progression, source.barIndex, barIndex);
     } else {
       const filled = fillBar(rng, cells, meter.cellBeats, {
         restBudget,
@@ -235,9 +270,11 @@ function buildStaff({ rng, rules, meter, barCount, hand, progression, key, silen
       events = filled.events;
     }
 
-    if (isRegularBar) bank[barIndex % 2] = events.map((event) => ({ ...event }));
+    if (isRegularBar) {
+      bank[barIndex % 2] = { events: events.map((event) => ({ ...event })), barIndex };
+    }
 
-    bars.push({ events, beatDuration: meter.beatDuration, directions: [] });
+    bars.push({ events, beatDuration: meter.beatDuration, directions: [], motif });
   }
 
   const range = rules.range[hand];
@@ -260,20 +297,89 @@ function buildStaff({ rng, rules, meter, barCount, hand, progression, key, silen
       chordToneOnly: isLeft,
       endOnTonic: true,
       barDuration: meter.barDuration,
+      // The tune is shaped as an arch across the whole test; the bass that
+      // supports it should stay put underneath rather than arch with it.
+      arch: isLeft ? 0 : 1,
     },
     against,
   });
 
-  if (isLeft && rules.texture.maxNotesPerChord >= 2) {
+  /*
+   * The accompaniment takes chords from Grade 3, where two-note chords first
+   * appear. The melody only starts taking them once the grade declares a
+   * simultaneous-note total (`maxNotesTotal`, Grade 5) — that is the point the
+   * syllabus describes as four-part writing, "two notes per hand", and until
+   * then chords belong under the tune rather than in it. Leaving the melody
+   * out of this entirely is why the right hand never played a chord at any
+   * grade and Grade 8 read no thicker than Grade 3.
+   */
+  if (rules.texture.maxNotesPerChord >= 2 && (isLeft || rules.texture.maxNotesTotal)) {
     stackChordTones({
       bars, key, progression, rng, window,
       maxNotes: rules.texture.maxNotesPerChord,
-      density: 0.25 + 0.05 * rules.grade,
+      // A melody is mostly single notes even where chords are allowed, so it
+      // takes them a good deal less often than the accompaniment does.
+      density: isLeft ? 0.18 + 0.02 * rules.grade : 0.05 + 0.015 * rules.grade,
       barDuration: meter.barDuration,
+      against,
+      maxTotal: rules.texture.maxNotesTotal ?? Infinity,
     });
   }
 
   return bars;
+}
+
+/**
+ * Which bars of the consequent phrase restate the antecedent's opening, as
+ * `plan[destinationBar] = sourceBar`. Only the phrase's first two bars are
+ * candidates: a period restates its opening gesture and then goes its own
+ * way to the cadence, rather than duplicating the whole phrase.
+ */
+function planRestatement(rng, barCount) {
+  const half = halfCadenceBar(barCount);
+  const plan = [];
+  if (half === null) return plan;
+  for (let position = 0; position < 2; position++) {
+    const destination = half + 1 + position;
+    if (destination >= barCount - 2) break;
+    if (rng.chance(0.7)) plan[destination] = position;
+  }
+  return plan;
+}
+
+/**
+ * How a bar that reuses an earlier bar's rhythm should treat that bar's
+ * *pitches*. Reusing the rhythm alone — which is all this used to do — gives
+ * the ear a rhythmic rhyme with no melodic one: bar 3 has bar 1's rhythm but
+ * an unrelated tune, so nothing is recognisable as a restatement and the test
+ * reads as a row of separately-invented bars. Measured at 1-5% of bars
+ * sharing any melodic contour with an earlier bar, against real specimens
+ * where restating the opening motif in bar 3-4 is close to a formal
+ * requirement (`docs/abrsm-sight-reading-analysis.md §3.3`, and the rules
+ * table's long-unused `motifRepeatBars`).
+ *
+ * The shift is not a free choice: it is the diatonic distance between the two
+ * bars' chord roots. That is the one shift that maps the source bar's chord
+ * tones onto *this* bar's chord tones, because a diatonic triad is a stack of
+ * thirds — moving {root, +2, +4} up by k gives the triad rooted at root+k. A
+ * freely-picked shift (±1, ±2) instead lands the restatement's strong beats on
+ * notes the new harmony does not contain, and the chord-tone filters in
+ * `pickWeighted` then reject it note by note: measured at only 14% of motif
+ * bars keeping their contour, versus the near-total preservation a
+ * root-distance shift gets. When the two bars share a chord the shift is zero
+ * and the motif restates literally; when they differ it comes out as a tonal
+ * sequence — which is exactly the pair of operations the analysis describes.
+ *
+ * Returning null is the analysis's third operation (same rhythm, new pitches),
+ * kept as a minority case so a test is not wall-to-wall restatement.
+ */
+function pitchTreatment(rng, progression, sourceBarIndex, barIndex) {
+  if (rng.chance(0.2)) return null;
+  const rootOf = (entry) => chordDegrees(firstChord(entry ?? 'I'))[0];
+  const diff = (((rootOf(progression[barIndex]) - rootOf(progression[sourceBarIndex])) % 7) + 7) % 7;
+  // Take the shift as the nearer of the two directions, so a motif sequences
+  // by a third down rather than a sixth up.
+  return { sourceBarIndex, transpose: diff > 3 ? diff - 7 : diff };
 }
 
 /**

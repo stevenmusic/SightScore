@@ -42,17 +42,27 @@ export function assignPitches({ rng, key, bars, progression, window, options, ag
     chordToneOnly = false,
     endOnTonic = true,
     barDuration = 0,
+    arch = 0,
   } = options;
 
   const centre = (window.low + window.high) / 2;
   const allSteps = [];
   for (let dstep = window.low; dstep <= window.high; dstep++) allSteps.push(dstep);
+  const aim = archTargets(window, centre, arch);
 
   // The cadence note is the last one that actually sounds, which is not
   // necessarily in the last bar — at Grade 1 a hand may rest through the
   // second half of the test.
   const soundingEvents = bars.flatMap((bar) => bar.events.filter((event) => !event.rest));
   const finalEvent = soundingEvents[soundingEvents.length - 1] ?? null;
+  const penultimateEvent = soundingEvents.length >= 2
+    ? soundingEvents[soundingEvents.length - 2]
+    : null;
+  const noteTotal = soundingEvents.length;
+  // Where the closing tonic will land, worked out before the walk starts so
+  // the note before it can aim to be a step away from it (see below).
+  const cadenceTonic = endOnTonic ? nearestWithDegree(allSteps, key, 0, aim(1)) : null;
+  let noteIndex = 0;
 
   let previous = null;
   let previousLeap = 0;
@@ -65,6 +75,29 @@ export function assignPitches({ rng, key, bars, progression, window, options, ag
   bars.forEach((bar, barIndex) => {
     const entry = progression[barIndex] ?? 'I';
     let offset = 0;
+    /*
+     * A bar restating an earlier bar's motif (see generate.js's `buildStaff`)
+     * carries `bar.motif = {sourceBarIndex, transpose}`, where `transpose` is
+     * the distance between the two bars' chord roots and therefore maps the
+     * source bar's chord tones exactly onto this bar's. Every note is placed
+     * from that transposition directly — `source[j] + transpose + octave` —
+     * and not relative to whatever this bar's first note turned out to be.
+     *
+     * Re-basing on the realised first note is the obvious alternative and it
+     * is a trap: when the first note is rejected for some reason of its own
+     * (unreachable by leap, clashing with the left hand), every later note
+     * inherits that arbitrary displacement, lands off the chord, gets
+     * rejected by the chord-tone filters in turn, and is finally relocated by
+     * `repairNonChordTones`. One unlucky note took the whole bar with it —
+     * measured as roughly halving the number of restatements that survived.
+     * Placing each note absolutely means a rejected note costs only itself.
+     */
+    const motif = bar.motif ?? null;
+    const motifSource = motif
+      ? bars[motif.sourceBarIndex]?.events.filter((e) => !e.rest && e.dstep !== undefined) ?? null
+      : null;
+    let motifIndex = 0;
+    let motifOctave = null;
 
     bar.events.forEach((event) => {
       if (event.rest) {
@@ -81,10 +114,43 @@ export function assignPitches({ rng, key, bars, progression, window, options, ag
       const onBeat = offset % bar.beatDuration === 0;
       const isDownbeat = offset === 0;
       const isFinalNote = event === finalEvent;
+      const position = noteTotal > 1 ? noteIndex / (noteTotal - 1) : 0;
+      const target = aim(position);
+
+      /*
+       * The pitch this note would ideally take, offered to `pickWeighted` and
+       * used only if it survives every hard filter there. Two things ask for
+       * one: a motif restatement (shape), and the approach to the closing
+       * tonic (cadence). A cadence is approached by step in real writing —
+       * the leading note rising to the tonic, or the supertonic falling to it
+       * — and both of those degrees belong to the V chord that is virtually
+       * always sounding underneath, so the preference usually survives.
+       */
+      let preferred = null;
+      if (event === penultimateEvent && cadenceTonic !== null) {
+        preferred = cadenceApproach(cadenceTonic, previous, window);
+      } else if (motifSource && !isFinalNote) {
+        const source = motifSource[motifIndex];
+        if (source) {
+          // The octave is settled once for the whole bar, by how well the
+          // entire shape fits the window rather than by where its first note
+          // would like to sit. Placing it by the first note alone reliably
+          // wrecked restatements that reach upward: starting the motif an
+          // octave high because the previous note happened to be high pushed
+          // everything after it off the top of the window, where it was
+          // rejected note by note and replaced by the lottery — the left hand
+          // would restate a bar perfectly while the right hand, whose window
+          // is the binding one, kept only its first note.
+          if (motifOctave === null) {
+            motifOctave = fitMotifOctave(motifSource, motif.transpose, window, previous ?? target);
+          }
+          preferred = source.dstep + motif.transpose + motifOctave;
+        }
+      }
 
       let chosen;
       if (isFinalNote && endOnTonic) {
-        chosen = nearestWithDegree(allSteps, key, 0, previous ?? centre);
+        chosen = nearestWithDegree(allSteps, key, 0, previous ?? target);
       } else if (previous === null) {
         if (chordToneOnly) {
           // The harmonic foundation (bass) opens in root position: a real
@@ -92,10 +158,10 @@ export function assignPitches({ rng, key, bars, progression, window, options, ag
           // chord member happens to sit closest to the middle of the range.
           // `tones[0]` is always the root — chordDegrees() builds a triad
           // as [root, root+2, root+4].
-          chosen = nearestWithDegree(allSteps, key, tones[0], centre);
+          chosen = nearestWithDegree(allSteps, key, tones[0], target);
         } else {
           const openings = allSteps.filter((dstep) => tones.includes(degreeOf(dstep, key)));
-          chosen = leastDistant(openings.length ? openings : allSteps, centre);
+          chosen = leastDistant(openings.length ? openings : allSteps, target);
         }
       } else {
         chosen = pickWeighted({
@@ -110,13 +176,17 @@ export function assignPitches({ rng, key, bars, progression, window, options, ag
           tones,
           onBeat,
           isDownbeat,
-          centre,
+          centre: target,
           stepwiseBias,
           maxLeapSemitones,
           chordToneOnly,
           sounding,
+          preferred,
         });
       }
+
+      if (motifSource) motifIndex += 1;
+      noteIndex += 1;
 
       const interval = previous === null ? 0 : chosen - previous;
       repeatRun = interval === 0 ? repeatRun + 1 : 0;
@@ -146,6 +216,14 @@ export function assignPitches({ rng, key, bars, progression, window, options, ag
   fixAugmentedSeconds(bars, key);
   // Both repairs move pitches after the vertical check, so verify once more.
   resolveClashes({ bars, key, window, against, barDuration, finalEvent: endOnTonic ? finalEvent : null });
+  // The cadence is settled last, and by construction rather than by
+  // preference: every pass above can move the note before the tonic, so a
+  // stepwise approach merely *asked* for during the walk survived only about
+  // a fifth of the time. A melody arriving at its final tonic by leap is the
+  // single most audible way an ending sounds arbitrary.
+  if (endOnTonic && !chordToneOnly) {
+    shapeCadence({ bars, key, window, against, barDuration, soundingEvents });
+  }
   // resolveClashes can leave a repeated note disagreeing with itself (see
   // harmoniseRepeatedLeadingNotes) — check that last, since it depends on
   // whatever resolveClashes just decided.
@@ -188,10 +266,149 @@ function soundingMidi(dstep, key) {
   return pitchAt(dstep, key, { raiseSeventh: degreeOf(dstep, key) === 6 }).midi;
 }
 
+/**
+ * The moving pitch the line is drawn toward, as a function of how far
+ * through the piece a note is (0 at the first note, 1 at the last).
+ *
+ * A fixed attraction to the middle of the tessitura — what this used to be —
+ * gives every note the same target, so the line has no reason to go anywhere:
+ * it mills about the centre and touches its highest note two or three times
+ * at arbitrary places. Real melodies, and ABRSM's specimens in particular,
+ * are shaped: they start in the lower-middle of their range, rise to a single
+ * climax roughly two thirds through (inside the consequent phrase), then fall
+ * away to the cadence. Interpolating the target along that arch is what makes
+ * the line read as going somewhere rather than as bars stitched end to end.
+ *
+ * `amount` scales the whole effect back toward the flat centre, so a bass
+ * line — which should stay put underneath the tune, not arch — can pass 0
+ * and keep exactly the old behaviour.
+ */
+function archTargets(window, centre, amount) {
+  if (!amount) return () => centre;
+  const span = window.high - window.low;
+  const PEAK_AT = 0.68;
+  const START = 0.34;
+  const PEAK = 0.86;
+  const END = 0.30;
+
+  return (position) => {
+    const height = position <= PEAK_AT
+      ? START + (PEAK - START) * (position / PEAK_AT)
+      : PEAK + (END - PEAK) * ((position - PEAK_AT) / (1 - PEAK_AT));
+    const arched = window.low + span * height;
+    return centre + (arched - centre) * amount;
+  };
+}
+
+/**
+ * Put a real cadence on the end of the melodic line: the last note on the
+ * tonic, the one before it a step away from that tonic.
+ *
+ * Almost every closing gesture in tonal music approaches the final tonic by
+ * step — the leading note rising to it, or the supertonic falling to it — and
+ * in a minor key that rising leading note is exactly what the harmonic-minor
+ * policy already raises. Both of those degrees also belong to the dominant
+ * chord that the progression puts under the penultimate bar, so the approach
+ * agrees with the harmony rather than fighting it.
+ *
+ * The bass is deliberately excluded (`chordToneOnly`): a bass line is
+ * *supposed* to leap V–I at the cadence, and stepping it down onto the tonic
+ * would flatten the one leap that belongs there.
+ */
+function shapeCadence({ bars, key, window, against, barDuration, soundingEvents }) {
+  if (soundingEvents.length < 2) return;
+  const final = soundingEvents[soundingEvents.length - 1];
+  const penultimate = soundingEvents[soundingEvents.length - 2];
+  if (!final?.pitch || !penultimate?.pitch) return;
+
+  const sounding = soundingAtEvent(bars, against, barDuration, penultimate);
+  const before = soundingEvents[soundingEvents.length - 3] ?? null;
+  const tonic = final.dstep;
+  // The leading note first: 7–1 is the stronger of the two approaches.
+  for (const candidate of [tonic - 1, tonic + 1]) {
+    if (candidate < window.low || candidate > window.high) continue;
+    let raiseSeventh = degreeOf(candidate, key) === 6;
+    /*
+     * This runs after `fixAugmentedSeconds`, so it has to keep that rule
+     * itself: raising the 7th when the note before it is the natural 6th a
+     * step below makes a melodic augmented 2nd, which these tests never
+     * write. Falling back to the natural 7th still reaches the tonic by step,
+     * which is what this function is actually for.
+     */
+    if (raiseSeventh && before
+      && degreeOf(before.dstep, key) === 5
+      && Math.abs(candidate - before.dstep) === 1) {
+      raiseSeventh = false;
+    }
+    const pitch = pitchAt(candidate, key, { raiseSeventh });
+    if (clashesWith(pitch.midi, sounding)) continue;
+    penultimate.dstep = candidate;
+    penultimate.raiseSeventh = raiseSeventh;
+    penultimate.pitch = pitch;
+    return;
+  }
+}
+
+/** What the other hand is sounding while `event` sounds. */
+function soundingAtEvent(bars, against, barDuration, event) {
+  if (!against?.length) return [];
+  for (let barIndex = 0; barIndex < bars.length; barIndex++) {
+    let offset = 0;
+    for (const candidate of bars[barIndex].events) {
+      if (candidate === event) {
+        return soundingAt(against, barIndex * barDuration + offset, candidate.dur);
+      }
+      offset += candidate.dur;
+    }
+  }
+  return [];
+}
+
+/**
+ * The octave displacement that lets the most of a transposed motif land
+ * inside the hand's window, breaking ties toward starting near `near` (the
+ * note the line is coming from, so the restatement is reachable).
+ */
+function fitMotifOctave(source, transpose, window, near) {
+  let best = 0;
+  let bestScore = -Infinity;
+  for (let shift = -14; shift <= 14; shift += 7) {
+    let inside = 0;
+    for (const note of source) {
+      const dstep = note.dstep + transpose + shift;
+      if (dstep >= window.low && dstep <= window.high) inside += 1;
+    }
+    // Fitting the shape dominates; proximity only settles ties between
+    // octaves that fit equally well.
+    const score = inside * 100 - Math.abs(source[0].dstep + transpose + shift - near);
+    if (score > bestScore) {
+      bestScore = score;
+      best = shift;
+    }
+  }
+  return best;
+}
+
+/**
+ * The note to aim for immediately before the closing tonic: a step above or
+ * below it, whichever is nearer to where the line already is, preferring the
+ * leading note below on a tie (7–1 is the strongest of the two).
+ */
+function cadenceApproach(tonicDstep, previous, window) {
+  const below = tonicDstep - 1;
+  const above = tonicDstep + 1;
+  const inRange = (dstep) => dstep >= window.low && dstep <= window.high;
+  if (!inRange(below)) return inRange(above) ? above : null;
+  if (!inRange(above)) return below;
+  if (previous === null) return below;
+  return Math.abs(above - previous) < Math.abs(below - previous) ? above : below;
+}
+
 function pickWeighted(ctx) {
   const {
     rng, key, allSteps, previous, previousLeap, repeatRun, runDirection, runLength, tones,
     onBeat, isDownbeat, centre, stepwiseBias, maxLeapSemitones, chordToneOnly, sounding,
+    preferred = null,
   } = ctx;
 
   const previousMidi = soundingMidi(previous, key);
@@ -204,6 +421,7 @@ function pickWeighted(ctx) {
   const repeats = [];
   const steps = [];
   const leaps = [];
+  let preferredCandidate = null;
 
   for (const dstep of allSteps) {
     const interval = dstep - previous;
@@ -287,6 +505,7 @@ function pickWeighted(ctx) {
     if (distance > 1) weight /= distance - 1;
 
     const candidate = { dstep, weight, clash };
+    if (dstep === preferred && !clash) preferredCandidate = candidate;
     if (distance === 0) repeats.push(candidate);
     else if (distance === 1) steps.push(candidate);
     else leaps.push(candidate);
@@ -314,8 +533,34 @@ function pickWeighted(ctx) {
    */
   if (!previousWasChordTone && previousLeap !== 0) {
     const resolving = steps.filter((s) => Math.sign(s.dstep - previous) === Math.sign(previousLeap) && !s.clash);
-    if (resolving.length) return rng.weighted(resolving).dstep;
+    if (resolving.length) {
+      /*
+       * A motif restatement usually *is* the resolution: the source bar
+       * resolved its own passing tones, and a diatonic transposition of that
+       * bar resolves them the same way. When the two agree, following the
+       * motif and resolving the dissonance are the same act — so check that
+       * before overriding the motif with an arbitrary weighted resolution.
+       * This was the single largest cause of restatements breaking up.
+       */
+      const preferredResolves = resolving.find((s) => s.dstep === preferred);
+      if (preferredResolves) return preferredResolves.dstep;
+      return rng.weighted(resolving).dstep;
+    }
   }
+
+  /*
+   * A motif restatement or a cadential approach asked for this exact pitch,
+   * and it came through every filter above — range, leap limit, chord tone
+   * on the beat, and the vertical check against the other hand — so it is as
+   * legal as anything the lottery below could return. Take it. Leaving it to
+   * the lottery with a mere weight boost is not enough: a motif is only
+   * audible as a restatement if it is heard more or less intact, and a shape
+   * that survives in three notes out of five is not a restatement of
+   * anything. This is checked *after* the passing-tone resolution above, so
+   * motif-following never breaks the dissonance treatment that
+   * `repairNonChordTones` would otherwise undo anyway.
+   */
+  if (preferredCandidate) return preferredCandidate.dstep;
 
   /*
    * Decide step vs. leap vs. repeat as a category first, weighted by
@@ -493,32 +738,74 @@ function fixAugmentedSeconds(bars, key) {
 }
 
 /**
- * Turn single notes into chords by stacking diatonic thirds below.
- * Used for the left hand from Grade 3 upward.
+ * Turn single notes into chords by stacking chord tones underneath.
+ *
+ * This used to consider exactly one candidate — the diatonic third below —
+ * which quietly capped every chord at two notes no matter what the grade
+ * allowed, so Grade 6-8's declared three- and four-note chords never appeared
+ * and Grade 8's texture came out identical to Grade 3's. It now walks down a
+ * full octave and takes the nearest chord tones it finds, which is also what
+ * produces a real close voicing: from the root, the nearest members below are
+ * the fifth and the third, not another third.
+ *
+ * `maxTotal` caps how many notes sound across *both* hands at once, and
+ * `against` is what the other hand is already holding — the melody may not be
+ * voiced down through the accompaniment, so a stack stops at the other hand's
+ * top note rather than crossing it.
  */
-export function stackChordTones({ bars, key, progression, maxNotes, rng, window, density = 0.4, barDuration = 0 }) {
+export function stackChordTones({
+  bars, key, progression, maxNotes, rng, window, density = 0.4, barDuration = 0,
+  against = null, maxTotal = Infinity,
+}) {
   bars.forEach((bar, barIndex) => {
     const entry = progression[barIndex] ?? 'I';
     let offset = 0;
     bar.events.forEach((event) => {
       const tones = chordDegrees(chordAt(entry, offset, barDuration));
+      const sounding = against ? soundingAt(against, barIndex * barDuration + offset, event.dur) : [];
       offset += event.dur;
-      if (event.rest || !event.dstep) return;
+      if (event.rest || event.dstep === undefined) return;
       if (maxNotes < 2 || !rng.chance(density)) return;
       if (!tones.includes(degreeOf(event.dstep, key))) return;
 
+      // Room left under the grade's limit on simultaneous notes.
+      const room = Math.min(maxNotes, maxTotal - sounding.length);
+      if (room < 2) return;
+      const ceiling = sounding.length ? Math.max(...sounding) : null;
+      /*
+       * How thick *this* chord is. Taking the grade's maximum every time made
+       * the upper grades read as a chorale rather than a sight-reading test —
+       * six three-note chords in a seven-note bar — because the maximum is a
+       * ceiling the syllabus permits occasionally, not a target. Most chords
+       * are the thinnest the texture allows and the full stack stays an event.
+       */
+      let want = 2;
+      while (want < room && rng.chance(0.35)) want += 1;
+
       const extras = [];
-      const below = event.dstep - 2;
-      // The added note has to stay inside the hand's range too.
-      if (below >= window.low && tones.includes(degreeOf(below, key))) extras.push(below);
-      if (extras.length) {
-        // A stacked third below can itself land on the leading note (e.g.
-        // a V or vii° chord contains it) — harmonic minor raises it there
-        // same as anywhere else.
-        event.chord = extras
-          .slice(0, maxNotes - 1)
-          .map((dstep) => pitchAt(dstep, key, { raiseSeventh: degreeOf(dstep, key) === 6 }));
+      for (let below = event.dstep - 1; below >= event.dstep - 7; below--) {
+        if (extras.length >= want - 1) break;
+        if (below < window.low) break;
+        if (!tones.includes(degreeOf(below, key))) continue;
+        // A stacked note can itself land on the leading note (a V or vii°
+        // chord contains it) — harmonic minor raises it there same as anywhere.
+        const pitch = pitchAt(below, key, { raiseSeventh: degreeOf(below, key) === 6 });
+        const interval = event.pitch.midi - pitch.midi;
+        if (interval <= 0 || interval > 12) continue;
+        if (HARSH_INTERVALS.has(interval % 12)) continue;
+        if (ceiling !== null && pitch.midi < ceiling) break;
+        /*
+         * Consonant with its own chord is not the same as consonant with what
+         * the other hand is holding. In a bar whose harmony turns over halfway
+         * (`twoChordBarChance`) the other hand may still be sounding the
+         * previous chord, and in a minor key it may be sounding the leading
+         * note raised where this chord wants it natural — either way a stacked
+         * note can land a semitone from it.
+         */
+        if (clashesWith(pitch.midi, sounding)) continue;
+        extras.push(pitch);
       }
+      if (extras.length) event.chord = extras;
     });
   });
   return bars;
@@ -541,40 +828,71 @@ export function stackChordTones({ bars, key, progression, maxNotes, rng, window,
  */
 export function harmoniseLeadingNotes(staves, key, barDuration) {
   if (!key.isMinor) return;
-  const timelines = staves.map((bars) => soundingTimelineWithEvents(bars, barDuration));
+  const timelines = staves.map((bars) => leadingNoteVoices(bars, key, barDuration));
 
   let changed = true;
   while (changed) {
     changed = false;
-    for (const entry of timelines[0]) {
-      for (const other of timelines[1]) {
-        if (entry.start >= other.end || entry.end <= other.start) continue;
-        const a = entry.event;
-        const b = other.event;
-        if (degreeOf(a.dstep, key) !== 6 || degreeOf(b.dstep, key) !== 6) continue;
-        if (a.raiseSeventh === b.raiseSeventh) continue;
+    for (const a of timelines[0]) {
+      for (const b of timelines[1]) {
+        if (a.start >= b.end || a.end <= b.start) continue;
+        if (a.isRaised() === b.isRaised()) continue;
         // Follow the natural form: it is always available, the raised one is not.
-        for (const note of [a, b]) {
-          note.raiseSeventh = false;
-          note.pitch = pitchAt(note.dstep, key, { raiseSeventh: false });
-        }
+        a.lower();
+        b.lower();
         changed = true;
       }
     }
   }
 }
 
-function soundingTimelineWithEvents(bars, barDuration) {
-  const timeline = [];
+/**
+ * Every sounding 7th-degree voice in a staff, main notes and stacked chord
+ * notes alike, as something that can report whether it is raised and be put
+ * back to natural.
+ *
+ * Chord notes have to be included. They are raised by the same harmonic-minor
+ * rule as any other note, so once both hands can carry chords a stacked
+ * leading note in one hand will eventually sound against the natural 7th in
+ * the other — a false relation, and the harshest thing the generator can
+ * produce. Reconciling only the main notes left exactly that hole.
+ */
+function leadingNoteVoices(bars, key, barDuration) {
+  const voices = [];
   bars.forEach((bar, barIndex) => {
     let offset = 0;
     for (const event of bar.events) {
-      if (!event.rest && event.pitch) {
-        const start = barIndex * barDuration + offset;
-        timeline.push({ start, end: start + event.dur, event });
+      if (event.rest || !event.pitch) {
+        offset += event.dur;
+        continue;
       }
+      const start = barIndex * barDuration + offset;
+      const end = start + event.dur;
+
+      if (degreeOf(event.dstep, key) === 6) {
+        voices.push({
+          start,
+          end,
+          isRaised: () => Boolean(event.raiseSeventh),
+          lower: () => {
+            event.raiseSeventh = false;
+            event.pitch = pitchAt(event.dstep, key, { raiseSeventh: false });
+          },
+        });
+      }
+
+      (event.chord ?? []).forEach((pitch, index) => {
+        if (degreeOf(pitch.dstep, key) !== 6) return;
+        const natural = pitchAt(pitch.dstep, key, { raiseSeventh: false });
+        voices.push({
+          start,
+          end,
+          isRaised: () => event.chord[index].alter > natural.alter,
+          lower: () => { event.chord[index] = natural; },
+        });
+      });
       offset += event.dur;
     }
   });
-  return timeline;
+  return voices;
 }

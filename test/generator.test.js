@@ -519,3 +519,137 @@ function soundingTimeline(score, staffNumber) {
   });
   return timeline;
 }
+
+test('a test is built as a period, not one undifferentiated span', () => {
+  // Real sight-reading tests are periods: the antecedent phrase puts a comma
+  // on the dominant, and the consequent restarts at home before closing V-I.
+  // Without it every middle bar is harmonically interchangeable and the test
+  // reads as a single span rather than a question answered.
+  eachTest((score, _rules, context) => {
+    if (score.barCount < 6) return;
+    const half = Math.floor(score.barCount / 2) - 1;
+    if (half < 1 || half >= score.barCount - 3) return;
+    assert.equal(
+      lastChord(score.progression[half]), 'V',
+      `grade ${context.grade} seed ${context.seed}: antecedent ends on `
+      + `${lastChord(score.progression[half])}, not a half cadence`,
+    );
+    assert.equal(
+      firstChord(score.progression[half + 1]), 'I',
+      `grade ${context.grade} seed ${context.seed}: consequent does not restart on I`,
+    );
+  });
+});
+
+test('the melody restates its opening material, not just its rhythm', () => {
+  /*
+   * Reusing a bar's rhythm while re-inventing its pitches gives the ear a
+   * rhythmic rhyme with no melodic one, which is most of why a generated test
+   * used to read as separately-invented bars laid end to end. Measured at
+   * 1-5% of bars sharing any melodic contour with an earlier bar before the
+   * motif mechanic carried pitch as well as rhythm, and ~10% after — the
+   * restatements now landing where a period wants them (the consequent
+   * bringing back the antecedent's opening) rather than at random.
+   */
+  const contourOf = (bar) => {
+    const notes = soundingEvents(bar).filter((event) => event.dstep !== undefined);
+    if (notes.length < 2) return null;
+    return notes.slice(1).map((note, i) => note.dstep - notes[i].dstep).join(',');
+  };
+
+  let restated = 0;
+  let total = 0;
+  eachTest((score) => {
+    const contours = score.staves[1].map(contourOf).filter(Boolean);
+    const seen = new Set();
+    for (const contour of contours) {
+      total += 1;
+      if (seen.has(contour)) restated += 1;
+      else seen.add(contour);
+    }
+  });
+
+  const rate = restated / total;
+  assert.ok(
+    rate >= 0.05,
+    `only ${(rate * 100).toFixed(1)}% of melody bars restate an earlier bar's contour`,
+  );
+});
+
+test('the melody reaches its final tonic by step', () => {
+  /*
+   * Almost every closing gesture in tonal music approaches the tonic by step
+   * — the leading note rising to it or the supertonic falling to it — and both
+   * belong to the dominant the progression puts under the penultimate bar.
+   * Merely preferring that during pitch selection was not enough: the repair
+   * passes that run afterwards moved the note often enough that it survived
+   * only ~20% of the time, so the cadence is now shaped after those passes.
+   */
+  let stepwise = 0;
+  let total = 0;
+  eachTest((score) => {
+    const notes = score.staves[1]
+      .flatMap((bar) => soundingEvents(bar))
+      .filter((event) => event.dstep !== undefined);
+    if (notes.length < 2) return;
+    total += 1;
+    if (Math.abs(notes[notes.length - 1].dstep - notes[notes.length - 2].dstep) === 1) stepwise += 1;
+  });
+
+  /*
+   * Not quite universal, and legitimately so. In a five-finger grade whose
+   * tonic sits at the bottom of the position, the leading note below it is
+   * outside the five notes the hand may use — a hard Grade 1-2 rule — and the
+   * supertonic above it can still be blocked by a clash with the left hand
+   * (G minor, seed 95041: the A would make a major 7th against the bass B flat).
+   * With neither neighbour available the leap is the correct outcome, so this
+   * asserts the rate rather than every single test.
+   */
+  const rate = stepwise / total;
+  assert.ok(
+    rate >= 0.85,
+    `only ${(rate * 100).toFixed(1)}% of melodies reach their final tonic by step`,
+  );
+});
+
+test('chord density stays inside the grade texture', () => {
+  /*
+   * `maxNotesPerChord` and `maxNotesTotal` were both declared in the rules
+   * table long before anything generated against them: chords were stacked in
+   * the left hand only, and never more than two notes deep, so Grade 6-8's
+   * three- and four-note chords never appeared and Grade 8 came out no thicker
+   * than Grade 3. Counted by attack — notes struck together, which is what the
+   * syllabus's "four-part chords, two notes per hand" describes — rather than
+   * by overlap, since a sustained bass under a running melody is not a chord.
+   */
+  eachTest((score, gradeRules, context) => {
+    const attacks = new Map();
+    for (const staffNumber of [1, 2]) {
+      score.staves[staffNumber].forEach((bar, barIndex) => {
+        let offset = 0;
+        for (const event of bar.events) {
+          if (!event.rest && event.pitch) {
+            const notes = 1 + (event.chord?.length ?? 0);
+            assert.ok(
+              notes <= gradeRules.texture.maxNotesPerChord,
+              `grade ${context.grade} seed ${context.seed}: ${notes}-note chord in one hand `
+              + `exceeds ${gradeRules.texture.maxNotesPerChord}`,
+            );
+            const at = barIndex * score.barDuration + offset;
+            attacks.set(at, (attacks.get(at) ?? 0) + notes);
+          }
+          offset += event.dur;
+        }
+      });
+    }
+
+    const limit = gradeRules.texture.maxNotesTotal;
+    if (!limit) return;
+    for (const [at, notes] of attacks) {
+      assert.ok(
+        notes <= limit,
+        `grade ${context.grade} seed ${context.seed}: ${notes} notes struck together at ${at}, limit ${limit}`,
+      );
+    }
+  });
+});
