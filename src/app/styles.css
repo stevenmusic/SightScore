@@ -221,12 +221,48 @@ button.link:hover { color: var(--gold); }
 
 /* ---------- status strip ---------- */
 
+/*
+ * Metadata on the left, transport on the right, one row. The buttons used to
+ * live in the title bar; they sit here so they line up with the tempo reading
+ * and, more importantly, so they survive fullscreen — which now hides the
+ * title bar altogether. `.statusbar` is always rendered even before a test
+ * exists, since `#status` alone is what gets hidden until there is something
+ * to describe; the controls must not disappear with it.
+ */
+.statusbar {
+  display: flex;
+  /* The metadata and five buttons do not both fit across a phone. Wrapping
+     drops the transport onto its own line there — still right-aligned — while
+     a tablet or desktop keeps everything on one row beside the tempo. */
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+  /* Full width, like the toolbar above it. Left inside the page's centred
+     64rem column the row was only ~984px on a 1366px tablet, and a long tempo
+     term ("Andantino grazioso (♩≈84)") was enough to push the buttons onto a
+     second line with the right third of the screen standing empty. */
+  margin: 20px calc(50% - 50vw) 10px;
+  padding-inline: var(--body-px);
+}
+
+.statusbar .controls {
+  /* Right-aligned whether or not the status half is present, and in portrait
+     as much as in landscape — one rule, no orientation branch. */
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
 .status {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 14px 28px;
-  margin: 20px 4px 10px;
+  /* Shrink rather than push the transport onto its own line: the tempo term
+     can be long ("Cantabile ed espressivo (♩≈72)") and the strip already
+     scrolls internally, so giving up width here costs nothing while wrapping
+     costs the whole row. */
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .countdown {
@@ -318,6 +354,10 @@ button.link:hover { color: var(--gold); }
  * score gets as much width as the screen actually has to give it.
  */
 .score-frame {
+  /* Hand double taps to the app instead of the browser's tap-to-zoom, which
+     otherwise swallows or delays the second tap — the gesture that toggles
+     fullscreen on a touch device now that the button is hidden there. */
+  touch-action: manipulation;
   position: relative;
   margin-top: 10px;
   margin-left: calc(50% - 50vw);
@@ -557,6 +597,33 @@ body.pseudo-fullscreen {
   max-width: none;
 }
 
+/*
+ * Fullscreen shows the music and nothing else: the title band goes, leaving
+ * the plain page and one row of transport controls above the score. The row
+ * that remains is `.statusbar`, which is why the buttons were moved into it.
+ */
+html:fullscreen .topbar,
+html:-webkit-full-screen .topbar,
+body.pseudo-fullscreen .topbar {
+  display: none;
+}
+
+html:fullscreen .statusbar,
+html:-webkit-full-screen .statusbar,
+body.pseudo-fullscreen .statusbar {
+  margin-top: 8px;
+}
+
+/*
+ * On a touch device the fullscreen button is dead weight in a row that has
+ * little room to spare — a double tap on the score does the same job (see
+ * `app.js`). Pointer-based devices keep the button, where there is room and
+ * no double-tap convention to lean on.
+ */
+@media (hover: none) and (pointer: coarse) {
+  #fullscreen { display: none; }
+}
+
 html:fullscreen .score-frame,
 html:-webkit-full-screen .score-frame,
 body.pseudo-fullscreen .score-frame {
@@ -584,12 +651,23 @@ html:fullscreen .score-frame, body.pseudo-fullscreen .score-frame {
  * by resizing the window through it, not by any of the fixed device widths
  * this app is normally checked against. 680px leaves a safety margin.
  */
-@media (max-width: 680px) {
-  .topbar { padding: 10px 8px; }
+/*
+ * The transport shares its row with the countdown and the metadata, and the
+ * two full button labels ("產生新題目", "開始 30 秒準備") are what tip that row
+ * over: at 820-950px the buttons wrapped onto a second line with the meta
+ * strip alone on the first. Dropping to icons keeps everything beside the
+ * tempo, which is where the row is meant to read from. The threshold is wide
+ * enough to cover a portrait tablet and a phone held sideways.
+ */
+@media (max-width: 950px) {
   .controls { gap: 6px; }
   /* Every button becomes its icon so the row still fits on one line. */
   .btn { width: 36px; height: 36px; padding: 0; }
   .btn .btn-label { display: none; }
+}
+
+@media (max-width: 680px) {
+  .topbar { padding: 10px 8px; }
   .grade-select { font-size: var(--fs-xs); padding: 6px 4px; }
 }
 
@@ -603,7 +681,8 @@ html:fullscreen .score-frame, body.pseudo-fullscreen .score-frame {
    */
   h1 { font-size: 15px; }
 
-  .status { gap: 10px 18px; margin: 14px 2px 8px; }
+  .statusbar { gap: 8px 12px; margin: 14px 2px 8px; }
+  .status { gap: 10px 18px; }
   .countdown { font-size: 32px; min-width: 52px; }
   /* Smaller fixed columns leave more of the strip for the tempo field,
      which is the one part allowed to ellipsize on a narrow phone. */

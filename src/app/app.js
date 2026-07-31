@@ -55,6 +55,8 @@ let resizeTimer = null;
 const BASE_ZOOM = 1;
 /** Below this, engraving reads as too small to sight-read from. */
 const MIN_ZOOM = 0.5;
+/** Breathing room under the last system, so it never sits on the screen edge. */
+const SCORE_BOTTOM_GAP = 16;
 /*
  * Past this, a line of a short/simple test starts reading as cramped. Five
  * rather than four so that a ten-bar test — a common length from Grade 5 up,
@@ -140,6 +142,7 @@ async function init() {
     setPlayState(false);
   });
   elements.fullscreen.addEventListener('click', toggleFullscreen);
+  bindDoubleTapFullscreen();
   document.addEventListener('fullscreenchange', () => onFullscreenChange(!!document.fullscreenElement));
   document.addEventListener('webkitfullscreenchange', () => onFullscreenChange(!!document.webkitFullscreenElement));
   elements.clearHistory.addEventListener('click', () => {
@@ -309,6 +312,16 @@ function enterFullscreen() {
   }
   const result = request();
   if (result?.catch) result.catch(() => enterPseudoFullscreen());
+  /*
+   * Catching a rejection is not enough. A browser can accept the request,
+   * resolve it, and still not go fullscreen — iOS Safari does exactly that on
+   * iPhone, where element fullscreen is unsupported but the call is not
+   * refused outright. Verify shortly afterwards and fall back to the CSS
+   * pinning if nothing happened, so the gesture always does something.
+   */
+  window.setTimeout(() => {
+    if (!isFullscreenActive()) enterPseudoFullscreen();
+  }, 150);
 }
 
 function exitFullscreen() {
@@ -357,21 +370,115 @@ function onFullscreenChange(active) {
  * the container at the current zoom, OSMD still wraps it further, splitting
  * one intended line into several, sometimes down to single bars each).
  */
-function shrinkUntilNoSingleBarLines(zoom) {
+function shrinkUntilNoSingleBarLines(zoom, { fitHeight = false } = {}) {
+  /*
+   * Only shrink for height when the caller is actually looking for a layout
+   * that fits the screen. On a phone nothing fits, so folding the height into
+   * the loop unconditionally drove every candidate to the zoom floor and made
+   * the whole page tiny — the opposite of leaving a small screen alone.
+   */
+  const available = fitHeight ? availableScoreHeight() : Infinity;
   osmd.zoom = zoom;
   osmd.render();
   let layout = stage.measure();
-  while (zoom > MIN_ZOOM && hasSingleBarLine(layout)) {
+  while (zoom > MIN_ZOOM && (hasSingleBarLine(layout) || renderedScoreHeight() > available)) {
     zoom = Math.max(MIN_ZOOM, zoom * 0.92);
     osmd.zoom = zoom;
     osmd.render();
     layout = stage.measure();
   }
-  return { layout, zoom };
+  return { layout, zoom, fitsHeight: renderedScoreHeight() <= available };
+}
+
+/**
+ * How tall the engraved score actually is, measured from the rendered SVG
+ * rather than from the bar boxes.
+ *
+ * The bar boxes cover the staves only. Everything OSMD hangs outside them —
+ * pedal brackets under the bass staff, dynamics and hairpins between the
+ * staves, slurs and ledger lines above — is in the SVG but not in those
+ * boxes, so sizing to them would leave exactly the material this needs to
+ * reserve room for hanging off the bottom of the screen.
+ */
+function renderedScoreHeight() {
+  const svg = document.querySelector('#score svg');
+  return svg ? svg.getBoundingClientRect().height : 0;
+}
+
+/**
+ * The height the score has to fit into for the whole test to be readable
+ * without scrolling — the distance from the top of the engraving to the
+ * bottom of the window, less the frame's own padding.
+ *
+ * A tablet has the room for this and a phone often does not; the zoom floor
+ * decides which. Where the floor is reached first the score simply stays
+ * legible and the page scrolls, which is the right trade on a small screen.
+ */
+function availableScoreHeight() {
+  const scoreBox = document.getElementById('score')?.getBoundingClientRect();
+  if (!scoreBox) return Infinity;
+  const frame = document.getElementById('score-frame');
+  const framePadding = frame
+    ? parseFloat(getComputedStyle(frame).paddingBottom) || 0
+    : 0;
+  const viewport = window.innerHeight || document.documentElement.clientHeight;
+  return Math.max(120, viewport - scoreBox.top - framePadding - SCORE_BOTTOM_GAP);
 }
 
 function hasSingleBarLine(layout) {
   return layout.bars.size > 1 && layout.systems.some((system) => system.bars.length === 1);
+}
+
+/**
+ * Double-tapping the score toggles fullscreen, which is how a touch device
+ * gets there at all — the button is hidden on those (see `styles.css`), where
+ * the transport row has no width to spare for a control that duplicates a
+ * gesture.
+ *
+ * `dblclick` is not enough on its own: iOS Safari does not fire it reliably
+ * for taps, so the two-tap timing is recognised from `pointerup` as well. A
+ * second tap only counts if it lands near the first and within the usual
+ * double-tap window — otherwise two unrelated taps a second apart while
+ * reading would throw the view in and out of fullscreen.
+ */
+/*
+ * Deliberately toward the generous end of what counts as a double tap — iOS
+ * allows about half a second for its own double-tap-to-zoom, and a reader
+ * tapping a tablet propped on a music stand is not quick.
+ */
+const DOUBLE_TAP_MS = 500;
+const DOUBLE_TAP_SLOP = 40;
+
+function bindDoubleTapFullscreen() {
+  const frame = document.getElementById('score-frame');
+  if (!frame) return;
+  let lastTap = 0;
+  let lastX = 0;
+  let lastY = 0;
+
+  const isControl = (target) => target.closest('button, select, a, input');
+
+  frame.addEventListener('dblclick', (event) => {
+    if (isControl(event.target)) return;
+    toggleFullscreen();
+  });
+
+  frame.addEventListener('pointerup', (event) => {
+    if (event.pointerType === 'mouse') return; // `dblclick` covers the mouse
+    if (isControl(event.target)) return;
+    const now = event.timeStamp;
+    const near = Math.abs(event.clientX - lastX) < DOUBLE_TAP_SLOP
+      && Math.abs(event.clientY - lastY) < DOUBLE_TAP_SLOP;
+    if (now - lastTap < DOUBLE_TAP_MS && near) {
+      lastTap = 0;
+      event.preventDefault();
+      toggleFullscreen();
+      return;
+    }
+    lastTap = now;
+    lastX = event.clientX;
+    lastY = event.clientY;
+  });
 }
 
 /**
@@ -404,10 +511,31 @@ async function fitScore() {
   const natural = shrinkUntilNoSingleBarLines(BASE_ZOOM);
   const totalBars = natural.layout.bars.size;
 
-  const tryCount = (n) => {
+  const tryCount = (n, mustFitHeight) => {
     osmd.EngravingRules.RenderXMeasuresPerLineAkaSystem = n;
-    const attempt = shrinkUntilNoSingleBarLines(BASE_ZOOM);
-    return attempt.zoom >= MIN_ZOOM && !hasSingleBarLine(attempt.layout) ? attempt : null;
+    const attempt = shrinkUntilNoSingleBarLines(BASE_ZOOM, { fitHeight: mustFitHeight });
+    if (attempt.zoom < MIN_ZOOM || hasSingleBarLine(attempt.layout)) return null;
+    return !mustFitHeight || attempt.fitsHeight ? attempt : null;
+  };
+
+  /*
+   * Two passes over the same candidates: the first insists the whole test fit
+   * the screen, the second drops that. A tablet gets a layout that needs no
+   * scrolling; a phone, where the zoom floor is reached long before the score
+   * is short enough, keeps a legible size and scrolls instead of shrinking
+   * into something nobody can read.
+   */
+  const search = (mustFitHeight) => {
+    let found = null;
+    for (let n = Math.min(MAX_MEASURES_PER_LINE, totalBars); n >= 3 && !found; n--) {
+      if (totalBars % n === 0) found = tryCount(n, mustFitHeight);
+    }
+    for (let n = Math.min(MAX_MEASURES_PER_LINE, totalBars); n >= 2 && !found; n--) {
+      if (totalBars % n === 1) continue; // would strand one bar on its own line
+      if (totalBars % n === 0) continue; // already tried above
+      found = tryCount(n, mustFitHeight);
+    }
+    return found;
   };
 
   /*
@@ -420,18 +548,7 @@ async function fitScore() {
    * three are not worth evenness on its own: two bars a line turns a ten-bar
    * test into five lines to avoid one short one.
    */
-  let chosen = null;
-  for (let n = Math.min(MAX_MEASURES_PER_LINE, totalBars); n >= 3 && !chosen; n--) {
-    if (totalBars % n === 0) chosen = tryCount(n);
-  }
-
-  // Nothing divided evenly and legibly — fall back to the most compact count
-  // that at least leaves no bar stranded on a line of its own.
-  for (let n = Math.min(MAX_MEASURES_PER_LINE, totalBars); n >= 2 && !chosen; n--) {
-    if (totalBars % n === 1) continue; // would strand one bar on its own line
-    if (totalBars % n === 0) continue; // already tried above
-    chosen = tryCount(n);
-  }
+  const chosen = search(true) ?? search(false);
 
   if (!chosen) {
     osmd.EngravingRules.RenderXMeasuresPerLineAkaSystem = 0;
@@ -439,6 +556,65 @@ async function fitScore() {
     osmd.render();
     stage.measure();
   }
+
+  ensureFitsHeight(chosen ? chosen.zoom : natural.zoom);
+}
+
+/**
+ * Last word on vertical fit: if the layout just settled on still runs off the
+ * bottom, shrink it until it does not — but only when that is actually
+ * reachable above the legibility floor.
+ *
+ * The per-candidate search can miss by a hair (an iPad was overflowing by nine
+ * pixels), and the search that ignores height deliberately does not shrink at
+ * all. Checking the floor first is what keeps the two cases apart: on a tablet
+ * the score comes down the little it needs to, and on a phone — where even the
+ * floor would not fit the whole test — nothing is shrunk and the page scrolls,
+ * rather than the music being reduced to something unreadable in pursuit of a
+ * fit that was never available.
+ */
+function ensureFitsHeight(startZoom) {
+  const available = availableScoreHeight();
+  if (renderedScoreHeight() <= available) return;
+
+  const settled = osmd.zoom;
+  osmd.zoom = MIN_ZOOM;
+  osmd.render();
+  const floorFits = renderedScoreHeight() <= available;
+  if (!floorFits) {
+    osmd.zoom = settled;
+    osmd.render();
+    stage.measure();
+    return;
+  }
+
+  /*
+   * Shrinking re-flows the line breaks on the unforced fallback layout, so
+   * this has to keep watching for a bar left alone on a line — otherwise
+   * stopping the moment the height fits can hand back a layout that reads
+   * worse than the one it started from.
+   */
+  let zoom = startZoom;
+  osmd.zoom = zoom;
+  osmd.render();
+  let layout = stage.measure();
+  const startedClean = !hasSingleBarLine(layout);
+  while (zoom > MIN_ZOOM && (renderedScoreHeight() > available || hasSingleBarLine(layout))) {
+    zoom = Math.max(MIN_ZOOM, zoom * 0.94);
+    osmd.zoom = zoom;
+    osmd.render();
+    layout = stage.measure();
+  }
+  /*
+   * Fitting the height is not worth stranding a bar on a line of its own.
+   * Shrinking re-flows the unforced layout, and on the smallest screens that
+   * can turn a clean set of lines into one with a lone bar on the end — a
+   * worse thing to read than a score that needs a scroll.
+   */
+  if (!startedClean || !hasSingleBarLine(layout)) return;
+  osmd.zoom = settled;
+  osmd.render();
+  stage.measure();
 }
 
 function startFollowing() {

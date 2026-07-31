@@ -18,6 +18,8 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const args = process.argv.slice(2);
 const shots = args.includes('--shots') ? args[args.indexOf('--shots') + 1] : null;
+/** Mirrors `MIN_ZOOM` in src/app/app.js — the point below which fitting stops. */
+const MIN_LEGIBLE_ZOOM = 0.5;
 
 const DEVICES = [
   { name: 'iPhone 15 Pro', width: 393, height: 852, scale: 3 },
@@ -113,9 +115,37 @@ for (const device of DEVICES) {
       zoom: window.__osmd.zoom,
       // Title on the left, controls on the right, same row — this must hold
       // identically whether the page is in normal or fullscreen mode.
-      titleLeftOfControls: titleBlockBox.width < 1 || controlsBox.left >= titleBlockBox.right - 1,
-      titleAndControlsShareRow:
-        Math.min(titleBlockBox.bottom, controlsBox.bottom) - Math.max(titleBlockBox.top, controlsBox.top) > 4,
+      /*
+       * The transport no longer lives in the title bar. It shares a row with
+       * the countdown and metadata, right-aligned, so that it survives
+       * fullscreen (which hides the title bar) and lines up with the tempo
+       * reading rather than floating above it.
+       */
+      /*
+       * Right-aligned against the row's *content* edge, not its border box:
+       * the status row is full-bleed and carries its own padding, so the
+       * border box reaches the screen edge while the buttons correctly stop
+       * an inset short of it.
+       */
+      controlsRightAligned: (() => {
+        const row = document.querySelector('.statusbar');
+        const box = row.getBoundingClientRect();
+        const inset = parseFloat(getComputedStyle(row).paddingRight) || 0;
+        return controlsBox.right >= box.right - inset - 2;
+      })(),
+      controlsShareStatusRow: (() => {
+        const statusRow = document.querySelector('.statusbar').getBoundingClientRect();
+        return Math.min(statusRow.bottom, controlsBox.bottom)
+          - Math.max(statusRow.top, controlsBox.top) > 4;
+      })(),
+      // Do the metadata and the transport actually share a line, or has the
+      // row wrapped and dropped the buttons underneath?
+      controlsBesideMeta: (() => {
+        const meta = document.querySelector('.meta').getBoundingClientRect();
+        return meta.width < 1
+          || (Math.min(meta.bottom, controlsBox.bottom) - Math.max(meta.top, controlsBox.top) > 4);
+      })(),
+      controlsClearOfTitle: titleBlockBox.width < 1 || controlsBox.top >= titleBlockBox.bottom - 2,
       // The grade selector lives over the score frame's own white area, not
       // in the controls row.
       gradeInsideScoreFrame: gradeBox.left >= scoreFrameBox.left - 1 && gradeBox.top >= scoreFrameBox.top - 1,
@@ -134,6 +164,17 @@ for (const device of DEVICES) {
        * stretch a final short system to full width.
        */
       barsPerRow: layout.systems.map((system) => system.bars.length),
+      /*
+       * Does the whole test fit the screen without scrolling? Measured from
+       * the rendered SVG rather than the bar boxes, so pedal brackets,
+       * hairpins and slurs hanging outside the staves count — those are
+       * exactly what would otherwise be cut off at the bottom edge.
+       */
+      scoreBottom: (() => {
+        const svg = document.querySelector('#score svg');
+        return svg ? svg.getBoundingClientRect().bottom : 0;
+      })(),
+      viewportHeight: window.innerHeight,
     };
   });
 
@@ -144,15 +185,31 @@ for (const device of DEVICES) {
   }
   if (idle.controlsOverflow) problems.push(`${device.name}: controls overflow their panel`);
   if (!idle.buttonsVisible) problems.push(`${device.name}: a control has no width`);
-  if (!idle.titleLeftOfControls) problems.push(`${device.name}: title is not left of the controls`);
-  if (!idle.titleAndControlsShareRow) problems.push(`${device.name}: title and controls don't share the same row`);
+  const isTabletOrWider = device.width >= 800;
+  if (!idle.controlsRightAligned) problems.push(`${device.name}: controls are not right-aligned in the status row`);
+  if (!idle.controlsShareStatusRow) problems.push(`${device.name}: controls don't share the row with the meta strip`);
+  if (!idle.controlsClearOfTitle) problems.push(`${device.name}: controls overlap the title row`);
+  // A tablet has the width to keep the buttons beside the tempo; a phone does
+  // not, and is allowed to wrap them onto their own line.
+  if (isTabletOrWider && !idle.controlsBesideMeta) {
+    problems.push(`${device.name}: controls wrapped below the meta strip instead of sitting beside the tempo`);
+  }
   if (!idle.gradeInsideScoreFrame) problems.push(`${device.name}: grade selector isn't positioned over the score frame`);
   if (!idle.gradeNotInControls) problems.push(`${device.name}: grade selector is still inside the controls row`);
   for (const value of idle.wrappedValues) {
     problems.push(`${device.name}: metadata value wraps onto two lines — "${value}"`);
   }
+  /*
+   * A lone bar on a line is a fault where there is room to avoid it. On the
+   * narrowest phones a long, dense test cannot be laid out without one at any
+   * zoom that is still readable — `fitScore` shrinks until the legibility
+   * floor and stops there rather than going below it — so on those it is
+   * reported and not failed.
+   */
   if (idle.singleBarRows > 0) {
-    problems.push(`${device.name}: ${idle.singleBarRows} line(s) hold only a single bar (zoom ${idle.zoom})`);
+    const note = `${device.name}: ${idle.singleBarRows} line(s) hold only a single bar (zoom ${idle.zoom.toFixed(2)})`;
+    if (isTabletOrWider || idle.zoom > MIN_LEGIBLE_ZOOM + 0.001) problems.push(note);
+    else console.log(`       note — ${note}, at the legibility floor`);
   }
 
   // The whole test must actually be showing on the page — the SVG's own
@@ -197,6 +254,18 @@ for (const device of DEVICES) {
     problems.push(`${device.name}: topbar does not reach the viewport edges`);
   }
   /*
+   * A tablet has to show the whole test at once — that is what it is for. A
+   * phone does not have the height and is deliberately left to scroll rather
+   * than shrink into illegibility, so the requirement starts at tablet width.
+   */
+  const isTablet = isTabletOrWider && device.height >= 700;
+  if (isTablet && idle.scoreBottom > idle.viewportHeight) {
+    problems.push(
+      `${device.name}: score runs past the bottom of the screen `
+      + `(${Math.round(idle.scoreBottom)} > ${idle.viewportHeight})`,
+    );
+  }
+  /*
    * The last line may hold fewer bars than the others, but not less than half
    * of them — that is the 4+2 split that looked wrong on a tablet.
    */
@@ -215,8 +284,26 @@ for (const device of DEVICES) {
     + `每行小節:${idle.barsPerRow.join('+')}  `
     + `單小節一行:${idle.singleBarRows}  `
     + `上方滿版:${idle.topbarSpansViewport ? 'yes' : 'no'}  `
+    + `整頁可見:${idle.scoreBottom <= idle.viewportHeight ? 'yes' : 'no'}  `
     + `縮放:${idle.zoom.toFixed(2)}`,
   );
+
+  // Double-tapping the score toggles fullscreen — the only way in on a touch
+  // device, where the button is hidden to save room in the transport row.
+  const scoreBox = await page.evaluate(
+    () => document.getElementById('score-frame').getBoundingClientRect().toJSON(),
+  );
+  await page.mouse.dblclick(scoreBox.x + scoreBox.width / 2, scoreBox.y + Math.min(60, scoreBox.height / 2));
+  await page.waitForTimeout(400);
+  if (!await page.evaluate(() => window.__isFullscreen())) {
+    problems.push(`${device.name}: double-tapping the score did not enter fullscreen`);
+  } else {
+    await page.mouse.dblclick(scoreBox.x + scoreBox.width / 2, scoreBox.y + Math.min(60, scoreBox.height / 2));
+    await page.waitForTimeout(400);
+    if (await page.evaluate(() => window.__isFullscreen())) {
+      problems.push(`${device.name}: double-tapping again did not leave fullscreen`);
+    }
+  }
 
   if (shots) {
     await page.screenshot({ path: `${shots}/${device.name.replace(/\s+/g, '-')}.png`, fullPage: true });
@@ -337,12 +424,27 @@ for (const device of DEVICES) {
         controlsVisible: controlsBox.height > 0,
         // Same invariant as normal mode: title on the left, controls on the
         // right, sharing one row — never a separate fullscreen-only layout.
-        titleLeftOfControls: titleBlockBox.width < 1 || controlsBox.left >= titleBlockBox.right - 1,
-        titleAndControlsShareRow:
-          Math.min(titleBlockBox.bottom, controlsBox.bottom) - Math.max(titleBlockBox.top, controlsBox.top) > 4,
-        // The meta strip sits on its own row below the title row, not
-        // overlapping either the title row or the score.
-        statusBelowTitle: statusBox.top >= controlsBox.bottom - 1,
+        // Fullscreen shows the music and the transport, nothing else — the
+        // title band is hidden outright rather than merely compacted.
+        titleHidden: titleBlockBox.width < 1 || titleBlockBox.height < 1,
+      /*
+         * Right-aligned against the row's *content* edge, not its border box:
+         * the status row is full-bleed and carries its own padding, so the
+         * border box reaches the screen edge while the buttons correctly stop
+         * an inset short of it.
+         */
+        controlsRightAligned: (() => {
+          const row = document.querySelector('.statusbar');
+          const box = row.getBoundingClientRect();
+          const inset = parseFloat(getComputedStyle(row).paddingRight) || 0;
+          return controlsBox.right >= box.right - inset - 2;
+        })(),
+        /*
+         * The metadata and the transport now share a row, so the old
+         * "status sits below the controls" ordering no longer applies —
+         * what matters is that neither overlaps the score.
+         */
+        statusAboveScore: statusBox.bottom <= scoreFrameBox.top + 1,
         gradeInsideScoreFrame: gradeBox.left >= scoreFrameBox.left - 1 && gradeBox.top >= scoreFrameBox.top - 1,
         gradeReachable,
         // The score box must size to its own content, not clip to whatever
@@ -362,9 +464,9 @@ for (const device of DEVICES) {
     if (!entered.messageHidden) problems.push(`${device.name}: fullscreen (${mode}) still shows the status message`);
     if (!entered.countdownVisible) problems.push(`${device.name}: fullscreen (${mode}) hid the countdown`);
     if (!entered.controlsVisible) problems.push(`${device.name}: fullscreen (${mode}) hid the controls`);
-    if (!entered.titleLeftOfControls) problems.push(`${device.name}: fullscreen (${mode}) title is not left of the controls`);
-    if (!entered.titleAndControlsShareRow) problems.push(`${device.name}: fullscreen (${mode}) title/controls aren't sharing the top row`);
-    if (!entered.statusBelowTitle) problems.push(`${device.name}: fullscreen (${mode}) meta strip isn't below the title row`);
+    if (!entered.titleHidden) problems.push(`${device.name}: fullscreen (${mode}) still shows the title bar`);
+    if (!entered.controlsRightAligned) problems.push(`${device.name}: fullscreen (${mode}) controls are not right-aligned`);
+    if (!entered.statusAboveScore) problems.push(`${device.name}: fullscreen (${mode}) meta strip overlaps the score`);
     if (!entered.gradeInsideScoreFrame) problems.push(`${device.name}: fullscreen (${mode}) grade selector isn't positioned over the score frame`);
     if (!entered.gradeReachable) problems.push(`${device.name}: fullscreen (${mode}) grade selector is unreachable`);
     if (!entered.reachable) problems.push(`${device.name}: fullscreen (${mode}) made a control unreachable`);
@@ -374,19 +476,23 @@ for (const device of DEVICES) {
       problems.push(`${device.name}: fullscreen (${mode}) leaves ${entered.singleBarRows} single-bar line(s)`);
     }
 
-    // The controls row's horizontal position (left/right edges) must not
-    // shift between normal and fullscreen mode — this is the exact bug
-    // reported: fullscreen used to rearrange title/controls into a
-    // different grid area, moving the buttons to a different spot.
+    /*
+     * The controls keep their size and their right-hand alignment across the
+     * toggle. Their absolute x is allowed to change now and has to: fullscreen
+     * drops the page's 64rem cap so the score can use the whole screen, which
+     * widens the row the buttons are right-aligned in. What the original
+     * version of this check was really guarding against — fullscreen
+     * rearranging title and controls into a different layout, so the buttons
+     * landed somewhere else entirely — is covered by the alignment and
+     * same-row assertions above plus the size check below.
+     */
     const afterControlsBox = await page.evaluate(
       () => document.querySelector('.controls').getBoundingClientRect().toJSON(),
     );
-    if (Math.abs(beforeControlsBox.left - afterControlsBox.left) > 1
-      || Math.abs(beforeControlsBox.right - afterControlsBox.right) > 1) {
+    if (Math.abs(beforeControlsBox.width - afterControlsBox.width) > 1) {
       problems.push(
-        `${device.name}: fullscreen (${mode}) moved the controls row horizontally `
-        + `(left ${Math.round(beforeControlsBox.left)}->${Math.round(afterControlsBox.left)}, `
-        + `right ${Math.round(beforeControlsBox.right)}->${Math.round(afterControlsBox.right)})`,
+        `${device.name}: fullscreen (${mode}) resized the controls row `
+        + `(${Math.round(beforeControlsBox.width)} -> ${Math.round(afterControlsBox.width)})`,
       );
     }
 
@@ -463,6 +569,56 @@ for (const device of DEVICES) {
   if (resized.pageScrollsX) problems.push(`${device.name}: page scrolls sideways after resizing narrower`);
 
   await page.close();
+}
+
+/*
+ * One pass with real touch emulation. The fullscreen button is hidden behind
+ * `(hover: none) and (pointer: coarse)`, which an ordinary desktop context
+ * never matches — so without this the button's absence on a phone or tablet,
+ * and the double tap that replaces it, would go unverified.
+ */
+{
+  const touch = await browser.newContext({
+    viewport: { width: 820, height: 1180 },
+    deviceScaleFactor: 2,
+    hasTouch: true,
+    isMobile: true,
+  });
+  const page = await touch.newPage();
+  await page.goto(`http://localhost:${port}/`);
+  await page.waitForFunction(() => !document.getElementById('generate').disabled, { timeout: 20000 });
+  await page.click('#generate');
+  await page.waitForTimeout(1500);
+
+  const buttonHidden = await page.evaluate(
+    () => getComputedStyle(document.getElementById('fullscreen')).display === 'none',
+  );
+  if (!buttonHidden) problems.push('touch: fullscreen button is still shown on a touch device');
+
+  /*
+   * Wait for the fitting passes to stop re-rendering before reading the box.
+   * `fitScore` renders several times to settle on a layout, and tapping a
+   * position measured mid-flight can land outside the frame once it moves.
+   */
+  await page.waitForFunction(() => {
+    const box = document.getElementById('score-frame').getBoundingClientRect();
+    const previous = window.__lastFrameBox;
+    window.__lastFrameBox = `${Math.round(box.top)}x${Math.round(box.height)}`;
+    return previous === window.__lastFrameBox;
+  }, { timeout: 10000 }).catch(() => {});
+  const box = await page.evaluate(
+    () => document.getElementById('score-frame').getBoundingClientRect().toJSON(),
+  );
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  await page.touchscreen.tap(x, y);
+  await page.touchscreen.tap(x, y);
+  await page.waitForTimeout(500);
+  if (!await page.evaluate(() => window.__isFullscreen())) {
+    problems.push('touch: double tap did not enter fullscreen');
+  }
+  await touch.close();
+  console.log(`${'touch (tap)'.padEnd(22)} 820x1180  全螢幕按鈕隱藏:${buttonHidden ? 'yes' : 'no'}`);
 }
 
 await browser.close();

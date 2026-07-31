@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="src/app/styles.css?v=13">
+  <link rel="stylesheet" href="src/app/styles.css?v=14">
   <!--
     Loaded from vendor/ rather than node_modules/ so the page works as a plain
     static site (GitHub Pages) with no build step and no npm install.
@@ -22,6 +22,24 @@
     <div class="title-block">
       <h1>Sight<span>Score</span></h1>
     </div>
+  </header>
+
+  <!--
+    Countdown + metadata on the left, transport on the right, sharing one row.
+    The controls sit here rather than in the title bar so that they survive
+    fullscreen, which hides the title bar entirely — and so that the buttons
+    line up with the tempo reading rather than floating above it.
+    `.statusbar` is always present; only `#status` inside it is hidden until
+    there is a test to describe, which is why the controls are its sibling
+    rather than its child.
+  -->
+  <div class="statusbar">
+    <section id="status" class="status" hidden>
+      <div class="countdown" id="countdown">
+        <span id="countdown-value">30</span><span class="unit">秒</span>
+      </div>
+      <div class="meta" id="meta"></div>
+    </section>
 
     <section class="controls">
       <button class="btn primary" id="generate">
@@ -46,14 +64,7 @@
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path id="fullscreenIcon" d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
       </button>
     </section>
-  </header>
-
-  <section id="status" class="status" hidden>
-    <div class="countdown" id="countdown">
-      <span id="countdown-value">30</span><span class="unit">秒</span>
-    </div>
-    <div class="meta" id="meta"></div>
-  </section>
+  </div>
 
   <main>
     <div class="score-frame" id="score-frame">
