@@ -36,7 +36,12 @@ const triplet = () => ({
  */
 const SIMPLE_CELLS = [
   { id: 'q', beats: 1, weight: 5, calm: true, requires: [], events: [note('quarter', Q)] },
-  { id: 'ee', beats: 1, weight: 4, requires: ['eighth'], events: [note('eighth', E), note('eighth', E)] },
+  // Two quavers is a staple accompaniment cell (broken octaves, Alberti), so
+  // it counts as calm. Leaving it out left a low-grade left hand drawing from
+  // six or seven cells whose weights concentrated on one or two fillings, and
+  // that narrowness — not the ostinato mechanic — was what made its rhythm
+  // repeat: with so few ways to fill a bar, independent draws kept coinciding.
+  { id: 'ee', beats: 1, weight: 4, calm: true, requires: ['eighth'], events: [note('eighth', E), note('eighth', E)] },
   { id: 'ssss', beats: 1, weight: 0.9, requires: ['sixteenth'], events: [note('16th', S), note('16th', S), note('16th', S), note('16th', S)] },
   { id: 'ess', beats: 1, weight: 2, requires: ['sixteenth'], events: [note('eighth', E), note('16th', S), note('16th', S)] },
   { id: 'sse', beats: 1, weight: 1.5, requires: ['sixteenth'], events: [note('16th', S), note('16th', S), note('eighth', E)] },

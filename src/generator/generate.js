@@ -207,6 +207,18 @@ function buildStaff({ rng, rules, meter, barCount, hand, progression, key, silen
     ? fillBar(rng, cells, meter.cellBeats, { restBudget, activity: activity * 0.7 }).events
     : null;
   let ostinatoSource = null;
+  // How many bars the accompaniment figure has run without a break, and how
+  // many it has taken overall.
+  let ostinatoRun = 0;
+  let ostinatoBars = 0;
+  /*
+   * A hard ceiling on how much of a test the accompaniment figure may occupy.
+   * Capping only the consecutive run stopped three identical bars in a row but
+   * not the figure owning four of six bars in alternation, which is what a
+   * reader actually notices. A probability cannot give this guarantee — over
+   * enough tests some will always land badly — so it is a count, not a roll.
+   */
+  const ostinatoBudget = Math.max(2, Math.round(barCount * 0.4));
 
   for (let barIndex = 0; barIndex < barCount; barIndex++) {
     const isFinalBar = barIndex === barCount - 1;
@@ -214,6 +226,7 @@ function buildStaff({ rng, rules, meter, barCount, hand, progression, key, silen
     const isRegularBar = !silentBars.has(barIndex) && !isCadenceBar && !ostinato;
     let events;
     let motif = null;
+    let usedOstinato = false;
 
     if (silentBars.has(barIndex)) {
       events = wholeBarRest(meter.barDuration);
@@ -224,7 +237,7 @@ function buildStaff({ rng, rules, meter, barCount, hand, progression, key, silen
         restBudget: 0,
         activity: activity * 0.4,
       }).events;
-    } else if (ostinato && (ostinatoSource === null || rng.chance(0.55))) {
+    } else if (ostinato && (ostinatoSource === null || (ostinatoRun < 2 && ostinatoBars < ostinatoBudget && rng.chance(0.55)))) {
       /*
        * The accompaniment figure, but not in *every* bar. Reusing it
        * unconditionally — which is what this did — put 85-89% of an
@@ -235,6 +248,8 @@ function buildStaff({ rng, rules, meter, barCount, hand, progression, key, silen
        * Keeping the figure in a clear majority of bars leaves it recognisable
        * while giving the hand somewhere to go.
        */
+      usedOstinato = true;
+      ostinatoBars += 1;
       events = ostinato.map((event) => ({ ...event }));
       // An accompaniment figure keeps its *shape* from chord to chord — that
       // is what makes an Alberti-style bass one recognisable pattern rather
@@ -273,12 +288,29 @@ function buildStaff({ rng, rules, meter, barCount, hand, progression, key, silen
       events = source.events.map((event) => ({ ...event }));
       motif = pitchTreatment(rng, progression, source.barIndex, barIndex);
     } else {
-      const filled = fillBar(rng, cells, meter.cellBeats, {
+      /*
+       * A bar meant to be *fresh* has to actually come out fresh. The calm
+       * cell set a low-grade left hand draws from holds only six or seven
+       * cells, and their weights concentrate hard, so an independent draw
+       * reproduced the bar before it often enough that a Grade 2 test could
+       * show the same figure in four of its six bars even with the ostinato
+       * turned down — the vocabulary, not the ostinato, was the binding
+       * constraint. Redraw when a bar duplicates what it is meant to be
+       * relieving. Restatements are excluded by construction: they are
+       * handled in the branches above, where repetition is the intent.
+       */
+      events = drawContrastingBar(rng, cells, meter.cellBeats, {
         restBudget,
         activity: isLeft ? activity * 0.7 : activity,
-      });
-      events = filled.events;
+      }, [bars[barIndex - 1]?.events, bars[barIndex - 2]?.events, ostinato]);
     }
+
+    /*
+     * The figure may state itself twice running, but a third identical bar is
+     * where an accompaniment stops being a pattern and starts being a stuck
+     * record — which is how a six-bar test ended up with four bars alike.
+     */
+    ostinatoRun = usedOstinato ? ostinatoRun + 1 : 0;
 
     if (isRegularBar) {
       bank[barIndex % 2] = { events: events.map((event) => ({ ...event })), barIndex };
@@ -339,6 +371,35 @@ function buildStaff({ rng, rules, meter, barCount, hand, progression, key, silen
   }
 
   return bars;
+}
+
+/** A bar's rhythm, as a comparable string. */
+function rhythmSignature(events) {
+  return events.map((event) => `${event.rest ? 'r' : 'n'}${event.dur}`).join(',');
+}
+
+/**
+ * Draw a bar of rhythm that differs from the ones given in `avoid` — the two
+ * bars before it, and the accompaniment figure it is supposed to be breaking
+ * up. Looking back two bars rather than one matters most in the short metres,
+ * where a bar holds two or three beats and the handful of available fillings
+ * would otherwise alternate ABAB and still read as one repeated figure.
+ * Falls back to the first draw when the cell vocabulary is too small to
+ * offer anything else, which is a real situation at Grade 1-2 rather than a
+ * failure: better a repeated bar than a bar that does not fill. The attempt
+ * count is generous because the draw is weighted, not uniform — in a two-beat
+ * bar drawn from the calm cells, quarter-plus-quarter carries most of the
+ * probability mass on its own, so a handful of tries kept returning it.
+ */
+function drawContrastingBar(rng, cells, cellBeats, options, avoid) {
+  const unwanted = new Set(avoid.filter(Boolean).map(rhythmSignature));
+  let first = null;
+  for (let attempt = 0; attempt < 24; attempt++) {
+    const { events } = fillBar(rng, cells, cellBeats, options);
+    if (first === null) first = events;
+    if (!unwanted.has(rhythmSignature(events))) return events;
+  }
+  return first;
 }
 
 /**

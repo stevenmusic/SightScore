@@ -178,17 +178,53 @@ function auditRhythm(grade, tests) {
 
   const distinctPerTest = { 1: [], 2: [] };
   const dominantShare = { 1: [], 2: [] };
+  const adjacentRepeat = { 1: [], 2: [] };
   const valueCounts = {};
+  const byMetre = {};
   let restBars = 0;
   let totalBars = 0;
 
   for (const score of tests) {
     for (const staffNumber of [1, 2]) {
-      const sigs = score.staves[staffNumber].map(signature);
+      /*
+       * A bar the hand sits out has no rhythm to repeat. Counting whole-bar
+       * rests made Grade 1 — where the hands alternate, so half of each
+       * staff is rests — look like its rhythm repeated constantly, when what
+       * was repeating was silence.
+       */
+      /*
+       * Only bars that carry an actual *figure* — two or more events — count
+       * toward repetition. A bar holding one sustained note is a texture, not
+       * a rhythm being repeated: "melody over a sustained bass" is the Grade 2
+       * texture the rules table describes, and in 2/4 that is a half note in
+       * every bar. Counting those as repetition condemned the very writing the
+       * syllabus asks for, while hiding the thing that actually reads badly —
+       * a fussy multi-event figure stamped out bar after bar.
+       */
+      const sigs = score.staves[staffNumber]
+        .filter((bar) => notesOfBar(bar).length && bar.events.length >= 2)
+        .map(signature);
+      /*
+       * Below four sounding bars these ratios say more about the sample size
+       * than the music — where the hands alternate (Grade 1) a staff plays
+       * two or three bars in total, and two alike out of three is 67% however
+       * well the generator behaves.
+       */
+      if (sigs.length < 4) continue;
       const counts = {};
       for (const s of sigs) counts[s] = (counts[s] ?? 0) + 1;
       distinctPerTest[staffNumber].push(Object.keys(counts).length / sigs.length);
       dominantShare[staffNumber].push(Math.max(...Object.values(counts)) / sigs.length);
+      // Two identical bars running is the repetition the ear actually
+      // objects to, more than the same figure recurring across a piece.
+      let adjacent = 0;
+      for (let i = 1; i < sigs.length; i++) if (sigs[i] === sigs[i - 1]) adjacent += 1;
+      adjacentRepeat[staffNumber].push(adjacent / Math.max(1, sigs.length - 1));
+      if (staffNumber === 2) {
+        const metre = score.timeSignature.text;
+        (byMetre[metre] ??= { n: 0, over: 0 }).n += 1;
+        if (Math.max(...Object.values(counts)) / sigs.length > 0.6) byMetre[metre].over += 1;
+      }
       for (const bar of score.staves[staffNumber]) {
         totalBars += 1;
         if (!notesOfBar(bar).length) restBars += 1;
@@ -210,13 +246,30 @@ function auditRhythm(grade, tests) {
    * dominates. The melody has no such excuse.
    */
   for (const [staffNumber, hand, floor, ceiling] of
-    [[1, 'melody', 45, 60], [2, 'accompaniment', 38, 68]]) {
+    [[1, 'melody', 45, 55], [2, 'accompaniment', 45, 55]]) {
+    if (!distinctPerTest[staffNumber].length) {
+      lines.push(`       ${hand}: fewer than 4 sounding bars per staff — not measured`);
+      continue;
+    }
     const distinct = pct(mean(distinctPerTest[staffNumber]), 1);
     const dominant = pct(mean(dominantShare[staffNumber]), 1);
+    const adjacent = pct(mean(adjacentRepeat[staffNumber]), 1);
+    /*
+     * Means hide the cases a reader actually meets. An average share of 52%
+     * looked acceptable while individual tests were still putting the same
+     * figure in six bars of eight, so the tail is checked as well as the
+     * centre: how often a single test is dominated by one rhythm.
+     */
+    const heavy = pct(dominantShare[staffNumber].filter((x) => x > 0.6).length,
+      dominantShare[staffNumber].length);
     lines.push(check('rhythm', grade, `${hand}: distinct rhythms / bars`, `${fixed(distinct)}%`,
       distinct >= floor, `>=${floor}% (a test should not be one figure)`));
     lines.push(check('rhythm', grade, `${hand}: share of bars on the commonest figure`, `${fixed(dominant)}%`,
-      dominant <= ceiling, `<=${ceiling}%`));
+      dominant <= ceiling, `<=${ceiling}% (4 of 6 bars alike is already too many)`));
+    lines.push(check('rhythm', grade, `${hand}: consecutive bars with the same rhythm`, `${fixed(adjacent)}%`,
+      adjacent <= 25, '<=25%'));
+    lines.push(check('rhythm', grade, `${hand}: tests where one rhythm takes >60% of bars`, `${fixed(heavy)}%`,
+      heavy <= 20, '<=20% of tests'));
   }
 
   const totalValues = Object.values(valueCounts).reduce((a, b) => a + b, 0);
@@ -224,6 +277,17 @@ function auditRhythm(grade, tests) {
     .map(([k, v]) => `${k} ${fixed(pct(v, totalValues), 0)}%`).join('  ');
   lines.push(`       note values: ${top}`);
   lines.push(`       whole-bar rests: ${fixed(pct(restBars, totalBars))}% of bars`);
+  /*
+   * Where the residual repetition lives. It concentrates hard in the short
+   * metres: a 2/4 or 3/8 bar is two or three beats, and the number of ways the
+   * cell library can fill it is genuinely small, so repeats there are closer
+   * to a floor than a fault. Some of it is also the phrase restatement doing
+   * its job — the consequent bringing back the antecedent's figure.
+   */
+  const metres = Object.entries(byMetre).filter(([, v]) => v.n >= 30)
+    .sort((a, b) => (b[1].over / b[1].n) - (a[1].over / a[1].n))
+    .map(([m, v]) => `${m} ${fixed(pct(v.over, v.n), 0)}%`).join('  ');
+  if (metres) lines.push(`       accompaniment dominated by one figure, by metre: ${metres}`);
   return lines;
 }
 
