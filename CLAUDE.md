@@ -28,7 +28,7 @@ Single test file: `node --test test/generator.test.js` (or `musicxml.test.js`, `
 
 `generateTest(rulesTable, {grade, seed}) → score object → toMusicXml(score) → MusicXML string → OSMD renders it`
 
-Entry point `src/generator/generate.js`. Order of generation (see `docs/abrsm-sight-reading-analysis.md §3`):
+Entry point `src/generator/generate.js`; public surface re-exported from `src/generator/index.js`. All randomness runs through `random.js`'s seeded mulberry32 PRNG (`createRandom(seed)`) — every generation decision is a pure function of that one seed, so the same seed always reproduces the same test (`npm run sample -- --seed N`, and unit tests, rely on this). The UI and `fingerprint.js`'s `generateUnique` never pass a seed, so each call gets a fresh `randomSeed()`; dedup against recent history happens by retrying generation, not by choosing a seed. Order of generation (see `docs/abrsm-sight-reading-analysis.md §3`):
 
 1. Pick key, time signature and bar count from `src/rules/abrsm-piano-grades.json` for the grade.
 2. Build a harmonic skeleton (`harmony.js`): opens on I, cadences V–I, normally one chord per bar but occasionally two (see "Two chords in one bar" below).
