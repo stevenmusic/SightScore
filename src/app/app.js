@@ -480,7 +480,7 @@ function togglePlayback() {
 }
 
 function updateHistoryInfo() {
-  elements.historyInfo.textContent = `本機已記錄 ${history.size} 題`;
+  elements.historyInfo.textContent = `已紀錄${history.size}題`;
 }
 
 function escapeHtml(value) {

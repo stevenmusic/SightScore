@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="src/app/styles.css?v=12">
+  <link rel="stylesheet" href="src/app/styles.css?v=13">
   <!--
     Loaded from vendor/ rather than node_modules/ so the page works as a plain
     static site (GitHub Pages) with no build step and no npm install.
@@ -73,17 +73,18 @@
         <div class="playline" id="playline"></div>
       </div>
     </div>
-    <p id="message" class="message">選擇級數，按「產生新題目」開始。</p>
+    <p id="message" class="message"></p>
     <ol class="checklist" id="checklist" hidden></ol>
   </main>
 
   <footer>
-    <span id="history-info">本機已記錄 0 題</span>
     <button id="clear-history" class="link">清除出題紀錄</button>
     <span class="spacer"></span>
     <span id="confidence" class="badge" hidden></span>
   </footer>
 
-  <script type="module" src="src/app/app.js?v=12"></script>
+  <span id="history-info" class="history-badge"></span>
+
+  <script type="module" src="src/app/app.js?v=13"></script>
 </body>
 </html>

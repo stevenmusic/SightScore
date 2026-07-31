@@ -412,6 +412,25 @@ footer {
   white-space: nowrap;
 }
 
+/*
+ * Pinned to the viewport's own bottom-left corner rather than sitting in
+ * the footer's normal document flow — on a short page (nothing generated
+ * yet) the footer sits right under the empty message area, nowhere near
+ * the bottom of the screen. Fixed positioning keeps it anchored exactly
+ * where it reads as "an ambient counter", regardless of how tall the
+ * rest of the page is.
+ */
+.history-badge {
+  position: fixed;
+  left: 8px;
+  bottom: 6px;
+  color: var(--muted);
+  font-size: var(--fs-2xs);
+  opacity: .7;
+  pointer-events: none;
+  z-index: 1;
+}
+
 /* ---------- fullscreen ---------- */
 
 /*
@@ -457,9 +476,11 @@ body.pseudo-fullscreen {
 html:fullscreen body > footer,
 html:fullscreen #message,
 html:fullscreen #checklist,
+html:fullscreen #history-info,
 body.pseudo-fullscreen > footer,
 body.pseudo-fullscreen #message,
-body.pseudo-fullscreen #checklist {
+body.pseudo-fullscreen #checklist,
+body.pseudo-fullscreen #history-info {
   display: none;
 }
 
