@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import { generateTest } from '../src/generator/generate.js';
 import { fingerprintOf, createHistory, generateUnique } from '../src/generator/fingerprint.js';
+import { firstChord, lastChord } from '../src/generator/harmony.js';
 import { rules, GRADES, expectedDuration, soundingEvents } from './helpers.js';
 
 const SEEDS = Array.from({ length: 40 }, (_, i) => i * 7919 + 13);
@@ -390,7 +391,13 @@ test('a pedal span never holds through an unmarked harmony change', () => {
     let pedalOpen = false;
     bars.forEach((bar, barIndex) => {
       const kinds = bar.directions.filter((d) => d.kind === 'pedal').map((d) => d.type);
-      const harmonyChanged = barIndex > 0 && score.progression[barIndex] !== score.progression[barIndex - 1];
+      // progression entries are a plain roman numeral or, for a bar that
+      // splits into two chords, a [first, second] pair — compare the actual
+      // sounding chord at the boundary (lastChord of the previous bar vs.
+      // firstChord of this one), not the raw entries, or every split bar
+      // reads as "changed" purely because an array is never === a string.
+      const harmonyChanged =
+        barIndex > 0 && firstChord(score.progression[barIndex]) !== lastChord(score.progression[barIndex - 1]);
       if (pedalOpen && harmonyChanged) {
         assert.ok(
           kinds.includes('change') || kinds.includes('stop'),

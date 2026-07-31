@@ -63,9 +63,6 @@ export function toMusicXml(score, options = {}) {
 
     for (const staffNumber of [1, 2]) {
       const bar = score.staves[staffNumber][barIndex];
-      for (const direction of bar.directions ?? []) {
-        lines.push(...renderDirection(direction, staffNumber));
-      }
       lines.push(...renderBar(bar, staffNumber, score, keyAlters));
       if (staffNumber === 1) {
         lines.push(`      <backup><duration>${score.barDuration}</duration></backup>`);
@@ -102,10 +99,23 @@ function renderDirection(direction, staffNumber) {
   return out;
 }
 
+/**
+ * Directions default to the very start of the bar (`atEventIndex: 0`,
+ * matching every existing direction kind — dynamics, wedges, words, a
+ * pedal start/stop at a bar boundary), but a pedal `change` partway
+ * through a bar that splits into two chords needs to land at a specific
+ * note's attack instead — MusicXML directions take effect wherever the
+ * reader position is when they're encountered, so that one has to be
+ * interleaved between notes rather than dumped before all of them.
+ */
 function renderBar(bar, staffNumber, score, keyAlters) {
   const beams = computeBeams(bar.events, score.beatDuration);
   const tuplets = computeTuplets(bar.events);
   const lines = [];
+  const directionsAt = (index) => (bar.directions ?? [])
+    .filter((direction) => (direction.atEventIndex ?? 0) === index);
+
+  for (const direction of directionsAt(0)) lines.push(...renderDirection(direction, staffNumber));
 
   bar.events.forEach((event, index) => {
     lines.push(...renderNote(event, {
@@ -115,6 +125,7 @@ function renderBar(bar, staffNumber, score, keyAlters) {
       beams: beams[index],
       tuplet: tuplets[index],
     }));
+    for (const direction of directionsAt(index + 1)) lines.push(...renderDirection(direction, staffNumber));
   });
   return lines;
 }

@@ -9,7 +9,7 @@
 
 import { createRandom, randomSeed } from './random.js';
 import { createKey, dstepRange, degreeOf, pitchAt } from './theory.js';
-import { buildProgression } from './harmony.js';
+import { buildProgression, firstChord, lastChord } from './harmony.js';
 import {
   assignPitches, stackChordTones, soundingTimeline, harmoniseLeadingNotes, harmoniseRepeatedLeadingNotes,
 } from './melody.js';
@@ -72,7 +72,13 @@ export function generateTest(rulesTable, options) {
   const key = createKey(pickKey(rng, rules));
   const meter = meterInfo(pickTimeSignature(rng, rules, rulesTable));
   const barCount = pickBarCount(rng, rules, meter.text);
-  const progression = buildProgression(rng, barCount, { simple: grade <= 3 });
+  // A bar splitting into two chords is a faster harmonic rhythm than
+  // lower grades' one-chord-per-bar texture can support — reserved for
+  // Grade 5+, the same range where pedal marking starts appearing.
+  const progression = buildProgression(rng, barCount, {
+    simple: grade <= 3,
+    twoChordBarChance: grade >= 5 ? 0.3 : 0,
+  });
 
   // Grade 1 only: the hands never sound together, so each takes half the
   // test. The split is decided up front so that each hand's line is written
@@ -263,6 +269,7 @@ function buildStaff({ rng, rules, meter, barCount, hand, progression, key, silen
       bars, key, progression, rng, window,
       maxNotes: rules.texture.maxNotesPerChord,
       density: 0.25 + 0.05 * rules.grade,
+      barDuration: meter.barDuration,
     });
   }
 
@@ -414,21 +421,47 @@ function applyExpression(rng, rules, score) {
  * something no real pedalling would do. A real legato pedal instead lifts
  * and immediately redepresses at every harmony change — MusicXML's
  * `<pedal type="change"/>` is exactly that notch — so this now walks the
- * span and drops one wherever the chord actually changes, only using a
- * plain `stop` at the very end.
+ * span and drops one wherever the chord actually changes, including
+ * *inside* a bar that itself splits into two chords (`buildProgression`'s
+ * `twoChordBarChance`), only using a plain `stop` at the very end.
  */
 function addPedalMarking(rng, score) {
   if (score.barCount < 3) return;
   const span = Math.min(rng.int(2, 4), score.barCount - 1);
   const start = rng.int(0, score.barCount - 1 - span);
   const end = start + span;
-  score.staves[2][start].directions.push({ kind: 'pedal', type: 'start' });
+  const bass = score.staves[2];
+
+  bass[start].directions.push({ kind: 'pedal', type: 'start' });
+  addMidBarPedalChange(bass[start], score.progression[start], score.barDuration);
+
   for (let bar = start + 1; bar < end; bar++) {
-    if (score.progression[bar] !== score.progression[bar - 1]) {
-      score.staves[2][bar].directions.push({ kind: 'pedal', type: 'change' });
+    if (firstChord(score.progression[bar]) !== lastChord(score.progression[bar - 1])) {
+      bass[bar].directions.push({ kind: 'pedal', type: 'change' });
     }
+    addMidBarPedalChange(bass[bar], score.progression[bar], score.barDuration);
   }
-  score.staves[2][end].directions.push({ kind: 'pedal', type: 'stop' });
+
+  bass[end].directions.push({ kind: 'pedal', type: 'stop' });
+}
+
+/**
+ * A split bar's own harmony turns over partway through it — drop the
+ * change notch at the first note starting in the second half, the same
+ * point `chordAt` (harmony.js) hands that half its own chord tones. If
+ * nothing starts there (a single note sustained through the whole bar),
+ * there is no attack to anchor a change to, so none is added.
+ */
+function addMidBarPedalChange(bar, entry, barDuration) {
+  if (!Array.isArray(entry)) return;
+  let offset = 0;
+  for (let index = 0; index < bar.events.length; index++) {
+    if (offset >= barDuration / 2) {
+      bar.directions.push({ kind: 'pedal', type: 'change', atEventIndex: index });
+      return;
+    }
+    offset += bar.events[index].dur;
+  }
 }
 
 /**

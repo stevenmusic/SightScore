@@ -13,6 +13,7 @@
  */
 
 import { chordDegrees, degreeOf, pitchAt } from './theory.js';
+import { chordAt } from './harmony.js';
 
 /**
  * Interval classes that read as dissonant against the bass. A second, tritone
@@ -27,7 +28,8 @@ const NEVER_INTERVALS = new Set([1, 11]);
  * @param {ReturnType<import('./random.js').createRandom>} params.rng
  * @param {ReturnType<import('./theory.js').createKey>} params.key
  * @param {Array<{events: object[], beatDuration: number}>} params.bars
- * @param {string[]} params.progression roman numeral per bar
+ * @param {(string|[string, string])[]} params.progression roman numeral per
+ *        bar, or a `[first, second]` pair for a bar that splits in half
  * @param {{low: number, high: number}} params.window allowed dstep window
  * @param {object} params.options
  * @param {Array<{start: number, end: number, midis: number[]}>} [params.against]
@@ -61,8 +63,7 @@ export function assignPitches({ rng, key, bars, progression, window, options, ag
   let runLength = 0;
 
   bars.forEach((bar, barIndex) => {
-    const roman = progression[barIndex] ?? 'I';
-    const tones = chordDegrees(roman);
+    const entry = progression[barIndex] ?? 'I';
     let offset = 0;
 
     bar.events.forEach((event) => {
@@ -71,6 +72,10 @@ export function assignPitches({ rng, key, bars, progression, window, options, ag
         return;
       }
 
+      // A bar that splits into two chords (see harmony.js's `chordAt`)
+      // hands each half its own tones — a note picks its governing chord
+      // by when it starts, same as any other harmonic-rhythm change.
+      const tones = chordDegrees(chordAt(entry, offset, barDuration));
       const absolute = barIndex * barDuration + offset;
       const sounding = soundingAt(against, absolute, event.dur);
       const onBeat = offset % bar.beatDuration === 0;
@@ -491,10 +496,13 @@ function fixAugmentedSeconds(bars, key) {
  * Turn single notes into chords by stacking diatonic thirds below.
  * Used for the left hand from Grade 3 upward.
  */
-export function stackChordTones({ bars, key, progression, maxNotes, rng, window, density = 0.4 }) {
+export function stackChordTones({ bars, key, progression, maxNotes, rng, window, density = 0.4, barDuration = 0 }) {
   bars.forEach((bar, barIndex) => {
-    const tones = chordDegrees(progression[barIndex] ?? 'I');
+    const entry = progression[barIndex] ?? 'I';
+    let offset = 0;
     bar.events.forEach((event) => {
+      const tones = chordDegrees(chordAt(entry, offset, barDuration));
+      offset += event.dur;
       if (event.rest || !event.dstep) return;
       if (maxNotes < 2 || !rng.chance(density)) return;
       if (!tones.includes(degreeOf(event.dstep, key))) return;
@@ -521,22 +529,36 @@ export function stackChordTones({ bars, key, progression, maxNotes, rng, window,
  * per hand can leave one hand raising the 7th while the other does not, and
  * the two sounding together is a false relation — the harshest thing the
  * generator can produce.
+ *
+ * A single pairwise pass isn't enough once three or more degree-7 notes
+ * overlap in time across the two hands (denser textures — faster harmonic
+ * rhythm, syncopation — make this routine): fixing one disagreeing pair by
+ * un-raising both notes can silently break a THIRD note's previously-fine
+ * agreement with one of them. Since every fix only ever moves a note from
+ * raised to natural (never back), repeating the sweep until a pass finds
+ * nothing left to fix always terminates and leaves every mutually-
+ * overlapping cluster fully reconciled, not just the first pair checked.
  */
 export function harmoniseLeadingNotes(staves, key, barDuration) {
   if (!key.isMinor) return;
   const timelines = staves.map((bars) => soundingTimelineWithEvents(bars, barDuration));
 
-  for (const entry of timelines[0]) {
-    for (const other of timelines[1]) {
-      if (entry.start >= other.end || entry.end <= other.start) continue;
-      const a = entry.event;
-      const b = other.event;
-      if (degreeOf(a.dstep, key) !== 6 || degreeOf(b.dstep, key) !== 6) continue;
-      if (a.raiseSeventh === b.raiseSeventh) continue;
-      // Follow the natural form: it is always available, the raised one is not.
-      for (const note of [a, b]) {
-        note.raiseSeventh = false;
-        note.pitch = pitchAt(note.dstep, key, { raiseSeventh: false });
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const entry of timelines[0]) {
+      for (const other of timelines[1]) {
+        if (entry.start >= other.end || entry.end <= other.start) continue;
+        const a = entry.event;
+        const b = other.event;
+        if (degreeOf(a.dstep, key) !== 6 || degreeOf(b.dstep, key) !== 6) continue;
+        if (a.raiseSeventh === b.raiseSeventh) continue;
+        // Follow the natural form: it is always available, the raised one is not.
+        for (const note of [a, b]) {
+          note.raiseSeventh = false;
+          note.pitch = pitchAt(note.dstep, key, { raiseSeventh: false });
+        }
+        changed = true;
       }
     }
   }
