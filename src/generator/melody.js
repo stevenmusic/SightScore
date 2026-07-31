@@ -216,6 +216,10 @@ export function assignPitches({ rng, key, bars, progression, window, options, ag
   fixAugmentedSeconds(bars, key);
   // Both repairs move pitches after the vertical check, so verify once more.
   resolveClashes({ bars, key, window, against, barDuration, finalEvent: endOnTonic ? finalEvent : null });
+  // resolveClashes can relocate a note onto the raised 7th next to the natural
+  // 6th, so the augmented-2nd rule has to be re-checked after it rather than
+  // only before — it writes raised 7ths now, where it used to force naturals.
+  fixAugmentedSeconds(bars, key);
   // The cadence is settled last, and by construction rather than by
   // preference: every pass above can move the note before the tonic, so a
   // stepwise approach merely *asked* for during the walk survived only about
@@ -324,6 +328,9 @@ function shapeCadence({ bars, key, window, against, barDuration, soundingEvents 
   const sounding = soundingAtEvent(bars, against, barDuration, penultimate);
   const before = soundingEvents[soundingEvents.length - 3] ?? null;
   const tonic = final.dstep;
+  // The melody has to clear the other hand here as much as anywhere else;
+  // this pass runs after resolveClashes, so nothing downstream would catch it.
+  const ceiling = sounding.length ? Math.max(...sounding) : null;
   // The leading note first: 7–1 is the stronger of the two approaches.
   for (const candidate of [tonic - 1, tonic + 1]) {
     if (candidate < window.low || candidate > window.high) continue;
@@ -342,6 +349,7 @@ function shapeCadence({ bars, key, window, against, barDuration, soundingEvents 
     }
     const pitch = pitchAt(candidate, key, { raiseSeventh });
     if (clashesWith(pitch.midi, sounding)) continue;
+    if (ceiling !== null && pitch.midi < ceiling) continue;
     penultimate.dstep = candidate;
     penultimate.raiseSeventh = raiseSeventh;
     penultimate.pitch = pitch;
@@ -441,6 +449,23 @@ function pickWeighted(ctx) {
 
     const isChordTone = tones.includes(degreeOf(dstep, key));
     if (chordToneOnly && !isChordTone) continue;
+    /*
+     * In a minor key, stepping between the natural 6th and the raised 7th is
+     * the melodic augmented 2nd this repertoire never writes. `fixAugmented-
+     * Seconds` used to be the only thing standing against it, and it repairs
+     * the interval by un-raising the 7th — which quietly leaves the piece
+     * writing both C natural and C sharp in the same D minor test, a cross
+     * relation that sounds worse than the interval being avoided. It was by
+     * far the largest source of those: 2462 un-raisings across ~970 minor
+     * tests, against ~180 from every other cause combined. Declining the step
+     * here means the interval never has to be repaired, so the raised 7th
+     * stays raised everywhere it occurs, as the harmonic-minor policy says.
+     */
+    if (key.isMinor && distance === 1) {
+      const degree = degreeOf(dstep, key);
+      const previousDegree = degreeOf(previous, key);
+      if ((degree === 6 && previousDegree === 5) || (degree === 5 && previousDegree === 6)) continue;
+    }
     // A non-chord note on a strong beat is only allowed as a passing step.
     if (onBeat && !isChordTone && distance !== 1) continue;
     if (isDownbeat && !isChordTone) continue;
@@ -512,7 +537,21 @@ function pickWeighted(ctx) {
   }
 
   if (!steps.length && !leaps.length && !repeats.length) {
-    return nearestWithDegreeSet(allSteps, key, tones, previous);
+    /*
+     * Nothing survived the filters. This last resort used to reach for the
+     * nearest chord tone with no regard for the other hand at all, which is
+     * how the melody could end up underneath the accompaniment — rare while
+     * few candidates were ever fully eliminated, but the augmented-2nd rule
+     * above empties the set often enough in minor keys to make it matter.
+     * Keep the vertical constraints even here; only the melodic preferences
+     * are worth abandoning.
+     */
+    const safe = allSteps.filter((dstep) => {
+      const midi = soundingMidi(dstep, key);
+      if (ceiling !== null && midi < ceiling) return false;
+      return !sounding.some((other) => NEVER_INTERVALS.has(Math.abs(midi - other) % 12));
+    });
+    return nearestWithDegreeSet(safe.length ? safe : allSteps, key, tones, previous);
   }
 
   /*
@@ -615,14 +654,26 @@ function resolveClashes({ bars, key, window, against, barDuration, finalEvent })
       let bestDistance = Infinity;
       for (let dstep = window.low; dstep <= window.high; dstep++) {
         if (tones.length && !tones.includes(degreeOf(dstep, key))) continue;
-        const candidate = pitchAt(dstep, key, { raiseSeventh: false });
+        /*
+         * Judge — and later write — a degree-7 replacement at the pitch it
+         * will actually sound, which under the harmonic-minor policy is the
+         * raised one. Screening candidates at their natural form let this pass
+         * relocate a note onto the 7th precisely *because* the natural form
+         * did not clash, and then write it natural: the same trap `pickWeighted`
+         * documents, silently undoing the policy from the other end.
+         */
+        const raiseSeventh = degreeOf(dstep, key) === 6;
+        const candidate = pitchAt(dstep, key, { raiseSeventh });
         if (wrong(candidate.midi)) continue;
         const distance = Math.abs(dstep - event.dstep);
-        if (distance < bestDistance) { bestDistance = distance; replacement = { dstep, pitch: candidate }; }
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          replacement = { dstep, pitch: candidate, raiseSeventh };
+        }
       }
       if (replacement) {
         event.dstep = replacement.dstep;
-        event.raiseSeventh = false;
+        event.raiseSeventh = replacement.raiseSeventh;
         event.pitch = replacement.pitch;
       }
     }

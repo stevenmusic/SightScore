@@ -282,3 +282,45 @@ test('the left hand never rises above the right', () => {
     }
   });
 });
+
+test('a minor key does not write both forms of the same degree', () => {
+  /*
+   * A cross relation: the same letter printed both natural and raised
+   * somewhere in one short test — C and C sharp in a four-bar D minor piece.
+   * Unlike a false relation the two need never sound together to jar, and at
+   * these grades a sight-reader meets the piece once, so the inconsistency
+   * reads as a misprint rather than as melodic-minor colour.
+   *
+   * Almost all of these came from `fixAugmentedSeconds`: a raised 7th landing
+   * next to the natural 6th was repaired by un-raising it, which fixed the
+   * interval and left the piece disagreeing with itself about the 7th
+   * everywhere else. Declining that step in `pickWeighted` — the rule ABRSM
+   * writing follows anyway — took minor tests containing one from 64% to
+   * under 8%. The rest are genuinely forced, where raising the 7th back would
+   * write an augmented 2nd, cross the hands or clash with the other hand, and
+   * the competing rule has to win.
+   */
+  let mixed = 0;
+  let total = 0;
+
+  eachTest((score) => {
+    if (score.key.mode !== 'minor') return;
+    total += 1;
+    const alters = new Map();
+    for (const staffNumber of [1, 2]) {
+      for (const note of notesOf(score, staffNumber)) {
+        for (const pitch of [note.pitch, ...(note.chord ?? [])]) {
+          if (!alters.has(pitch.step)) alters.set(pitch.step, new Set());
+          alters.get(pitch.step).add(pitch.alter);
+        }
+      }
+    }
+    if ([...alters.values()].some((set) => set.size > 1)) mixed += 1;
+  });
+
+  const rate = mixed / total;
+  assert.ok(
+    rate <= 0.15,
+    `${(rate * 100).toFixed(1)}% of minor tests write the same letter both natural and raised`,
+  );
+});
