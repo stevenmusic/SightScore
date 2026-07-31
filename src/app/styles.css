@@ -32,8 +32,11 @@
   --fs-sm: 13px;
   --fs-md: 14px;
   --fs-lg: 16px;
-  --fs-xl: 19px;
-  --fs-2xl: 26px;
+  /* Scaled down by the same ~0.8 factor as the mobile h1 override below
+     (see that comment for how it was measured against a ScrollScore
+     screenshot) — reported as "標題的字大小也不一樣" (the title's font
+     size is different too). */
+  --fs-2xl: 20px;
 
   /* The page's own horizontal inset, kept as a variable so `.topbar` and
      `.score-frame` can bleed exactly past it to the true viewport edge at
@@ -520,7 +523,13 @@ html:fullscreen .score-frame, body.pseudo-fullscreen .score-frame {
 
 @media (max-width: 560px) {
   body { --body-px: 12px; padding: 0 var(--body-px) 28px; }
-  h1 { font-size: var(--fs-xl); }
+  /*
+   * Measured directly against a ScrollScore screenshot taken at the same
+   * device scale (iPhone, 3x): SightScore's title cap-height came out to
+   * 45 physical px at the old 19px size against ScrollScore's 36px — a
+   * ~0.8x ratio applied here gives 15px.
+   */
+  h1 { font-size: 15px; }
 
   .status { gap: 10px 18px; margin: 14px 2px 8px; }
   .countdown { font-size: 32px; min-width: 52px; }
