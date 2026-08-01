@@ -776,31 +776,47 @@ function resolveClashes({ bars, key, window, against, barDuration, finalEvent })
 
       // The cadence note stays on the tonic whatever else has to move.
       const tones = event === finalEvent ? [0] : (event.chordDegrees ?? []);
-      let replacement = null;
-      let bestDistance = Infinity;
-      for (let dstep = window.low; dstep <= window.high; dstep++) {
-        if (tones.length && !tones.includes(degreeOf(dstep, key))) continue;
-        /*
-         * Judge — and later write — a degree-7 replacement at the pitch it
-         * will actually sound, which under the harmonic-minor policy is the
-         * raised one. Screening candidates at their natural form let this pass
-         * relocate a note onto the 7th precisely *because* the natural form
-         * did not clash, and then write it natural: the same trap `pickWeighted`
-         * documents, silently undoing the policy from the other end.
-         */
-        const raiseSeventh = degreeOf(dstep, key) === 6;
-        const candidate = pitchAt(dstep, key, { raiseSeventh });
-        if (wrong(candidate.midi)) continue;
-        // Relocating a note must not double the other hand's leading note —
-        // this pass runs after selection, where that rule is enforced, and
-        // was quietly reintroducing what selection had avoided.
-        if (raiseSeventh && sounding.some((other) => (other % 12) === (candidate.midi % 12))) continue;
-        const distance = Math.abs(dstep - event.dstep);
-        if (distance < bestDistance) {
-          bestDistance = distance;
-          replacement = { dstep, pitch: candidate, raiseSeventh };
+      const findReplacement = (requireTone) => {
+        let replacement = null;
+        let bestDistance = Infinity;
+        for (let dstep = window.low; dstep <= window.high; dstep++) {
+          if (requireTone && tones.length && !tones.includes(degreeOf(dstep, key))) continue;
+          /*
+           * Judge — and later write — a degree-7 replacement at the pitch it
+           * will actually sound, which under the harmonic-minor policy is the
+           * raised one. Screening candidates at their natural form let this pass
+           * relocate a note onto the 7th precisely *because* the natural form
+           * did not clash, and then write it natural: the same trap `pickWeighted`
+           * documents, silently undoing the policy from the other end.
+           */
+          const raiseSeventh = degreeOf(dstep, key) === 6;
+          const candidate = pitchAt(dstep, key, { raiseSeventh });
+          if (wrong(candidate.midi)) continue;
+          // Relocating a note must not double the other hand's leading note —
+          // this pass runs after selection, where that rule is enforced, and
+          // was quietly reintroducing what selection had avoided.
+          if (raiseSeventh && sounding.some((other) => (other % 12) === (candidate.midi % 12))) continue;
+          const distance = Math.abs(dstep - event.dstep);
+          if (distance < bestDistance) {
+            bestDistance = distance;
+            replacement = { dstep, pitch: candidate, raiseSeventh };
+          }
         }
-      }
+        return replacement;
+      };
+      /*
+       * A held note in the other hand can outlast the harmony it belonged to
+       * (a bass note sustained across a mid-bar chord change, e.g.) and land
+       * a semitone from *every* tone of the new chord at once — vi against a
+       * still-ringing raised-7th V is a real case, not a hypothetical one.
+       * Restricting the search to chord tones then finds nothing and used to
+       * leave the clash written, the one place in this pass a `wrong` note
+       * could survive. Widen to the whole window, same as `pickWeighted`'s
+       * own last-resort fallback, rather than accept a note that clashes.
+       * The final tonic keeps its strict search — better a clash there than
+       * a cadence that doesn't land on the tonic.
+       */
+      const replacement = findReplacement(true) ?? (event === finalEvent ? null : findReplacement(false));
       if (replacement) {
         event.dstep = replacement.dstep;
         event.raiseSeventh = replacement.raiseSeventh;
@@ -1178,6 +1194,7 @@ function outerVoiceTimeline(upper, lower, barDuration) {
   collect(upper, 1);
   collect(lower, 2);
 
+  const bottomSpans = spans.filter((s) => s.staff === 2);
   const times = [...new Set(spans.map((s) => s.start))].sort((a, b) => a - b);
   const entries = [];
   for (const time of times) {
@@ -1187,14 +1204,29 @@ function outerVoiceTimeline(upper, lower, barDuration) {
     if (!top.length || !bottom.length) continue;
     const highest = top.reduce((best, s) => {
       const midi = Math.max(s.event.pitch.midi, ...(s.event.chord ?? []).map((p) => p.midi));
-      return midi > best.midi ? { midi, event: s.event } : best;
-    }, { midi: -Infinity, event: null });
+      return midi > best.midi ? { midi, event: s.event, span: s } : best;
+    }, { midi: -Infinity, event: null, span: null });
     const bassMidis = bottom.flatMap((s) => [s.event.pitch.midi, ...(s.event.chord ?? []).map((p) => p.midi)]);
+    /*
+     * `sounding` guards candidate replacement pitches against a clash (used
+     * by `moveOffParallel`'s `clashesWith` check), so it has to cover the
+     * *whole* duration of the top event this entry is keyed to, not just the
+     * bass notes active at this one instant. A held melody note can outlast
+     * several bass attacks; checking only the first left `moveOffParallel`
+     * free to relocate a note onto a pitch that clashed against a bass note
+     * that hadn't attacked yet at `time` but was still within the moved
+     * note's own sounding duration. `bass` (used for parallel-motion
+     * detection between consecutive entries) stays instant-based — that one
+     * is correctly about the vertical interval formed at each attack.
+     */
+    const fullBassMidis = bottomSpans
+      .filter((s) => s.start < highest.span.end && s.end > highest.span.start)
+      .flatMap((s) => [s.event.pitch.midi, ...(s.event.chord ?? []).map((p) => p.midi)]);
     entries.push({
       event: highest.event,
       top: highest.midi,
       bass: Math.min(...bassMidis),
-      sounding: bassMidis,
+      sounding: fullBassMidis,
     });
   }
   entries.forEach((entry, i) => {

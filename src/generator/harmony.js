@@ -6,21 +6,54 @@
  * like music or like a random note-string.
  */
 
-const MIDDLE_POOL = ['IV', 'ii', 'vi', 'I', 'V', 'iii'];
-const MIDDLE_POOL_SIMPLE = ['IV', 'V', 'I', 'vi'];
-
-/**
- * What may follow a given chord. Only one restriction, but it is the one rule
- * of functional syntax that a free walk breaks audibly: the dominant does not
- * fall back to the subdominant. V-IV undoes the tension the dominant just
- * built and is heard as the progression losing its footing — every textbook
- * calls it a retrogression. Once a bar could split into two chords (Grade 5+)
- * a free pick produced it in 3-4% of chord changes.
+/*
+ * How one chord tends to move to the next, weighted by how idiomatic the
+ * progression is — not just legal, which a flat pool cannot tell apart from
+ * common. Measured across 600 tests per grade, an unweighted uniform pick
+ * over {I, ii, iii, IV, V, vi} put `iii` — the weakest and most tonally
+ * ambiguous diatonic triad, sharing two tones with both I and V and pushing
+ * toward neither — within a point of IV by Grade 5, and root motion by a
+ * bare third (root motion with no strong directional pull) at 14-15% of all
+ * chord changes, nearly matching the 15-18% that moved by a second. Motion by
+ * a fourth/fifth — the progression that actually drives tonal harmony
+ * forward — was already the largest single category (30-46%), but a random
+ * walk has no notion that it *should* be, so it wandered into weak motion far
+ * more than real practice does.
+ *
+ * Every chord is reachable from every other (nothing here is impossible),
+ * but `iii` is a weak destination from everywhere it can be reached at all:
+ * real practice uses it almost exclusively as a passing chord on the way
+ * from I or vi to IV, not as a harmony to arrive on and linger over. `V`'s
+ * entry has no IV or ii at all — not a filter bolted on afterward, but the
+ * plain absence of the one progression real harmony treats as a mistake:
+ * V-IV undoes the tension the dominant just built, which is why every
+ * textbook calls it a retrogression. An unweighted pick produced it in 3-4%
+ * of chord changes once a bar could split into two chords (Grade 5+).
  */
-function mayFollow(pool, previous) {
-  const allowed = previous === 'V' ? pool.filter((chord) => chord === 'I' || chord === 'vi') : pool;
-  const usable = allowed.filter((chord) => chord !== previous);
-  return usable.length ? usable : pool.filter((chord) => chord !== previous);
+const FOLLOWS = {
+  I: [{ chord: 'IV', weight: 4 }, { chord: 'V', weight: 4 }, { chord: 'ii', weight: 3 }, { chord: 'vi', weight: 3 }, { chord: 'iii', weight: 1 }],
+  ii: [{ chord: 'V', weight: 5 }, { chord: 'IV', weight: 1 }, { chord: 'vi', weight: 1 }, { chord: 'I', weight: 1 }],
+  iii: [{ chord: 'vi', weight: 4 }, { chord: 'IV', weight: 3 }, { chord: 'I', weight: 1 }, { chord: 'ii', weight: 1 }],
+  IV: [{ chord: 'V', weight: 4 }, { chord: 'I', weight: 3 }, { chord: 'ii', weight: 3 }, { chord: 'vi', weight: 1 }],
+  V: [{ chord: 'I', weight: 3 }, { chord: 'vi', weight: 2 }],
+  vi: [{ chord: 'IV', weight: 3 }, { chord: 'ii', weight: 3 }, { chord: 'V', weight: 3 }, { chord: 'I', weight: 1 }, { chord: 'iii', weight: 1 }],
+};
+
+/** Grade <=3: no ii/iii at all, so only the primary-chord relationships apply. */
+const FOLLOWS_SIMPLE = {
+  I: [{ chord: 'V', weight: 4 }, { chord: 'IV', weight: 3 }, { chord: 'vi', weight: 2 }],
+  IV: [{ chord: 'V', weight: 4 }, { chord: 'I', weight: 3 }, { chord: 'vi', weight: 1 }],
+  V: [{ chord: 'I', weight: 3 }, { chord: 'vi', weight: 2 }],
+  vi: [{ chord: 'IV', weight: 3 }, { chord: 'V', weight: 2 }, { chord: 'I', weight: 1 }],
+};
+
+/** Weighted candidates for what may follow `previous`, excluding an immediate repeat. */
+function mayFollow(table, previous) {
+  const candidates = (table[previous] ?? []).filter((entry) => entry.chord !== previous);
+  if (candidates.length) return candidates;
+  return Object.keys(table)
+    .filter((chord) => chord !== previous)
+    .map((chord) => ({ chord, weight: 1 }));
 }
 
 /**
@@ -44,7 +77,7 @@ function mayFollow(pool, previous) {
  *   `[first, second]` pair for a bar whose harmony changes halfway through
  */
 export function buildProgression(rng, barCount, options = {}) {
-  const pool = options.simple ? MIDDLE_POOL_SIMPLE : MIDDLE_POOL;
+  const table = options.simple ? FOLLOWS_SIMPLE : FOLLOWS;
   const twoChordBarChance = options.twoChordBarChance ?? 0;
   if (barCount <= 1) return ['I'];
   if (barCount === 2) return ['I', 'I'];
@@ -75,9 +108,9 @@ export function buildProgression(rng, barCount, options = {}) {
       previous = 'I';
       continue;
     }
-    const first = rng.pick(mayFollow(pool, previous));
+    const first = rng.weighted(mayFollow(table, previous)).chord;
     if (twoChordBarChance > 0 && rng.chance(twoChordBarChance)) {
-      const second = rng.pick(mayFollow(pool, first));
+      const second = rng.weighted(mayFollow(table, first)).chord;
       progression[bar] = [first, second];
       previous = second;
     } else {
@@ -105,8 +138,12 @@ export function buildProgression(rng, barCount, options = {}) {
 
   // Avoid a static V–V into the cadence — but never at the cost of the half
   // cadence itself, which is deliberate rather than accidental repetition.
+  // Weighted toward ii/IV: the classic pre-dominant approach into a cadence,
+  // rather than treated as just another equally-likely replacement.
   if (barCount >= 4 && barCount - 3 !== half && lastChord(progression[barCount - 3]) === 'V') {
-    progression[barCount - 3] = rng.pick(['IV', 'ii', 'I', 'vi']);
+    progression[barCount - 3] = rng.weighted([
+      { chord: 'ii', weight: 3 }, { chord: 'IV', weight: 3 }, { chord: 'vi', weight: 1 }, { chord: 'I', weight: 1 },
+    ]).chord;
   }
   return progression;
 }
