@@ -459,12 +459,16 @@ function auditExpression(grade, tests) {
   const lines = [];
   const R = rules.grades[String(grade)];
   const found = {
-    slur: 0, staccato: 0, accent: 0, wedge: 0, pedal: 0, ornament: 0, tempoChange: 0,
+    slur: 0, staccato: 0, tenuto: 0, accent: 0, staccatissimo: 0, marcato: 0,
+    wedge: 0, pedal: 0, ornament: 0, tempoChange: 0,
   };
   const dynamicsSeen = new Set();
 
   for (const score of tests) {
-    let has = { slur: false, staccato: false, accent: false, wedge: false, pedal: false, ornament: false, tempoChange: false };
+    let has = {
+      slur: false, staccato: false, tenuto: false, accent: false, staccatissimo: false, marcato: false,
+      wedge: false, pedal: false, ornament: false, tempoChange: false,
+    };
     for (const staffNumber of [1, 2]) {
       for (const bar of score.staves[staffNumber]) {
         for (const d of bar.directions) {
@@ -478,7 +482,11 @@ function auditExpression(grade, tests) {
           if (event.grace) has.ornament = true;
           for (const a of event.articulations ?? []) {
             if (a === 'staccato') has.staccato = true;
+            if (a === 'tenuto') has.tenuto = true;
             if (a === 'accent') has.accent = true;
+            if (a === 'staccatissimo') has.staccatissimo = true;
+            // MusicXML's tag for what the rules table calls "marcato".
+            if (a === 'strong-accent') has.marcato = true;
           }
         }
       }
@@ -499,7 +507,10 @@ function auditExpression(grade, tests) {
   };
   expect('slur', R.articulations.includes('slur'));
   expect('staccato', R.articulations.includes('staccato'));
+  expect('tenuto', R.articulations.includes('tenuto'));
   expect('accent', R.articulations.includes('accent'));
+  expect('staccatissimo', R.articulations.includes('staccatissimo'));
+  expect('marcato', R.articulations.includes('marcato'));
   expect('wedge', R.dynamicFeatures.some((f) => f === 'crescendo' || f === 'diminuendo'));
   expect('pedal', R.otherFeatures.some((f) => f.includes('踏板') || /pedal/i.test(f)));
   expect('ornament', grade >= 7);

@@ -565,7 +565,13 @@ function applyExpression(rng, rules, score) {
 
   const canSlur = rules.articulations.includes('slur');
   const canStaccato = rules.articulations.includes('staccato');
+  const canTenuto = rules.articulations.includes('tenuto');
   const canAccent = rules.articulations.includes('accent');
+  const canStaccatissimo = rules.articulations.includes('staccatissimo');
+  // The rules table calls this "marcato"; MusicXML (and the playback engine
+  // that reads `event.articulations` straight through as tag names) calls
+  // the same mark `<strong-accent/>`, so that's the string written here.
+  const canMarcato = rules.articulations.includes('marcato');
 
   for (const staffNumber of [1, 2]) {
     const staff = score.staves[staffNumber];
@@ -590,10 +596,23 @@ function applyExpression(rng, rules, score) {
             event.articulations = [...(event.articulations ?? []), 'staccato'];
           }
         }
+      } else if (canTenuto && rng.chance(0.25)) {
+        // Tenuto marks a held-full-value run the same way staccato marks a
+        // detached one — declared from Grade 4 but, until now, never
+        // actually written, so it never reached the score at all.
+        for (const event of sounding) {
+          if (event.type === 'quarter' || event.type === 'eighth') {
+            event.articulations = [...(event.articulations ?? []), 'tenuto'];
+          }
+        }
       } else if (canAccent && rng.chance(0.3)) {
         // Real specimens accent single strong-beat notes (often the phrase's
         // opening note), not a whole run the way staccato marks one.
         sounding[0].articulations = [...(sounding[0].articulations ?? []), 'accent'];
+      } else if (canStaccatissimo && rng.chance(0.2)) {
+        sounding[0].articulations = [...(sounding[0].articulations ?? []), 'staccatissimo'];
+      } else if (canMarcato && rng.chance(0.2)) {
+        sounding[0].articulations = [...(sounding[0].articulations ?? []), 'strong-accent'];
       }
     }
   }

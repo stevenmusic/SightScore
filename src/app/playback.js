@@ -38,6 +38,8 @@ const REVERB_SEND = 0.5;
 const DECAY_TAU = 2.2;
 const PEAK_GAIN = 0.6;
 const TAIL = 0.4;
+/** A slurred note's release is left to bleed further into the next note's attack — ScrollScore's legato tail. */
+const LEGATO_TAIL = 0.6;
 
 export function createPlayer({ onStatus } = {}) {
   let context = null;
@@ -199,22 +201,18 @@ export function createPlayer({ onStatus } = {}) {
       let end = start;
 
       for (const staffNumber of [1, 2]) {
-        let offset = 0;
-        for (const bar of score.staves[staffNumber]) {
-          for (const event of bar.events) {
-            if (!event.rest) {
-              const at = start + offset * secondsPerDivision;
-              const duration = event.dur * secondsPerDivision;
-              for (const pitch of [event.pitch, ...(event.chord ?? [])]) {
-                const voice = samples?.length
-                  ? sampledNote(context, { master, reverbBus }, samples, pitch.midi, at, duration)
-                  : fallbackNote(context, { master, reverbBus }, pitch.midi, at, duration);
-                voices.push(voice);
-              }
-              end = Math.max(end, at + duration);
-            }
-            offset += event.dur;
+        const { notes, slurRanges } = layOutStaff(score.staves[staffNumber], start, secondsPerDivision);
+        const legatoAt = (at) => slurRanges.some((range) => at >= range.start && at < range.end);
+
+        for (const { event, at, duration } of notes) {
+          const legato = legatoAt(at);
+          for (const pitch of [event.pitch, ...(event.chord ?? [])]) {
+            const voice = samples?.length
+              ? sampledNote(context, { master, reverbBus }, samples, pitch.midi, at, duration, legato, event.articulations)
+              : fallbackNote(context, { master, reverbBus }, pitch.midi, at, duration, legato, event.articulations);
+            voices.push(voice);
           }
+          end = Math.max(end, at + duration);
         }
       }
 
@@ -224,6 +222,40 @@ export function createPlayer({ onStatus } = {}) {
       }, (end - context.currentTime + TAIL + 2.1) * 1000);
     },
   };
+}
+
+/**
+ * Flattens one staff's bars into absolute-time note events plus the
+ * seconds-based spans its slurs cover. A slur only marks its first and last
+ * note (`event.slur = 'start'`/`'stop'`), not the notes in between, and the
+ * first note can't know where its own span ends until the matching `stop`
+ * is reached walking forward — so ranges are collected in this same pass
+ * and every note's `legato` state is decided afterward by testing its onset
+ * against them, the same two-phase approach ScrollScore's MusicXML reader
+ * uses rather than tracking "am I inside a slur" as running state.
+ */
+function layOutStaff(bars, start, secondsPerDivision) {
+  const notes = [];
+  const slurRanges = [];
+  const slurStarts = {};
+  let offset = 0;
+  for (const bar of bars) {
+    for (const event of bar.events) {
+      const at = start + offset * secondsPerDivision;
+      const duration = event.dur * secondsPerDivision;
+      if (!event.rest) {
+        const number = event.slurNumber ?? 1;
+        if (event.slur === 'start') slurStarts[number] = at;
+        notes.push({ event, at, duration });
+        if (event.slur === 'stop' && slurStarts[number] !== undefined) {
+          slurRanges.push({ start: slurStarts[number], end: at + duration });
+          delete slurStarts[number];
+        }
+      }
+      offset += event.dur;
+    }
+  }
+  return { notes, slurRanges };
 }
 
 /**
@@ -248,7 +280,32 @@ function nearest(samples, midi) {
   return best;
 }
 
-function sampledNote(context, buses, samples, midi, at, duration) {
+/**
+ * Duration and gain shaping for engraved articulation marks, matching
+ * ScrollScore's `applyArticulation` — the same vocabulary this project's
+ * MusicXML output already writes (`musicxml.js` pushes MusicXML tag names
+ * straight into `event.articulations`, so the strings checked here are
+ * `staccato`/`tenuto`/`staccatissimo`/`accent`/`strong-accent`, not the
+ * rules table's `marcato` label). `sustain` is carved out of the note's own
+ * written duration; the gap to the next note's onset — left untouched — is
+ * what actually makes a shortened note audible as detached rather than just
+ * quieter.
+ */
+function applyArticulation(sustain, duration, articulations) {
+  if (!articulations?.length) return { sustain, gain: 1 };
+  let s = sustain;
+  let gain = 1;
+  if (articulations.includes('staccatissimo')) s = duration * 0.25;
+  else if (articulations.includes('staccato')) s = duration * 0.5;
+  // Tenuto overrides even a competing shortening mark: holding a note its
+  // full value is the entire point of the sign.
+  if (articulations.includes('tenuto')) s = Math.max(s, duration * 0.98);
+  if (articulations.includes('strong-accent')) gain = 1.5;
+  else if (articulations.includes('accent')) gain = 1.3;
+  return { sustain: s, gain };
+}
+
+function sampledNote(context, buses, samples, midi, at, duration, legato, articulations) {
   const sample = nearest(samples, midi);
   const rate = 2 ** ((midi - sample.midi) / 12);
 
@@ -256,9 +313,14 @@ function sampledNote(context, buses, samples, midi, at, duration) {
   source.buffer = sample.buffer;
   source.playbackRate.setValueAtTime(rate, at);
 
-  const sustain = Math.max(duration, 0.1);
+  // A slurred note is left to ring into the next note's attack rather than
+  // released cleanly — that overlap is what reads as "connected" instead of
+  // "detached" the same duration would otherwise sound.
+  const tail = legato ? LEGATO_TAIL : TAIL;
+  const { sustain, gain: articGain } = applyArticulation(Math.max(duration, 0.1), duration, articulations);
+  const peak = PEAK_GAIN * articGain;
   // The recording may be shorter than the note needs; loop its tail to hold on.
-  const needed = (sustain + TAIL) * rate;
+  const needed = (sustain + tail) * rate;
   if (sample.buffer.duration < needed && sample.buffer.duration > 0.3) {
     const loopLength = Math.min(0.6, sample.buffer.duration * 0.3);
     source.loop = true;
@@ -267,13 +329,13 @@ function sampledNote(context, buses, samples, midi, at, duration) {
   }
 
   const gain = context.createGain();
-  gain.gain.setValueAtTime(PEAK_GAIN, at);
+  gain.gain.setValueAtTime(peak, at);
   // A struck string decays at a fixed rate per second, so a long note and a
   // short one lose loudness at the same speed.
   const decayEnd = Math.max(at + sustain, at + 0.02);
   const endLevel = Math.max(0.06, Math.exp(-(decayEnd - at) / DECAY_TAU));
-  gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, PEAK_GAIN * endLevel), decayEnd);
-  gain.gain.exponentialRampToValueAtTime(0.0001, decayEnd + TAIL);
+  gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, peak * endLevel), decayEnd);
+  gain.gain.exponentialRampToValueAtTime(0.0001, decayEnd + tail);
 
   const panner = context.createStereoPanner();
   panner.pan.value = panFor(midi);
@@ -286,22 +348,24 @@ function sampledNote(context, buses, samples, midi, at, duration) {
   panner.connect(send).connect(buses.reverbBus);
 
   source.start(at);
-  source.stop(decayEnd + TAIL + 0.05);
+  source.stop(decayEnd + tail + 0.05);
   return source;
 }
 
 /** Only reached if the sample set cannot be fetched at all. */
-function fallbackNote(context, buses, midi, at, duration) {
+function fallbackNote(context, buses, midi, at, duration, legato, articulations) {
   const oscillator = context.createOscillator();
   const gain = context.createGain();
   const panner = context.createStereoPanner();
-  const sustain = Math.max(duration * 0.92, 0.09);
+  const tail = legato ? LEGATO_TAIL : TAIL;
+  const { sustain, gain: articGain } = applyArticulation(Math.max(duration * 0.92, 0.09), duration, articulations);
+  const peak = 0.25 * articGain;
 
   oscillator.type = 'triangle';
   oscillator.frequency.value = 440 * 2 ** ((midi - 69) / 12);
   gain.gain.setValueAtTime(0.0001, at);
-  gain.gain.exponentialRampToValueAtTime(0.25, at + 0.012);
-  gain.gain.exponentialRampToValueAtTime(0.0001, at + sustain);
+  gain.gain.exponentialRampToValueAtTime(peak, at + 0.012);
+  gain.gain.exponentialRampToValueAtTime(0.0001, at + sustain + tail);
   panner.pan.value = panFor(midi);
 
   oscillator.connect(gain).connect(panner);
@@ -311,7 +375,7 @@ function fallbackNote(context, buses, midi, at, duration) {
   panner.connect(send).connect(buses.reverbBus);
 
   oscillator.start(at);
-  oscillator.stop(at + sustain + 0.05);
+  oscillator.stop(at + sustain + tail + 0.05);
   return oscillator;
 }
 
