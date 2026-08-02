@@ -1,9 +1,9 @@
-import { generateTest } from '../generator/generate.js?v=26';
-import { toMusicXml } from '../generator/musicxml.js?v=26';
-import { createHistory, generateUnique } from '../generator/fingerprint.js?v=26';
-import { createKey, pitchAt } from '../generator/theory.js?v=26';
-import { createPlayer } from './playback.js?v=26';
-import { createStage, barTimings } from './stage.js?v=26';
+import { generateTest } from '../generator/generate.js?v=27';
+import { toMusicXml } from '../generator/musicxml.js?v=27';
+import { createHistory, generateUnique } from '../generator/fingerprint.js?v=27';
+import { createKey, pitchAt } from '../generator/theory.js?v=27';
+import { createPlayer } from './playback.js?v=27';
+import { createStage, barTimings } from './stage.js?v=27';
 
 const STORAGE_KEY = 'sightscore.history.v1';
 const LAYOUT_STORAGE_KEY = 'sightscore.layout.v1';
@@ -181,6 +181,46 @@ function fail(text, detail) {
 window.addEventListener('error', (event) => fail('發生錯誤', event.message));
 window.addEventListener('unhandledrejection', (event) => fail('發生錯誤', String(event.reason)));
 
+/**
+ * Move the tempo/character-word text to a fixed spot right after bar 1's
+ * clef/key/time signature — OSMD itself centres it on whatever event starts
+ * the bar, which for a whole-bar rest sits well into the measure (VexFlow
+ * centres a measure rest) while an ordinary first note sits right at the
+ * start, so the same term rendered at a different position from test to
+ * test depending on which hand opens. The margin is taken from the gap
+ * OSMD already placed before the time signature (from the key signature if
+ * the key has one, otherwise the clef) rather than a fixed pixel value, so
+ * it scales with whatever zoom the piece is rendered at.
+ */
+function pinTempoTermPosition() {
+  const svg = elements.score.querySelector('svg');
+  if (!svg) return;
+  const measures = [...svg.querySelectorAll('g.vf-measure[id="1"]')];
+  if (!measures.length) return;
+  // Staff 1 (treble) is the topmost of bar 1's two measure groups.
+  const staff1Measure = measures.reduce(
+    (top, candidate) => (candidate.getBBox().y < top.getBBox().y ? candidate : top),
+  );
+  const clef = staff1Measure.querySelector('.vf-clef');
+  const time = staff1Measure.querySelector('.vf-timesignature');
+  if (!clef || !time) return;
+  const keySignature = staff1Measure.querySelector('.vf-keysignature');
+  const timeBox = time.getBBox();
+  const clefBox = clef.getBBox();
+  const priorRight = keySignature
+    ? keySignature.getBBox().x + keySignature.getBBox().width
+    : clefBox.x + clefBox.width;
+  const margin = timeBox.x - priorRight;
+  if (margin <= 0) return;
+
+  // The tempo term is the only bold, non-italic text OSMD draws — dynamics
+  // (f, mf, ...) are bold italic, ordinary directions (rit., a tempo) are
+  // italic but not bold.
+  const term = svg.querySelector('text[font-weight="bold"][font-style="normal"]');
+  if (!term) return;
+  term.setAttribute('x', timeBox.x + timeBox.width + margin);
+}
+
 async function init() {
   elements.generate.disabled = true;
 
@@ -218,6 +258,18 @@ async function init() {
       stretchLastSystemLine: true,
     });
     osmd.EngravingRules.FixedMeasureWidth = true;
+    // OSMD centres the tempo/character-word direction on whatever event
+    // starts bar 1 — fine for an ordinary first note, but a bar that opens
+    // with a whole-bar rest (Grade 1's alternating hands) gets it hovering
+    // over that rest's own centred position instead of the start of the
+    // piece, so the same term reads in a different spot test to test.
+    // Wrapping `render` itself (rather than patching every call site) means
+    // every one of `fitScore`'s repeated renders gets the correction too.
+    const rawRender = osmd.render.bind(osmd);
+    osmd.render = (...args) => {
+      rawRender(...args);
+      pinTempoTermPosition();
+    };
   } catch (error) {
     fail('無法初始化樂譜渲染器', error.message);
     return;
