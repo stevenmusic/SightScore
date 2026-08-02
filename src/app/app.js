@@ -1,9 +1,9 @@
-import { generateTest } from '../generator/generate.js?v=19';
-import { toMusicXml } from '../generator/musicxml.js?v=19';
-import { createHistory, generateUnique } from '../generator/fingerprint.js?v=19';
-import { createKey, pitchAt } from '../generator/theory.js?v=19';
-import { createPlayer } from './playback.js?v=19';
-import { createStage, barTimings } from './stage.js?v=19';
+import { generateTest } from '../generator/generate.js?v=20';
+import { toMusicXml } from '../generator/musicxml.js?v=20';
+import { createHistory, generateUnique } from '../generator/fingerprint.js?v=20';
+import { createKey, pitchAt } from '../generator/theory.js?v=20';
+import { createPlayer } from './playback.js?v=20';
+import { createStage, barTimings } from './stage.js?v=20';
 
 const STORAGE_KEY = 'sightscore.history.v1';
 const LAYOUT_STORAGE_KEY = 'sightscore.layout.v1';
@@ -425,6 +425,34 @@ function hasSingleBarLine(layout) {
   return layout.bars.size > 1 && layout.systems.some((system) => system.bars.length === 1);
 }
 
+/*
+ * `RenderXMeasuresPerLineAkaSystem` is a target, not a guarantee: when the
+ * requested count doesn't actually fit the container at the current zoom,
+ * OSMD silently re-wraps into a different system shape instead — e.g. "3 per
+ * line" on a 6-bar test can come back as three systems of 2 rather than the
+ * requested two systems of 3. `hasSingleBarLine` only catches the case where
+ * that re-wrap strands a lone bar; a re-wrap into some *other* uniform shape
+ * (like the two-of-three example) sails right through it and looks like a
+ * success — so two tests of the same shape could each request the same `n`,
+ * each get silently re-wrapped to a *different* actual shape depending on
+ * their own content, and still both get cached under that same `n` as if
+ * they'd rendered identically. This checks that OSMD actually honoured the
+ * request — every system has exactly `n` bars except optionally the last,
+ * which gets whatever remainder is left — so a request that wasn't honoured
+ * can be told apart from one that was, instead of both being cached as if
+ * interchangeable.
+ */
+function matchesRequestedLayout(layout, n, totalBars) {
+  const systems = layout.systems;
+  if (systems.length !== Math.ceil(totalBars / n)) return false;
+  const remainder = totalBars % n;
+  return systems.every((system, i) => {
+    const isLast = i === systems.length - 1;
+    const expected = isLast && remainder !== 0 ? remainder : n;
+    return system.bars.length === expected;
+  });
+}
+
 /**
  * The whole test always renders on the page in normal flow — no fullscreen
  * step, no cropped follow-window — so the only fitting left to do is layout.
@@ -443,8 +471,9 @@ function hasSingleBarLine(layout) {
  * noticeably more per line. So rather than matching whatever the natural
  * unforced wrap happens to produce, try progressively more bars per line —
  * from `MAX_MEASURES_PER_LINE` down to 2 — and take the first (most
- * compact) count that still renders with zoom no smaller than `MIN_ZOOM`
- * and no line stranding a single bar. `n=3` on 10 bars would strand one
+ * compact) count that still renders with zoom no smaller than `MIN_ZOOM`,
+ * no line stranding a single bar, and no silent OSMD re-wrap into some
+ * other shape (`matchesRequestedLayout`). `n=3` on 10 bars would strand one
  * bar on a fourth line (3+3+3+1) rather than sharing it with the others,
  * so any `n` that leaves a remainder of exactly 1 is skipped outright.
  * Denser/longer tests simply fail every candidate down to 2 and fall back
@@ -454,41 +483,56 @@ async function fitScore() {
   if (!current || !osmd) return;
 
   const shapeKey = layoutShapeKey(current.score);
+  const totalBars = current.score.barCount;
   const cached = layoutCache[shapeKey];
   if (cached) {
     osmd.EngravingRules.RenderXMeasuresPerLineAkaSystem = cached.measuresPerLine;
     const result = shrinkUntilNoSingleBarLines(cached.zoom, { fitHeight: true });
     /*
-     * Denser content than whatever first established this shape's canonical
-     * zoom (more accidentals, chords, sixteenth-note passages) needs more
-     * shrinking to avoid a stranded bar or fit the screen — and previously
-     * that shrink was thrown away every time, so the *next* same-shaped test
-     * started over from the original cached zoom and could land on a
-     * different amount of shrink again, one test smaller than another for no
-     * reason a reader could point to (exactly the "same shape, different
-     * size" symptom). Ratcheting the cache down to whatever the tightest
-     * render actually needed makes every later same-shaped test — including
-     * less-dense ones that would fit the old, larger cached zoom just fine —
-     * converge on that one shared size instead. This only ever shrinks the
-     * cached value, never grows it, so a render that already fits the cached
-     * zoom is untouched and nothing that fit before can start overflowing.
+     * The cached `measuresPerLine` is only meaningful if OSMD still honours
+     * it for *this* test's content — denser content can push OSMD into
+     * silently re-wrapping into a different (still non-stranded) shape even
+     * at the cached zoom (see `matchesRequestedLayout`). Reusing a
+     * mismatched shape would render this test with a visibly different
+     * number of lines than every other same-shaped test that hit the fast
+     * path, which is the bug this cache exists to prevent in the first
+     * place — so a mismatch here means the cache is stale for this content
+     * and falls through to a full, freshly-verified search below instead of
+     * trusting it.
      */
-    if (result.zoom < cached.zoom) {
-      layoutCache[shapeKey] = { measuresPerLine: cached.measuresPerLine, zoom: result.zoom };
-      saveLayoutCache();
+    if (matchesRequestedLayout(result.layout, cached.measuresPerLine, totalBars)) {
+      /*
+       * Denser content than whatever first established this shape's canonical
+       * zoom (more accidentals, chords, sixteenth-note passages) needs more
+       * shrinking to avoid a stranded bar or fit the screen — and previously
+       * that shrink was thrown away every time, so the *next* same-shaped test
+       * started over from the original cached zoom and could land on a
+       * different amount of shrink again, one test smaller than another for no
+       * reason a reader could point to (exactly the "same shape, different
+       * size" symptom). Ratcheting the cache down to whatever the tightest
+       * render actually needed makes every later same-shaped test — including
+       * less-dense ones that would fit the old, larger cached zoom just fine —
+       * converge on that one shared size instead. This only ever shrinks the
+       * cached value, never grows it, so a render that already fits the cached
+       * zoom is untouched and nothing that fit before can start overflowing.
+       */
+      if (result.zoom < cached.zoom) {
+        layoutCache[shapeKey] = { measuresPerLine: cached.measuresPerLine, zoom: result.zoom };
+        saveLayoutCache();
+      }
+      ensureFitsHeight(result.zoom);
+      return;
     }
-    ensureFitsHeight(result.zoom);
-    return;
   }
 
   osmd.EngravingRules.RenderXMeasuresPerLineAkaSystem = 0;
   const natural = shrinkUntilNoSingleBarLines(BASE_ZOOM);
-  const totalBars = natural.layout.bars.size;
 
   const tryCount = (n, mustFitHeight) => {
     osmd.EngravingRules.RenderXMeasuresPerLineAkaSystem = n;
     const attempt = shrinkUntilNoSingleBarLines(BASE_ZOOM, { fitHeight: mustFitHeight });
     if (attempt.zoom < MIN_ZOOM || hasSingleBarLine(attempt.layout)) return null;
+    if (!matchesRequestedLayout(attempt.layout, n, totalBars)) return null;
     return !mustFitHeight || attempt.fitsHeight ? attempt : null;
   };
 
@@ -501,7 +545,7 @@ async function fitScore() {
    */
   const search = (mustFitHeight) => {
     let found = null;
-    for (let n = Math.min(MAX_MEASURES_PER_LINE, totalBars); n >= 3 && !found; n--) {
+    for (let n = Math.min(MAX_MEASURES_PER_LINE, totalBars); n >= 2 && !found; n--) {
       if (totalBars % n === 0) found = tryCount(n, mustFitHeight);
     }
     for (let n = Math.min(MAX_MEASURES_PER_LINE, totalBars); n >= 2 && !found; n--) {
@@ -518,9 +562,16 @@ async function fitScore() {
    * four per line gives 4+2, and OSMD does not stretch a final short line to
    * the full width, so the second line ends up half the length of the first
    * and its bars visibly smaller. 3+3 fills both lines instead — squarer, and
-   * the bars come out wider because the width is shared evenly. Counts below
-   * three are not worth evenness on its own: two bars a line turns a ten-bar
-   * test into five lines to avoid one short one.
+   * the bars come out wider because the width is shared evenly. `n=2` is
+   * still tried last within that evenly-divisible pass — never skipped
+   * outright — since only trying it as a last resort after everything larger
+   * has failed already keeps fragmentation to a minimum without needing to
+   * special-case it away; a stale version of this search excluded `n=2`
+   * unconditionally, which combined with `matchesRequestedLayout` rejecting
+   * more silent OSMD re-wraps meant a short, evenly-divisible test (a Grade 1
+   * four-bar piece, say) could run out of candidates it was willing to try
+   * and fall to the unforced natural wrap for no reason — exactly the kind
+   * of shape that most needs `n=2` to be a real option.
    */
   const chosen = search(true) ?? search(false);
   // `tryCount` leaves `RenderXMeasuresPerLineAkaSystem` set to whichever `n`
