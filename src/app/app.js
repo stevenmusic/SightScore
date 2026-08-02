@@ -1,9 +1,9 @@
-import { generateTest } from '../generator/generate.js?v=18';
-import { toMusicXml } from '../generator/musicxml.js?v=18';
-import { createHistory, generateUnique } from '../generator/fingerprint.js?v=18';
-import { createKey, pitchAt } from '../generator/theory.js?v=18';
-import { createPlayer } from './playback.js?v=18';
-import { createStage, barTimings } from './stage.js?v=18';
+import { generateTest } from '../generator/generate.js?v=19';
+import { toMusicXml } from '../generator/musicxml.js?v=19';
+import { createHistory, generateUnique } from '../generator/fingerprint.js?v=19';
+import { createKey, pitchAt } from '../generator/theory.js?v=19';
+import { createPlayer } from './playback.js?v=19';
+import { createStage, barTimings } from './stage.js?v=19';
 
 const STORAGE_KEY = 'sightscore.history.v1';
 const LAYOUT_STORAGE_KEY = 'sightscore.layout.v1';
@@ -51,10 +51,16 @@ const history = createHistory({
  * different sizes for no reason a reader could point to. Keyed by shape and
  * persisted (not just per-session) so the same shape always converges on the
  * same size, the way a printed sight-reading book would set it. The first
- * test of a given shape establishes the canonical layout; later same-shaped
- * tests reuse it, only adjusting zoom downward if that particular test's own
- * content genuinely needs more room (denser content never overflows, it just
- * stops matching the canonical size for that one render).
+ * test of a given shape establishes the canonical layout; a later same-shaped
+ * test whose own content is denser and needs more shrinking ratchets the
+ * cached zoom down to match (see `fitScore`) rather than shrinking only for
+ * that one render and forgetting it — otherwise two same-shaped tests could
+ * each shrink by a different amount from the original cached zoom and still
+ * end up visibly different sizes from each other, which was happening in
+ * practice (confirmed by generating dozens of same-shaped Grade 6 tests: the
+ * same "4/4, 12 bars" shape rendered at three different zoom levels). The
+ * ratchet only ever shrinks, never grows, so nothing that fit before starts
+ * overflowing.
  */
 const layoutCache = (() => {
   try {
@@ -451,11 +457,26 @@ async function fitScore() {
   const cached = layoutCache[shapeKey];
   if (cached) {
     osmd.EngravingRules.RenderXMeasuresPerLineAkaSystem = cached.measuresPerLine;
-    // Re-shrinks from the cached zoom only if *this* render's own content
-    // (denser notes, more accidentals) doesn't actually fit it — the cache
-    // itself is never overwritten by that, so later same-shaped tests still
-    // converge back on the canonical size.
     const result = shrinkUntilNoSingleBarLines(cached.zoom, { fitHeight: true });
+    /*
+     * Denser content than whatever first established this shape's canonical
+     * zoom (more accidentals, chords, sixteenth-note passages) needs more
+     * shrinking to avoid a stranded bar or fit the screen — and previously
+     * that shrink was thrown away every time, so the *next* same-shaped test
+     * started over from the original cached zoom and could land on a
+     * different amount of shrink again, one test smaller than another for no
+     * reason a reader could point to (exactly the "same shape, different
+     * size" symptom). Ratcheting the cache down to whatever the tightest
+     * render actually needed makes every later same-shaped test — including
+     * less-dense ones that would fit the old, larger cached zoom just fine —
+     * converge on that one shared size instead. This only ever shrinks the
+     * cached value, never grows it, so a render that already fits the cached
+     * zoom is untouched and nothing that fit before can start overflowing.
+     */
+    if (result.zoom < cached.zoom) {
+      layoutCache[shapeKey] = { measuresPerLine: cached.measuresPerLine, zoom: result.zoom };
+      saveLayoutCache();
+    }
     ensureFitsHeight(result.zoom);
     return;
   }
