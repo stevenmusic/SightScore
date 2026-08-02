@@ -1,9 +1,9 @@
-import { generateTest } from '../generator/generate.js?v=22';
-import { toMusicXml } from '../generator/musicxml.js?v=22';
-import { createHistory, generateUnique } from '../generator/fingerprint.js?v=22';
-import { createKey, pitchAt } from '../generator/theory.js?v=22';
-import { createPlayer } from './playback.js?v=22';
-import { createStage, barTimings } from './stage.js?v=22';
+import { generateTest } from '../generator/generate.js?v=23';
+import { toMusicXml } from '../generator/musicxml.js?v=23';
+import { createHistory, generateUnique } from '../generator/fingerprint.js?v=23';
+import { createKey, pitchAt } from '../generator/theory.js?v=23';
+import { createPlayer } from './playback.js?v=23';
+import { createStage, barTimings } from './stage.js?v=23';
 
 const STORAGE_KEY = 'sightscore.history.v1';
 const LAYOUT_STORAGE_KEY = 'sightscore.layout.v1';
@@ -71,19 +71,22 @@ const history = createHistory({
  * Two axes are deliberately coarser than "exact value" rather than dropped
  * outright:
  *
- * - Time signature is bucketed into `simple` (2/4, 3/4, 4/4 — one beat
- *   subdivides in two, one bar holds 2-4 quarter notes' worth of content)
- *   versus `wide` (6/8, 9/8, 12/8, 5/4, 7/8, 7/4, 2/2, 3/8, ... — compound or
- *   irregular metres, generally more content per bar). Dropping metre
- *   entirely made every same-length test read the same size regardless of
- *   time signature, which was the point — but a 2/4 test and a 12/8 test of
- *   the same bar count do not actually need the same amount of room, and
- *   forcing them into one shared canonical zoom means whichever metre
- *   happens to establish the cache first either strands the other one
- *   needlessly small or gets it re-searched on every single render (never
- *   settling into the fast path). Two buckets keeps same-length tests
- *   reading consistently within a metre family without conflating metres
- *   that need noticeably different amounts of room.
+ * - Time signature is bucketed by how much content a bar actually holds —
+ *   `narrow` for four quarter notes' worth or fewer (2/4, 3/4, 4/4, 2/2,
+ *   3/8, 5/8, 6/8, 7/8), `wide` for more (9/8, 5/4, 12/8, 7/4). This keys off
+ *   the real beat content rather than a hand-picked "simple time signature"
+ *   family: 2/2 and 3/8 hold no more (3/8 far less) than a 4/4 bar despite
+ *   not being in the classic 2/4-3/4-4/4 family, so lumping them in with
+ *   9/8-and-up was overcautious. Dropping metre entirely made every
+ *   same-length test read the same size regardless of time signature, which
+ *   was the point — but a 2/4 test and a 12/8 test of the same bar count do
+ *   not actually need the same amount of room, and forcing them into one
+ *   shared canonical zoom means whichever metre happens to establish the
+ *   cache first either strands the other one needlessly small or gets it
+ *   re-searched on every single render (never settling into the fast path).
+ *   Two buckets keeps same-length tests reading consistently within a
+ *   similar-content family without conflating metres that need noticeably
+ *   more room.
  * - Viewport width is bucketed too (`layoutWidthClass`), because a size
  *   established on a narrow phone has no business being the "canonical"
  *   layout a desktop is then held to — the desktop has room for more bars
@@ -109,10 +112,13 @@ function saveLayoutCache() {
   }
 }
 
-const SIMPLE_TIME_SIGNATURES = new Set(['2/4', '3/4', '4/4']);
-
-function timeSignatureClass(text) {
-  return SIMPLE_TIME_SIGNATURES.has(text) ? 'simple' : 'wide';
+/** How many quarter notes' worth of content one bar holds — 2/4 is 2, 4/4 is
+ * 4, 12/8 (four dotted-quarter beats) is 6. `narrow` at four or under
+ * covers 2/4, 3/4, 4/4, 2/2, 3/8, 5/8, 6/8 and 7/8; `wide` covers 9/8, 5/4,
+ * 12/8 and 7/4. */
+function timeSignatureClass({ beats, beatType }) {
+  const quarterNotesPerBar = (beats * 4) / beatType;
+  return quarterNotesPerBar <= 4 ? 'narrow' : 'wide';
 }
 
 /** Coarse viewport-width tiers, so portrait phone / landscape-or-tablet /
@@ -126,7 +132,7 @@ function layoutWidthClass() {
 }
 
 function layoutShapeKey(score) {
-  return `${score.grade}:${score.barCount}:${timeSignatureClass(score.timeSignature.text)}:${layoutWidthClass()}`;
+  return `${score.grade}:${score.barCount}:${timeSignatureClass(score.timeSignature)}:${layoutWidthClass()}`;
 }
 
 let rules = null;
