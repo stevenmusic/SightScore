@@ -506,23 +506,37 @@ function nearest(samples, midi) {
  * written duration; the gap to the next note's onset — left untouched — is
  * what actually makes a shortened note audible as detached rather than just
  * quieter.
+ *
+ * `tail` also has to shrink for a detached mark, which ScrollScore's own
+ * `applyArticulation` does not do — there `tail` is fixed per voice/pedal
+ * state and never touched by articulation at all. That is fine when `tail`
+ * is small relative to the notes it sits between, but this app's default
+ * release (`TAIL`, 0.4s) is not: at a routine tempo an eighth note is
+ * 0.2-0.3s apart from the next one, so halving `sustain` for staccato still
+ * leaves `sustain + tail` well over half a second — the note keeps ringing
+ * (through the reverb send too, which follows the same envelope) long past
+ * the next note's onset, and the shortening is barely audible under that.
+ * ScrollScore's own pizzicato guitar technique caps `tail` at 0.12s for
+ * exactly this reason (a damped, short note needs its *release* short too,
+ * not just its sustain) — the same fix, applied to staccato/staccatissimo.
  */
-function applyArticulation(sustain, duration, articulations) {
-  if (!articulations?.length) return { sustain, gain: 1 };
+function applyArticulation(sustain, duration, articulations, tail) {
+  if (!articulations?.length) return { sustain, gain: 1, tail };
   let s = sustain;
   let gain = 1;
-  if (articulations.includes('staccatissimo')) s = duration * 0.25;
-  else if (articulations.includes('staccato')) s = duration * 0.5;
+  let t = tail;
+  if (articulations.includes('staccatissimo')) { s = duration * 0.25; t = Math.min(t, 0.12); }
+  else if (articulations.includes('staccato')) { s = duration * 0.5; t = Math.min(t, 0.2); }
   // Tenuto overrides even a competing shortening mark: holding a note its
   // full value is the entire point of the sign.
   if (articulations.includes('tenuto')) s = Math.max(s, duration * 0.98);
   if (articulations.includes('strong-accent')) gain = 1.5;
   else if (articulations.includes('accent')) gain = 1.3;
-  return { sustain: s, gain };
+  return { sustain: s, gain, tail: t };
 }
 
 function sampledNote(context, buses, samples, midi, at, duration, envelope = {}) {
-  const { tail = TAIL, gainScale = 1, articulations = null } = envelope;
+  const { tail: baseTail = TAIL, gainScale = 1, articulations = null } = envelope;
   const sample = nearest(samples, midi);
   const rate = 2 ** ((midi - sample.midi) / 12);
 
@@ -530,7 +544,7 @@ function sampledNote(context, buses, samples, midi, at, duration, envelope = {})
   source.buffer = sample.buffer;
   source.playbackRate.setValueAtTime(rate, at);
 
-  const { sustain, gain: articGain } = applyArticulation(Math.max(duration, 0.1), duration, articulations);
+  const { sustain, gain: articGain, tail } = applyArticulation(Math.max(duration, 0.1), duration, articulations, baseTail);
   const peak = PEAK_GAIN * gainScale * articGain;
   // The recording may be shorter than the note needs; loop its tail to hold on.
   const needed = (sustain + tail) * rate;
@@ -567,11 +581,11 @@ function sampledNote(context, buses, samples, midi, at, duration, envelope = {})
 
 /** Only reached if the sample set cannot be fetched at all. */
 function fallbackNote(context, buses, midi, at, duration, envelope = {}) {
-  const { tail = TAIL, gainScale = 1, articulations = null } = envelope;
+  const { tail: baseTail = TAIL, gainScale = 1, articulations = null } = envelope;
   const oscillator = context.createOscillator();
   const gain = context.createGain();
   const panner = context.createStereoPanner();
-  const { sustain, gain: articGain } = applyArticulation(Math.max(duration * 0.92, 0.09), duration, articulations);
+  const { sustain, gain: articGain, tail } = applyArticulation(Math.max(duration * 0.92, 0.09), duration, articulations, baseTail);
   const peak = 0.25 * gainScale * articGain;
 
   oscillator.type = 'triangle';
