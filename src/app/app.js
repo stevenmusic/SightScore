@@ -1,9 +1,9 @@
-import { generateTest } from '../generator/generate.js?v=27';
-import { toMusicXml } from '../generator/musicxml.js?v=27';
-import { createHistory, generateUnique } from '../generator/fingerprint.js?v=27';
-import { createKey, pitchAt } from '../generator/theory.js?v=27';
-import { createPlayer } from './playback.js?v=27';
-import { createStage, barTimings } from './stage.js?v=27';
+import { generateTest } from '../generator/generate.js?v=28';
+import { toMusicXml } from '../generator/musicxml.js?v=28';
+import { createHistory, generateUnique } from '../generator/fingerprint.js?v=28';
+import { createKey, pitchAt } from '../generator/theory.js?v=28';
+import { createPlayer } from './playback.js?v=28';
+import { createStage, barTimings } from './stage.js?v=28';
 
 const STORAGE_KEY = 'sightscore.history.v1';
 const LAYOUT_STORAGE_KEY = 'sightscore.layout.v1';
@@ -366,7 +366,10 @@ function showMeta(score) {
     ['meta-key', `${score.key.tonic} ${mode}`],
     ['meta-time', score.timeSignature.text],
     ['meta-bars', `${score.barCount} 小節`],
-    ['meta-tempo', `${score.tempoTerm} (♩≈${score.tempoBpm})`],
+    // The tempo term itself already prints above bar 1 in the score
+    // (pinTempoTermPosition keeps it at a fixed spot there); showing it a
+    // second time here was redundant, so only the metronome mark remains.
+    ['meta-tempo', `♩≈${score.tempoBpm}`],
   ];
   elements.meta.innerHTML = fields
     .map(([cls, value]) => `<span class="${cls}">${escapeHtml(value)}</span>`)

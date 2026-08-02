@@ -259,24 +259,15 @@ button.link:hover { color: var(--gold); }
 .meta-time { flex: none; width: 42px; }  /* widest: "12/8" */
 .meta-bars { flex: none; width: 66px; }  /* widest: "16 小節" */
 /*
- * Tempo is last, so nothing after it depends on its width. A single-line
- * ellipsis here used to hide the BPM value entirely on a narrow phone
- * ("Con moto (♩…" with the number cut off) — wrapping to a second line
- * keeps that visible far more often, and clamping at 2 lines (rather than
- * letting it grow unbounded) keeps the added height small.
- * `-webkit-line-clamp` still ellipsizes the rare case that needs a 3rd
- * line, same as the old single-line version did, just with more headroom
- * first.
+ * Tempo now prints only the metronome mark (♩≈88) — the term itself already
+ * appears above bar 1 in the score (`pinTempoTermPosition`), so it was
+ * dropped from this string. That leaves a short, bounded value ("♩≈46" to
+ * "♩≈168"), so the wrap/clamp machinery a free-text tempo term used to need
+ * here is gone too; it never has to break onto a second line.
  */
 .meta span.meta-tempo {
-  flex: 1 1 auto;
-  min-width: 0;
-  white-space: normal;
-  line-height: 1.2;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
+  flex: none;
+  white-space: nowrap;
 }
 
 /* ---------- score ---------- */
@@ -482,23 +473,14 @@ footer {
   .meta-time { width: 36px; }
   .meta-bars { width: 58px; }
   /*
-   * A short tempo term fits on the same flex-wrap row as key/time/bars on
-   * this narrow a screen; a long one (its content width alone exceeding
-   * what's left on that row) gets pushed by the browser onto a row of its
-   * own — a discrete, content-dependent toggle between a 1-row and a 2-row
-   * meta strip, not just "this element grows a bit taller." Reserving its
-   * within-row height alone left this toggle in place, so the strip — and
-   * everything below it, including the score — still jumped in height
-   * depending on whether *this* test's tempo term happened to be short
-   * ("Waltz") or long ("Sadly and slowly"). `flex-basis: 100%` forces
-   * tempo onto its own row unconditionally, removing the toggle rather
-   * than trying to equalize both of its possible states. Scoped to this
-   * narrow breakpoint only — wider viewports have enough row width that
-   * tempo already shares row 1 consistently, and forcing it to its own
-   * row there regressed `npm run devices` on a short landscape phone and
-   * an iPad (both wider than this breakpoint but short on vertical room).
+   * This block used to force tempo onto its own row unconditionally, because
+   * a long free-text tempo term ("Sadly and slowly") could get pushed onto
+   * a second row by the browser while a short one ("Waltz") shared row 1 —
+   * a content-dependent toggle that made the strip's height (and everything
+   * below it) jump between tests. The meta strip no longer prints the term
+   * at all, only the short, bounded metronome mark, so that toggle can no
+   * longer happen and the override was removed.
    */
-  .meta span.meta-tempo { flex-basis: 100%; min-height: 2.4em; }
 
   .score-frame { padding: 48px 8px 12px; }
   .grade-select { top: 10px; left: 8px; }
