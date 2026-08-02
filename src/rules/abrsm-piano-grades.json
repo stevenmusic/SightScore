@@ -35,7 +35,8 @@
     "12/8": 1,
     "5/4": 0.6,
     "5/8": 0.7,
-    "7/8": 0.4
+    "7/8": 0.4,
+    "7/4": 0.3
   },
   "grades": {
     "1": {
@@ -198,15 +199,15 @@
       "lengthBars": {
         "2/4": [
           6,
-          8
+          6
         ],
         "3/4": [
           4,
-          6
+          4
         ],
         "4/4": [
           4,
-          6
+          4
         ]
       },
       "timeSignatures": [
@@ -516,8 +517,7 @@
         "p",
         "mp",
         "mf",
-        "f",
-        "ff"
+        "f"
       ],
       "dynamicFeatures": [
         "crescendo",
@@ -737,8 +737,7 @@
         "p",
         "mp",
         "mf",
-        "f",
-        "ff"
+        "f"
       ],
       "dynamicFeatures": [
         "crescendo",
@@ -1046,7 +1045,7 @@
     },
     "6": {
       "grade": 6,
-      "confidence": "inferred",
+      "confidence": "partial",
       "lengthBars": {
         "default": [
           10,
@@ -1059,6 +1058,7 @@
         "4/4",
         "3/8",
         "5/8",
+        "5/4",
         "6/8",
         "9/8",
         "12/8",
@@ -1227,13 +1227,15 @@
         "crescendo",
         "diminuendo",
         "sf",
+        "sfz",
         "fp"
       ],
       "otherFeatures": [
         "變換拍號（脈動不變）",
         "踏板",
         "更長的樂句與樂段結構",
-        "rall. / accel."
+        "rall. / accel.",
+        "偶爾出現短暫換譜號（單手暫時改用對方的譜號）"
       ],
       "tempoTerms": [
         "Moderato",
@@ -1256,7 +1258,7 @@
       ],
       "newAtThisGrade": [
         "變換拍號（pulse 不變）",
-        "9/8、12/8、2/2 等拍號",
+        "9/8、12/8、2/2、5/4 等拍號",
         "最多 5 個升降記號的調",
         "三音和弦與內聲部"
       ],
@@ -1275,7 +1277,7 @@
     },
     "7": {
       "grade": 7,
-      "confidence": "inferred",
+      "confidence": "partial",
       "lengthBars": {
         "default": [
           12,
@@ -1287,11 +1289,14 @@
         "3/4",
         "4/4",
         "3/8",
+        "5/8",
         "6/8",
+        "7/8",
         "9/8",
         "12/8",
         "2/2",
-        "5/4"
+        "5/4",
+        "7/4"
       ],
       "changingTimeSignatures": {
         "allowed": true,
@@ -1481,7 +1486,8 @@
         "裝飾音（acciaccatura / 簡單裝飾音）",
         "譜號變換（左手上行進入高音譜號）",
         "踏板",
-        "accel. / rall. / rubato 標示"
+        "accel. / rall. / rubato 標示",
+        "7/8、7/4 等不規則拍號"
       ],
       "tempoTerms": [
         "Moderato",
@@ -1505,7 +1511,7 @@
       ],
       "newAtThisGrade": [
         "裝飾音",
-        "譜號變換",
+        "7/8、7/4 等不規則拍號",
         "更複雜的節奏交錯（2 對 3）",
         "最多 6 個升降記號的調",
         "更長篇幅（12–16 小節）"
@@ -1525,7 +1531,7 @@
     },
     "8": {
       "grade": 8,
-      "confidence": "inferred",
+      "confidence": "partial",
       "lengthBars": {
         "default": [
           12,
@@ -1537,12 +1543,14 @@
         "3/4",
         "4/4",
         "3/8",
+        "5/8",
         "6/8",
+        "7/8",
         "9/8",
         "12/8",
         "2/2",
         "5/4",
-        "7/8"
+        "7/4"
       ],
       "changingTimeSignatures": {
         "allowed": true,

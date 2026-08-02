@@ -370,7 +370,7 @@ function auditMelody(grade, tests) {
       if (seen.has(c)) again += 1;
       else seen.add(c);
     }
-    if (contours.length) restated.push(again / contours.length);
+    if (contours.length && score.barCount >= 6) restated.push(again / contours.length);
   }
 
   const moves = steps + leaps + repeats;
