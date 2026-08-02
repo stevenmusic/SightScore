@@ -1,9 +1,9 @@
-import { generateTest } from '../generator/generate.js?v=21';
-import { toMusicXml } from '../generator/musicxml.js?v=21';
-import { createHistory, generateUnique } from '../generator/fingerprint.js?v=21';
-import { createKey, pitchAt } from '../generator/theory.js?v=21';
-import { createPlayer } from './playback.js?v=21';
-import { createStage, barTimings } from './stage.js?v=21';
+import { generateTest } from '../generator/generate.js?v=22';
+import { toMusicXml } from '../generator/musicxml.js?v=22';
+import { createHistory, generateUnique } from '../generator/fingerprint.js?v=22';
+import { createKey, pitchAt } from '../generator/theory.js?v=22';
+import { createPlayer } from './playback.js?v=22';
+import { createStage, barTimings } from './stage.js?v=22';
 
 const STORAGE_KEY = 'sightscore.history.v1';
 const LAYOUT_STORAGE_KEY = 'sightscore.layout.v1';
@@ -43,12 +43,11 @@ const history = createHistory({
 });
 
 /*
- * Two tests of the same grade and bar count are the same "shape" of test —
- * time signature is deliberately *not* part of the shape, so a Grade 1
- * four-bar test reads the same size whether it's in 2/4, 3/4 or 4/4, the way
- * a real printed sight-reading book keeps a consistent page layout for
- * same-length tests rather than resizing by metre. `fitScore`'s own search
- * is driven by measuring the *rendered* content — how wide a bar comes out
+ * Two tests of the same grade and bar count are the same "shape" of test, so
+ * a Grade 1 four-bar test should read the same size as another Grade 1
+ * four-bar test — the way a real printed sight-reading book keeps a
+ * consistent page layout for same-length tests. `fitScore`'s own search is
+ * driven by measuring the *rendered* content — how wide a bar comes out
  * depends on the beats it holds, note density, chords, accidentals,
  * dynamics — so two same-shaped tests could still land on a different
  * bars-per-line/zoom combination and read as visibly different sizes for no
@@ -64,10 +63,35 @@ const history = createHistory({
  * same-shaped Grade 6 tests: the same "4/4, 12 bars" shape rendered at three
  * different zoom levels). The ratchet only ever shrinks, never grows, so
  * nothing that fit before starts overflowing. `matchesRequestedLayout` (see
- * `fitScore`) is what keeps this safe even with metre dropped from the key:
- * a wider metre (say 12/8) inheriting a cached layout tuned by a narrower
- * one (2/4) that doesn't actually fit gets caught and re-searched rather
- * than silently rendered wrong.
+ * `fitScore`) is what keeps the two dimensions below safe to fold into the
+ * cache key at all: a shape that no longer actually fits (a wider metre, a
+ * narrower viewport) gets caught and re-searched rather than silently
+ * rendered wrong.
+ *
+ * Two axes are deliberately coarser than "exact value" rather than dropped
+ * outright:
+ *
+ * - Time signature is bucketed into `simple` (2/4, 3/4, 4/4 — one beat
+ *   subdivides in two, one bar holds 2-4 quarter notes' worth of content)
+ *   versus `wide` (6/8, 9/8, 12/8, 5/4, 7/8, 7/4, 2/2, 3/8, ... — compound or
+ *   irregular metres, generally more content per bar). Dropping metre
+ *   entirely made every same-length test read the same size regardless of
+ *   time signature, which was the point — but a 2/4 test and a 12/8 test of
+ *   the same bar count do not actually need the same amount of room, and
+ *   forcing them into one shared canonical zoom means whichever metre
+ *   happens to establish the cache first either strands the other one
+ *   needlessly small or gets it re-searched on every single render (never
+ *   settling into the fast path). Two buckets keeps same-length tests
+ *   reading consistently within a metre family without conflating metres
+ *   that need noticeably different amounts of room.
+ * - Viewport width is bucketed too (`layoutWidthClass`), because a size
+ *   established on a narrow phone has no business being the "canonical"
+ *   layout a desktop is then held to — the desktop has room for more bars
+ *   per line and a larger zoom, and reusing the phone's cramped answer would
+ *   waste that space for no reason a reader on a wide screen could point to.
+ *   Coarse tiers rather than the exact pixel width, so minor viewport
+ *   differences (393 vs 430, two phones) still share one canonical layout
+ *   instead of each phone model getting its own.
  */
 const layoutCache = (() => {
   try {
@@ -85,8 +109,24 @@ function saveLayoutCache() {
   }
 }
 
+const SIMPLE_TIME_SIGNATURES = new Set(['2/4', '3/4', '4/4']);
+
+function timeSignatureClass(text) {
+  return SIMPLE_TIME_SIGNATURES.has(text) ? 'simple' : 'wide';
+}
+
+/** Coarse viewport-width tiers, so portrait phone / landscape-or-tablet /
+ * desktop each get their own canonical layout instead of sharing one. */
+function layoutWidthClass() {
+  const width = window.innerWidth || document.documentElement.clientWidth;
+  if (width < 500) return 'phone';
+  if (width < 900) return 'compact';
+  if (width < 1280) return 'medium';
+  return 'wide';
+}
+
 function layoutShapeKey(score) {
-  return `${score.grade}:${score.barCount}`;
+  return `${score.grade}:${score.barCount}:${timeSignatureClass(score.timeSignature.text)}:${layoutWidthClass()}`;
 }
 
 let rules = null;
