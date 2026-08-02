@@ -10,7 +10,7 @@
  *   - a tie needs <tie> (sound) *and* <notations><tied> (looks)
  */
 
-import { keyAlterations, LETTERS } from './theory.js?v=24';
+import { keyAlterations, LETTERS } from './theory.js?v=25';
 
 const ACCIDENTAL_NAMES = {
   '-2': 'flat-flat', '-1': 'flat', 0: 'natural', 1: 'sharp', 2: 'double-sharp',
@@ -55,8 +55,14 @@ export function toMusicXml(score, options = {}) {
       lines.push('        <clef number="1"><sign>G</sign><line>2</line></clef>');
       lines.push('        <clef number="2"><sign>F</sign><line>4</line></clef>');
       lines.push('      </attributes>');
+      // Hang the term off whichever staff actually sounds first — at Grade 1
+      // the right hand may rest through bar 1, and a term left on staff 1
+      // unconditionally then floats above that resting bar's centred whole
+      // rest instead of the hand that actually opens the piece.
+      const opensOn = score.staves[1][0].events.some((event) => !event.rest) ? 1 : 2;
       lines.push('      <direction placement="above">');
       lines.push(`        <direction-type><words font-weight="bold">${escapeXml(score.tempoTerm)}</words></direction-type>`);
+      lines.push(`        <staff>${opensOn}</staff>`);
       lines.push(`        <sound tempo="${score.tempoBpm}"/>`);
       lines.push('      </direction>');
     }
