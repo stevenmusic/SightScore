@@ -481,6 +481,24 @@ footer {
   .meta-key { width: 58px; }
   .meta-time { width: 36px; }
   .meta-bars { width: 58px; }
+  /*
+   * A short tempo term fits on the same flex-wrap row as key/time/bars on
+   * this narrow a screen; a long one (its content width alone exceeding
+   * what's left on that row) gets pushed by the browser onto a row of its
+   * own — a discrete, content-dependent toggle between a 1-row and a 2-row
+   * meta strip, not just "this element grows a bit taller." Reserving its
+   * within-row height alone left this toggle in place, so the strip — and
+   * everything below it, including the score — still jumped in height
+   * depending on whether *this* test's tempo term happened to be short
+   * ("Waltz") or long ("Sadly and slowly"). `flex-basis: 100%` forces
+   * tempo onto its own row unconditionally, removing the toggle rather
+   * than trying to equalize both of its possible states. Scoped to this
+   * narrow breakpoint only — wider viewports have enough row width that
+   * tempo already shares row 1 consistently, and forcing it to its own
+   * row there regressed `npm run devices` on a short landscape phone and
+   * an iPad (both wider than this breakpoint but short on vertical room).
+   */
+  .meta span.meta-tempo { flex-basis: 100%; min-height: 2.4em; }
 
   .score-frame { padding: 48px 8px 12px; }
   .grade-select { top: 10px; left: 8px; }
