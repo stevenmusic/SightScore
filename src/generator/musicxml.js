@@ -10,7 +10,7 @@
  *   - a tie needs <tie> (sound) *and* <notations><tied> (looks)
  */
 
-import { keyAlterations, LETTERS } from './theory.js?v=17';
+import { keyAlterations, LETTERS } from './theory.js?v=18';
 
 const ACCIDENTAL_NAMES = {
   '-2': 'flat-flat', '-1': 'flat', 0: 'natural', 1: 'sharp', 2: 'double-sharp',

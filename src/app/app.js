@@ -1,9 +1,9 @@
-import { generateTest } from '../generator/generate.js?v=17';
-import { toMusicXml } from '../generator/musicxml.js?v=17';
-import { createHistory, generateUnique } from '../generator/fingerprint.js?v=17';
-import { createKey, pitchAt } from '../generator/theory.js?v=17';
-import { createPlayer } from './playback.js?v=17';
-import { createStage, barTimings } from './stage.js?v=17';
+import { generateTest } from '../generator/generate.js?v=18';
+import { toMusicXml } from '../generator/musicxml.js?v=18';
+import { createHistory, generateUnique } from '../generator/fingerprint.js?v=18';
+import { createKey, pitchAt } from '../generator/theory.js?v=18';
+import { createPlayer } from './playback.js?v=18';
+import { createStage, barTimings } from './stage.js?v=18';
 
 const STORAGE_KEY = 'sightscore.history.v1';
 const LAYOUT_STORAGE_KEY = 'sightscore.layout.v1';
@@ -148,7 +148,17 @@ async function init() {
       drawTitle: false,
       drawPartNames: false,
       drawingParameters: 'default',
+      // OSMD's default leaves the last system of a piece at its own natural
+      // width rather than justifying it to the frame like every other line —
+      // normal typesetting convention, but with `fitScore` forcing a uniform
+      // bars-per-line count so that same-shaped tests share a layout (see
+      // `layoutCache`), it means two lines with the *same* bar count can
+      // still end at different points, which reads as misaligned rather than
+      // deliberate. Stretching the last line to match keeps every line's
+      // right edge where the reader expects it.
+      stretchLastSystemLine: true,
     });
+    osmd.EngravingRules.FixedMeasureWidth = true;
   } catch (error) {
     fail('無法初始化樂譜渲染器', error.message);
     return;
