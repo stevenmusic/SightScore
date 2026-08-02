@@ -7,15 +7,15 @@
  *   articulation and tempo term.
  */
 
-import { createRandom, randomSeed } from './random.js';
-import { createKey, dstepRange, degreeOf, pitchAt, chordDegrees } from './theory.js';
-import { buildProgression, firstChord, lastChord, halfCadenceBar } from './harmony.js';
+import { createRandom, randomSeed } from './random.js?v=16';
+import { createKey, dstepRange, degreeOf, pitchAt, chordDegrees } from './theory.js?v=16';
+import { buildProgression, firstChord, lastChord, halfCadenceBar } from './harmony.js?v=16';
 import {
   assignPitches, stackChordTones, soundingTimeline, harmoniseLeadingNotes, harmoniseRepeatedLeadingNotes,
   relaxParallels,
-} from './melody.js';
-import { DIVISIONS, cellsFor, fillBar, wholeBarRest } from './rhythm.js';
-import { meterInfo, rescaleCells } from './meter.js';
+} from './melody.js?v=16';
+import { DIVISIONS, cellsFor, fillBar, wholeBarRest } from './rhythm.js?v=16';
+import { meterInfo, rescaleCells } from './meter.js?v=16';
 
 const TEMPO_BPM = {
   Grave: 46, Largo: 52, Adagio: 60, Lento: 58, Andante: 76, Andantino: 84,
@@ -579,8 +579,24 @@ function applyExpression(rng, rules, score) {
       const pair = [staff[barIndex], staff[barIndex + 1]].filter(Boolean);
       const sounding = pair.flatMap((bar) => bar.events.filter((event) => !event.rest));
       if (sounding.length < 2) continue;
-      // Don't slur across a bar the hand sits out (Grade 1 alternation).
-      const unbroken = pair.every((bar) => bar.events.some((event) => !event.rest));
+      /*
+       * A slur has to cover a continuous line, not sounding notes with a
+       * silence in between. Checking only "does each bar in the pair have
+       * *some* sounding note" (originally to keep Grade 1's alternating
+       * hands from getting slurred across a bar they sit out entirely) let
+       * a bar like [note, rest, note] through too — the rest sits inside
+       * the very span the slur curve is drawn across, which engraves (and
+       * would sound, once playback follows slur spans) as a phrase mark
+       * reaching straight through a silence. Every event between the pair's
+       * first and last *sounding* note, inclusive, now has to itself be a
+       * sounding note.
+       */
+      const pairEvents = pair.flatMap((bar) => bar.events);
+      const firstSoundingIndex = pairEvents.findIndex((event) => !event.rest);
+      const lastSoundingIndex = pairEvents.length - 1
+        - [...pairEvents].reverse().findIndex((event) => !event.rest);
+      const unbroken = firstSoundingIndex !== -1
+        && pairEvents.slice(firstSoundingIndex, lastSoundingIndex + 1).every((event) => !event.rest);
 
       if (canSlur && unbroken && rng.chance(staffNumber === 1 ? 0.75 : 0.35)) {
         sounding[0].slur = 'start';

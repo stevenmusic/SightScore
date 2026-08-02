@@ -412,6 +412,30 @@ test('a pedal span never holds through an unmarked harmony change', () => {
   });
 });
 
+test('a slur never spans a rest', () => {
+  // `applyExpression` only checked that each bar in the pair had *some*
+  // sounding note, not that the whole span between the pair's first and
+  // last sounding note was continuous — a bar shaped [note, rest, note]
+  // passed that check and still got slurred straight across the rest.
+  eachTest((score, _grade, context) => {
+    for (const staffNumber of [1, 2]) {
+      const events = score.staves[staffNumber].flatMap((bar) => bar.events);
+      let openIndex = null;
+      events.forEach((event, index) => {
+        if (event.slur === 'start') openIndex = index;
+        if (event.slur === 'stop' && openIndex !== null) {
+          const span = events.slice(openIndex, index + 1);
+          assert.ok(
+            span.every((e) => !e.rest),
+            `grade ${context.grade} seed ${context.seed} staff ${staffNumber}: slur spans a rest`,
+          );
+          openIndex = null;
+        }
+      });
+    }
+  });
+});
+
 test('a melodic hand develops fresh rhythm rather than leaning on repetition', () => {
   // A genuine accompaniment (Grade 2-3's left hand, once the hands play
   // together) is *supposed* to repeat one figure for the whole piece — real
