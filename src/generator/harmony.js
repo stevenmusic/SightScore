@@ -96,18 +96,42 @@ export function buildProgression(rng, barCount, options = {}) {
   // harmonic rhythm real intermediate/advanced tests use — never the
   // opening or the closing cadence, which anchor the phrase.
   let previous = 'I';
+  // How many bars running the harmony has already sat on `previous`,
+  // counting the opening bar itself — see the prolongation comment below.
+  let sameChordRun = 1;
   for (let bar = 1; bar < barCount - 2; bar++) {
     if (bar === half) {
       progression[bar] = 'V';
       previous = 'V';
+      sameChordRun = 1;
       continue;
     }
     // The consequent begins by restating home, the way the piece opened.
     if (half !== null && bar === half + 1) {
       progression[bar] = 'I';
       previous = 'I';
+      sameChordRun = 1;
       continue;
     }
+    /*
+     * Real tonal writing prolongs a chord across more than one bar — most
+     * often the opening tonic, establishing the key before the harmony
+     * starts moving — rather than changing on every single barline.
+     * `mayFollow` below still refuses to *pick* a repeat when the harmony
+     * does move on, which is correct (a "next chord" that's the same chord
+     * isn't a move at all); without a separate chance to simply hold still
+     * first, that meant harmony changed on 100% of bars, every time, which
+     * is a far busier harmonic rhythm than these short, simple tests
+     * actually have. Capped at two bars running the same chord — even a
+     * held tonic opening rarely sits still longer than that here.
+     */
+    if (sameChordRun < 2 && rng.chance(bar === 1 && previous === 'I' ? 0.45 : 0.2)) {
+      progression[bar] = previous;
+      sameChordRun += 1;
+      continue;
+    }
+    sameChordRun = 1;
+
     const first = rng.weighted(mayFollow(table, previous)).chord;
     if (twoChordBarChance > 0 && rng.chance(twoChordBarChance)) {
       const second = rng.weighted(mayFollow(table, first)).chord;

@@ -85,10 +85,31 @@ function auditHarmony(grade, tests) {
   let cadenceVRoot = 0;
   let finalTonicBass = 0;
   let tests0 = 0;
+  let barTransitions = 0;
+  let repeatedChordBars = 0;
 
   for (const score of tests) {
     const key = createKey(score.key);
     tests0 += 1;
+    /*
+     * How often the harmony simply holds still for another bar instead of
+     * moving. `mayFollow` (harmony.js) still refuses to *pick* a repeat when
+     * the progression actually decides to move on — real tonal writing does
+     * not "move to" the chord it is already on — but without a separate,
+     * deliberate chance to prolong a chord first, the harmony changed on
+     * every single bar, which is a busier harmonic rhythm than these short,
+     * simple tests actually have (real practice, especially the opening
+     * tonic, regularly sits still for a bar or two). Only plain (non-split)
+     * neighbours count — a split bar is already two chords in one bar, not a
+     * comparison of "did the bar change."
+     */
+    for (let bar = 1; bar < score.progression.length; bar++) {
+      const prev = score.progression[bar - 1];
+      const curr = score.progression[bar];
+      if (Array.isArray(prev) || Array.isArray(curr)) continue;
+      barTransitions += 1;
+      if (curr === prev) repeatedChordBars += 1;
+    }
     /*
      * The span this hand actually occupies. In a five-finger grade the hand
      * has five notes and the root of, say, vi simply may not be one of them —
@@ -166,6 +187,9 @@ function auditHarmony(grade, tests) {
     cadRate >= cadFloor, `>=${cadFloor}% (a V-I cadence needs the dominant root)`));
   lines.push(check('harmony', grade, 'final bass note is the tonic', `${fixed(pct(finalTonicBass, tests0))}%`,
     pct(finalTonicBass, tests0) >= 95, '>=95%'));
+  const repeatRate = pct(repeatedChordBars, barTransitions);
+  lines.push(check('harmony', grade, 'chord held over from the previous bar', `${fixed(repeatRate)}%`,
+    repeatRate >= 5 && repeatRate <= 30, '5%-30% of bar transitions (real writing prolongs a chord sometimes, not never)'));
   return lines;
 }
 
@@ -304,18 +328,31 @@ function auditMelody(grade, tests) {
   const restated = [];
   const peakPos = [];
   const intervals = {};
+  // How often a leap continues the same direction as the leap before it —
+  // an arpeggio/broken-chord figure, the shape a keyboard idiom leans on
+  // heavily and vocal-style "leap then step back" part-writing forbids.
+  let leapContinuations = 0;
+  let leapTransitions = 0;
 
   for (const score of tests) {
     const notes = notesOfStaff(score, 1).map((n) => n.event);
     if (notes.length < 3) continue;
     const ds = notes.map((n) => n.dstep);
+    let previousLeapDirection = 0;
     for (let i = 1; i < ds.length; i++) {
       const iv = ds[i] - ds[i - 1];
       const size = Math.abs(iv);
       intervals[size] = (intervals[size] ?? 0) + 1;
-      if (size === 0) repeats += 1;
-      else if (size === 1) steps += 1;
-      else leaps += 1;
+      if (size === 0) { repeats += 1; previousLeapDirection = 0; }
+      else if (size === 1) { steps += 1; previousLeapDirection = 0; }
+      else {
+        leaps += 1;
+        if (previousLeapDirection !== 0) {
+          leapTransitions += 1;
+          if (Math.sign(iv) === previousLeapDirection) leapContinuations += 1;
+        }
+        previousLeapDirection = Math.sign(iv);
+      }
     }
     cadenceTotal += 1;
     if (Math.abs(ds[ds.length - 1] - ds[ds.length - 2]) === 1) cadenceStep += 1;
@@ -353,6 +390,16 @@ function auditMelody(grade, tests) {
     stepRate >= 40 && stepRate <= declared + 10, `40%-${declared + 10}% (declared weight ${declared}%)`));
   lines.push(check('melody', grade, 'repeated notes', `${fixed(pct(repeats, moves))}%`,
     pct(repeats, moves) <= 20, '<=20%'));
+  /*
+   * Not a target to hit exactly — just evidence the figure is reachable at
+   * all. Before `pickWeighted` distinguished "isolated big leap" from "leap
+   * continuing an arpeggio," every leap of a third or more was 6x more
+   * likely to reverse direction than continue it regardless of context, so
+   * a broken-chord figure past two notes essentially never survived.
+   */
+  const leapContinueRate = pct(leapContinuations, leapTransitions);
+  lines.push(check('melody', grade, 'leaps continuing the same direction (arpeggio-like)', `${fixed(leapContinueRate)}%`,
+    leapContinueRate >= 5, '>=5% of same-direction-eligible leap pairs (broken-chord figures should be reachable)'));
   const mean = (xs) => xs.reduce((a, b) => a + b, 0) / (xs.length || 1);
   /*
    * A period needs two phrases to put a restatement in. Grade 1 runs to 4-6

@@ -71,6 +71,11 @@ export function assignPitches({ rng, key, bars, progression, window, options, ag
   // steps — see pickWeighted for why this matters.
   let runDirection = 0;
   let runLength = 0;
+  // Same idea, for consecutive same-direction leaps that stay on chord
+  // tones — an arpeggio/broken-chord figure rather than a run of scale
+  // steps. See pickWeighted for why leaps need this tracked separately.
+  let arpeggioDirection = 0;
+  let arpeggioLength = 0;
   // The chord the previous note belonged to, so a harmony arrival can be told
   // from a note merely continuing under the same chord.
   let previousChord = null;
@@ -217,6 +222,8 @@ export function assignPitches({ rng, key, bars, progression, window, options, ag
           repeatRun,
           runDirection,
           runLength,
+          arpeggioDirection,
+          arpeggioLength,
           previousWasChordTone,
           previousWasLeadingNote,
           previousBass,
@@ -235,6 +242,10 @@ export function assignPitches({ rng, key, bars, progression, window, options, ag
       if (motifSource) motifIndex += 1;
       noteIndex += 1;
 
+      // Captured before `previousWasChordTone` is overwritten below: this is
+      // whether the note we are moving *from* was itself a chord tone, which
+      // an arpeggio's continuation needs on both ends of the leap.
+      const fromWasChordTone = previousWasChordTone;
       previousWasChordTone = tones.includes(degreeOf(chosen, key));
       /*
        * A leading note only *functions* as one when it sits on dominant
@@ -255,6 +266,14 @@ export function assignPitches({ rng, key, bars, progression, window, options, ag
         runDirection = stepDirection;
         runLength = stepDirection !== 0 ? 1 : 0;
       }
+      const leapDirection = Math.abs(interval) >= 2 ? Math.sign(interval) : 0;
+      const continuesArpeggio = leapDirection !== 0 && fromWasChordTone && previousWasChordTone;
+      if (continuesArpeggio && leapDirection === arpeggioDirection) {
+        arpeggioLength += 1;
+      } else {
+        arpeggioDirection = continuesArpeggio ? leapDirection : 0;
+        arpeggioLength = continuesArpeggio ? 1 : 0;
+      }
       previousLeap = interval;
       previous = chosen;
 
@@ -270,7 +289,7 @@ export function assignPitches({ rng, key, bars, progression, window, options, ag
     });
   });
 
-  repairNonChordTones(bars, key, window, { against, barDuration });
+  repairNonChordTones(bars, key, window, { against, barDuration, finalEvent: endOnTonic ? finalEvent : null });
   fixAugmentedSeconds(bars, key);
   // Both repairs move pitches after the vertical check, so verify once more.
   resolveClashes({ bars, key, window, against, barDuration, finalEvent: endOnTonic ? finalEvent : null });
@@ -482,8 +501,8 @@ function cadenceApproach(tonicDstep, previous, window) {
 function pickWeighted(ctx) {
   const {
     rng, key, allSteps, previous, previousLeap, repeatRun, runDirection, runLength, tones,
-    onBeat, isDownbeat, centre, stepwiseBias, maxLeapSemitones, chordToneOnly, sounding,
-    previousWasChordTone, previousWasLeadingNote, previousBass, preferred = null,
+    arpeggioDirection, arpeggioLength, onBeat, isDownbeat, centre, stepwiseBias, maxLeapSemitones,
+    chordToneOnly, sounding, previousWasChordTone, previousWasLeadingNote, previousBass, preferred = null,
   } = ctx;
   const bass = sounding.length ? Math.min(...sounding) : null;
 
@@ -632,7 +651,23 @@ function pickWeighted(ctx) {
       else if (dstep < previous) weight *= 0.35;
     }
     if (clash) weight *= 0.3;
-    if (Math.abs(previousLeap) >= 3) {
+    /*
+     * An isolated big leap wants compensating by stepping back — ordinary
+     * vocal-style part-writing practice. But a leap that *continues* an
+     * arpeggio already in progress (same direction, both ends chord tones)
+     * is a different thing entirely: broken-chord figures (Alberti bass,
+     * arpeggiated melody) are keyboard-idiomatic writing that keeps going
+     * the same direction for several notes, and applying the reversal rule
+     * to it as well was quietly forbidding exactly that figure — after one
+     * leap outlining a chord, the very next note was 6x more likely to turn
+     * back than to complete the triad. Boost continuation instead, capped
+     * like the step-run bonus so it tapers off rather than running forever.
+     */
+    const continuesArpeggio = arpeggioDirection !== 0 && distance >= 2
+      && Math.sign(interval) === arpeggioDirection && isChordTone;
+    if (continuesArpeggio) {
+      weight *= 1 + Math.min(arpeggioLength, 3) * 0.8;
+    } else if (Math.abs(previousLeap) >= 3) {
       weight *= Math.sign(interval) === -Math.sign(previousLeap) ? 2.5 : 0.4;
     }
     weight *= 1 / (1 + Math.abs(dstep - centre) * 0.12);
@@ -743,9 +778,13 @@ function pickWeighted(ctx) {
   // otherwise a run this same weighting just made attractive within the
   // step category could still get cut short by an unrelated leap roll.
   const runBoost = runDirection !== 0 ? 1 + Math.min(runLength, 4) * 0.5 : 1;
+  // Same reasoning for an arpeggio in progress: the within-category boost
+  // above only matters if the leap category is even rolled in the first
+  // place.
+  const leapBoost = arpeggioDirection !== 0 ? 1 + Math.min(arpeggioLength, 3) * 0.5 : 1;
   const categories = [];
   if (steps.length) categories.push({ items: steps, weight: 10 * stepwiseBias * runBoost });
-  if (leaps.length) categories.push({ items: leaps, weight: 10 * (1 - stepwiseBias) });
+  if (leaps.length) categories.push({ items: leaps, weight: 10 * (1 - stepwiseBias) * leapBoost });
   if (repeats.length) categories.push({ items: repeats, weight: 1 });
   return rng.weighted(rng.weighted(categories).items).dstep;
 }
@@ -863,7 +902,7 @@ export function harmoniseRepeatedLeadingNotes(bars, key) {
  * A passing note that leaps in or out is not a passing note, it is a wrong
  * note. Replace those with the nearest chord tone.
  */
-function repairNonChordTones(bars, key, window, { against = null, barDuration = 0 } = {}) {
+function repairNonChordTones(bars, key, window, { against = null, barDuration = 0, finalEvent = null } = {}) {
   const notes = bars.flatMap((bar) => bar.events.filter((event) => !event.rest));
   // Where each note sits in absolute time, so a replacement can be checked
   // against the other hand. This pass is otherwise vertically blind, which is
@@ -882,6 +921,21 @@ function repairNonChordTones(bars, key, window, { against = null, barDuration = 
   notes.forEach((note, index) => {
     if (!note.chordDegrees) return;
     if (note.chordDegrees.includes(degreeOf(note.dstep, key))) return;
+    /*
+     * The deliberately-forced final tonic is exempt, the same way
+     * `resolveClashes` already treats it specially. A hand whose own part
+     * ends before the piece's actual cadence (Grade 1's alternating hands,
+     * whichever hand finishes first) still gets `endOnTonic` applied to its
+     * own last note — landing on tonic is right even though the *local*
+     * harmony there hasn't reached the true final I yet, so tonic genuinely
+     * isn't one of that harmony's chord tones. Treating that mismatch as a
+     * fault to correct relocated the note off tonic entirely — silently
+     * undoing the forced ending — and `shapeCadence` (which runs later,
+     * trusting this note's dstep to still be the tonic it approaches) then
+     * built its leading-tone approach around the wrong anchor, writing a
+     * fresh augmented 2nd that nothing downstream was positioned to catch.
+     */
+    if (note === finalEvent) return;
 
     const previous = notes[index - 1];
     const next = notes[index + 1];
@@ -894,10 +948,21 @@ function repairNonChordTones(bars, key, window, { against = null, barDuration = 
     const options = [];
     for (let dstep = window.low; dstep <= window.high; dstep++) {
       if (!note.chordDegrees.includes(degreeOf(dstep, key))) continue;
-      if (degreeOf(dstep, key) === 6 && sounding.length) {
+      const raiseSeventh = degreeOf(dstep, key) === 6;
+      if (raiseSeventh && sounding.length) {
         const midi = pitchAt(dstep, key, { raiseSeventh: true }).midi;
         if (sounding.some((other) => (other % 12) === (midi % 12))) continue;
       }
+      // Relocating this note must not write an augmented 2nd against its own
+      // neighbours — a real case, not a hypothetical one: a note forced onto
+      // an harmonically foreign degree (a hand's own part ending on tonic
+      // under harmony that has moved past I, at Grade 1's alternating hands)
+      // gets flagged as a non-chord tone here, and the nearest actual chord
+      // tone to relocate it to can easily be the raised 7th sitting a step
+      // from the note's own natural-6th neighbour. `moveOffParallel` already
+      // guards its relocations this way; this pass moves notes too and had
+      // no such guard at all.
+      if (writesAugmentedSecond(notes, index, dstep, raiseSeventh, key)) continue;
       options.push(dstep);
     }
     if (!options.length) return;
