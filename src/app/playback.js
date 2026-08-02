@@ -519,6 +519,14 @@ function nearest(samples, midi) {
  * ScrollScore's own pizzicato guitar technique caps `tail` at 0.12s for
  * exactly this reason (a damped, short note needs its *release* short too,
  * not just its sustain) — the same fix, applied to staccato/staccatissimo.
+ *
+ * `staccato`'s 0.5 was the textbook rule ("half the written value"), but a
+ * real pianist cuts a staccato note noticeably shorter than that, especially
+ * in a light/quick sight-reading piece — closer to a third of the value, so
+ * the gap before the next note's onset reads as a real detachment rather
+ * than just a slightly shorter note. Narrowed to 0.35 (tail correspondingly
+ * to 0.15s) while keeping a clear gap above staccatissimo's 0.25/0.12s, so
+ * the two marks still sound distinct from each other.
  */
 function applyArticulation(sustain, duration, articulations, tail) {
   if (!articulations?.length) return { sustain, gain: 1, tail };
@@ -526,7 +534,7 @@ function applyArticulation(sustain, duration, articulations, tail) {
   let gain = 1;
   let t = tail;
   if (articulations.includes('staccatissimo')) { s = duration * 0.25; t = Math.min(t, 0.12); }
-  else if (articulations.includes('staccato')) { s = duration * 0.5; t = Math.min(t, 0.2); }
+  else if (articulations.includes('staccato')) { s = duration * 0.35; t = Math.min(t, 0.15); }
   // Tenuto overrides even a competing shortening mark: holding a note its
   // full value is the entire point of the sign.
   if (articulations.includes('tenuto')) s = Math.max(s, duration * 0.98);
