@@ -1,9 +1,9 @@
-import { generateTest } from '../generator/generate.js?v=20';
-import { toMusicXml } from '../generator/musicxml.js?v=20';
-import { createHistory, generateUnique } from '../generator/fingerprint.js?v=20';
-import { createKey, pitchAt } from '../generator/theory.js?v=20';
-import { createPlayer } from './playback.js?v=20';
-import { createStage, barTimings } from './stage.js?v=20';
+import { generateTest } from '../generator/generate.js?v=21';
+import { toMusicXml } from '../generator/musicxml.js?v=21';
+import { createHistory, generateUnique } from '../generator/fingerprint.js?v=21';
+import { createKey, pitchAt } from '../generator/theory.js?v=21';
+import { createPlayer } from './playback.js?v=21';
+import { createStage, barTimings } from './stage.js?v=21';
 
 const STORAGE_KEY = 'sightscore.history.v1';
 const LAYOUT_STORAGE_KEY = 'sightscore.layout.v1';
@@ -43,24 +43,31 @@ const history = createHistory({
 });
 
 /*
- * Two tests of the same grade, bar count and time signature are the same
- * "shape" of test, but `fitScore`'s own search is driven by measuring the
- * *rendered* content — how wide a bar comes out depends on note density,
- * chords, accidentals, dynamics — so two same-shaped tests could still land
- * on a different bars-per-line/zoom combination and read as visibly
- * different sizes for no reason a reader could point to. Keyed by shape and
- * persisted (not just per-session) so the same shape always converges on the
- * same size, the way a printed sight-reading book would set it. The first
- * test of a given shape establishes the canonical layout; a later same-shaped
- * test whose own content is denser and needs more shrinking ratchets the
- * cached zoom down to match (see `fitScore`) rather than shrinking only for
- * that one render and forgetting it — otherwise two same-shaped tests could
- * each shrink by a different amount from the original cached zoom and still
- * end up visibly different sizes from each other, which was happening in
- * practice (confirmed by generating dozens of same-shaped Grade 6 tests: the
- * same "4/4, 12 bars" shape rendered at three different zoom levels). The
- * ratchet only ever shrinks, never grows, so nothing that fit before starts
- * overflowing.
+ * Two tests of the same grade and bar count are the same "shape" of test —
+ * time signature is deliberately *not* part of the shape, so a Grade 1
+ * four-bar test reads the same size whether it's in 2/4, 3/4 or 4/4, the way
+ * a real printed sight-reading book keeps a consistent page layout for
+ * same-length tests rather than resizing by metre. `fitScore`'s own search
+ * is driven by measuring the *rendered* content — how wide a bar comes out
+ * depends on the beats it holds, note density, chords, accidentals,
+ * dynamics — so two same-shaped tests could still land on a different
+ * bars-per-line/zoom combination and read as visibly different sizes for no
+ * reason a reader could point to. Keyed by shape and persisted (not just
+ * per-session) so the same shape always converges on the same size. The
+ * first test of a given shape establishes the canonical layout; a later
+ * same-shaped test whose own content is denser and needs more shrinking
+ * ratchets the cached zoom down to match (see `fitScore`) rather than
+ * shrinking only for that one render and forgetting it — otherwise two
+ * same-shaped tests could each shrink by a different amount from the
+ * original cached zoom and still end up visibly different sizes from each
+ * other, which was happening in practice (confirmed by generating dozens of
+ * same-shaped Grade 6 tests: the same "4/4, 12 bars" shape rendered at three
+ * different zoom levels). The ratchet only ever shrinks, never grows, so
+ * nothing that fit before starts overflowing. `matchesRequestedLayout` (see
+ * `fitScore`) is what keeps this safe even with metre dropped from the key:
+ * a wider metre (say 12/8) inheriting a cached layout tuned by a narrower
+ * one (2/4) that doesn't actually fit gets caught and re-searched rather
+ * than silently rendered wrong.
  */
 const layoutCache = (() => {
   try {
@@ -79,7 +86,7 @@ function saveLayoutCache() {
 }
 
 function layoutShapeKey(score) {
-  return `${score.grade}:${score.barCount}:${score.timeSignature.text}`;
+  return `${score.grade}:${score.barCount}`;
 }
 
 let rules = null;
