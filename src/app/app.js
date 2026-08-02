@@ -6,6 +6,7 @@ import { createPlayer } from './playback.js';
 import { createStage, barTimings } from './stage.js';
 
 const STORAGE_KEY = 'sightscore.history.v1';
+const LAYOUT_STORAGE_KEY = 'sightscore.layout.v1';
 
 const elements = {
   grade: document.getElementById('grade'),
@@ -40,6 +41,40 @@ const history = createHistory({
   load: () => JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]'),
   save: (entries) => localStorage.setItem(STORAGE_KEY, JSON.stringify(entries)),
 });
+
+/*
+ * Two tests of the same grade, bar count and time signature are the same
+ * "shape" of test, but `fitScore`'s own search is driven by measuring the
+ * *rendered* content — how wide a bar comes out depends on note density,
+ * chords, accidentals, dynamics — so two same-shaped tests could still land
+ * on a different bars-per-line/zoom combination and read as visibly
+ * different sizes for no reason a reader could point to. Keyed by shape and
+ * persisted (not just per-session) so the same shape always converges on the
+ * same size, the way a printed sight-reading book would set it. The first
+ * test of a given shape establishes the canonical layout; later same-shaped
+ * tests reuse it, only adjusting zoom downward if that particular test's own
+ * content genuinely needs more room (denser content never overflows, it just
+ * stops matching the canonical size for that one render).
+ */
+const layoutCache = (() => {
+  try {
+    return JSON.parse(localStorage.getItem(LAYOUT_STORAGE_KEY) ?? '{}');
+  } catch {
+    return {};
+  }
+})();
+
+function saveLayoutCache() {
+  try {
+    localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(layoutCache));
+  } catch {
+    /* storage full or unavailable — the layout still works, just isn't remembered */
+  }
+}
+
+function layoutShapeKey(score) {
+  return `${score.grade}:${score.barCount}:${score.timeSignature.text}`;
+}
 
 let rules = null;
 let osmd = null;
@@ -401,6 +436,20 @@ function hasSingleBarLine(layout) {
  */
 async function fitScore() {
   if (!current || !osmd) return;
+
+  const shapeKey = layoutShapeKey(current.score);
+  const cached = layoutCache[shapeKey];
+  if (cached) {
+    osmd.EngravingRules.RenderXMeasuresPerLineAkaSystem = cached.measuresPerLine;
+    // Re-shrinks from the cached zoom only if *this* render's own content
+    // (denser notes, more accidentals) doesn't actually fit it — the cache
+    // itself is never overwritten by that, so later same-shaped tests still
+    // converge back on the canonical size.
+    const result = shrinkUntilNoSingleBarLines(cached.zoom, { fitHeight: true });
+    ensureFitsHeight(result.zoom);
+    return;
+  }
+
   osmd.EngravingRules.RenderXMeasuresPerLineAkaSystem = 0;
   const natural = shrinkUntilNoSingleBarLines(BASE_ZOOM);
   const totalBars = natural.layout.bars.size;
@@ -443,6 +492,11 @@ async function fitScore() {
    * test into five lines to avoid one short one.
    */
   const chosen = search(true) ?? search(false);
+  // `tryCount` leaves `RenderXMeasuresPerLineAkaSystem` set to whichever `n`
+  // it last tried, and the loops stop trying more once `chosen` is found —
+  // so this is still the winning count, captured before the fallback branch
+  // below can reset it back to 0 (natural wrap).
+  const measuresPerLine = chosen ? osmd.EngravingRules.RenderXMeasuresPerLineAkaSystem : 0;
 
   if (!chosen) {
     osmd.EngravingRules.RenderXMeasuresPerLineAkaSystem = 0;
@@ -450,6 +504,9 @@ async function fitScore() {
     osmd.render();
     stage.measure();
   }
+
+  layoutCache[shapeKey] = { measuresPerLine, zoom: chosen ? chosen.zoom : natural.zoom };
+  saveLayoutCache();
 
   ensureFitsHeight(chosen ? chosen.zoom : natural.zoom);
 }
