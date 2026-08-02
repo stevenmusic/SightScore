@@ -1,9 +1,9 @@
-import { generateTest } from '../generator/generate.js?v=29';
-import { toMusicXml } from '../generator/musicxml.js?v=29';
-import { createHistory, generateUnique } from '../generator/fingerprint.js?v=29';
-import { createKey, pitchAt } from '../generator/theory.js?v=29';
-import { createPlayer } from './playback.js?v=29';
-import { createStage, barTimings } from './stage.js?v=29';
+import { generateTest } from '../generator/generate.js?v=30';
+import { toMusicXml } from '../generator/musicxml.js?v=30';
+import { createHistory, generateUnique } from '../generator/fingerprint.js?v=30';
+import { createKey, pitchAt } from '../generator/theory.js?v=30';
+import { createPlayer } from './playback.js?v=30';
+import { createStage, barTimings } from './stage.js?v=30';
 
 const STORAGE_KEY = 'sightscore.history.v1';
 const LAYOUT_STORAGE_KEY = 'sightscore.layout.v1';
@@ -247,6 +247,14 @@ async function init() {
       drawTitle: false,
       drawPartNames: false,
       drawingParameters: 'default',
+      // OSMD's default numbers a bar at the start of every system *and*
+      // periodically on a fixed interval regardless of line breaks — with
+      // `fitScore` forcing a uniform bars-per-line count, that interval
+      // routinely lands on a bar mid-line too (e.g. bar 3 of a 3-per-line
+      // test), printing a number nothing but the first bar of each line
+      // should carry. Real engraving (and this app's own convention
+      // everywhere else) numbers a line by its first bar only.
+      drawMeasureNumbersOnlyAtSystemStart: true,
       // OSMD's default leaves the last system of a piece at its own natural
       // width rather than justifying it to the frame like every other line —
       // normal typesetting convention, but with `fitScore` forcing a uniform
