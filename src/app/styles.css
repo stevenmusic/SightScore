@@ -242,6 +242,11 @@ button.link:hover { color: var(--gold); }
   font-size: var(--fs-md);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+  /* A small positive track on bold text this size reads clearer at a
+     glance — the same per-size tuning principle as the countdown's
+     negative track at the opposite end of the scale, just the sign
+     small text wants rather than a big display numeral. */
+  letter-spacing: 0.01em;
   color: var(--ivory);
   white-space: nowrap;
 }
@@ -313,6 +318,11 @@ button.link:hover { color: var(--gold); }
   font-variant-numeric: tabular-nums;
   font-size: 44px;
   font-weight: 700;
+  /* The one large display numeral on the page — a slight negative track
+     tightens it the way a considered type scale treats its biggest size,
+     without going anywhere near a sans-serif display's aggressive negative
+     spacing (that reads wrong on a serif face at this weight). */
+  letter-spacing: -0.02em;
   line-height: 1;
   color: var(--gold);
   text-align: right;
