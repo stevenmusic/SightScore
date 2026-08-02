@@ -18,13 +18,11 @@
   --muted-bright: #544B3B;
   --line: #D8CDB2;
 
-  --shadow-sm: 0 4px 14px rgba(90, 72, 30, .10);
-  --shadow-md: 0 10px 26px rgba(90, 72, 30, .14);
-  --shadow-lg: 0 18px 44px rgba(90, 72, 30, .18);
-
+  /* No shadow scale, no larger radius steps — the app deliberately has no
+     drop shadows or big-radius cards anywhere (see .topbar/.score-frame),
+     so ScrollScore's full token set was trimmed to only what's actually
+     used rather than carrying dead variables that contradict that. */
   --radius-sm: 8px;
-  --radius-md: 14px;
-  --radius-lg: 18px;
   --radius-pill: 999px;
 
   --fs-2xs: 11px;
