@@ -504,6 +504,26 @@ footer {
 
 @media (min-width: 561px) and (max-width: 1024px) {
   body { --body-px: 20px; padding: 0 var(--body-px) 36px; }
+
+  /*
+   * A tablet is normally read from further away than a phone held in the
+   * hand — held on a stand or propped up like real sheet music, closer to a
+   * desktop's viewing distance than a phone's — so reusing the phone-tuned
+   * base sizes here read small even though there isn't room yet for the
+   * combined row 1024px and up gets. `.btn.icon-only`'s own width stays
+   * explicit rather than inherited from the plain `.btn` rule below it in
+   * the 680px block, so icon-only buttons stay square instead of 42px
+   * tall but still 36px wide in the part of this range narrow enough to
+   * also be in icon-only mode.
+   */
+  .btn { font-size: 16px; height: 42px; }
+  .btn.icon-only { width: 42px; }
+  .grade-select { font-size: 16px; padding: 8px 10px; }
+  .meta span { font-size: 18px; }
+  .meta-key { width: 86px; }
+  .meta-time { width: 54px; }
+  .meta-bars { width: 84px; }
+  .countdown { font-size: 52px; }
 }
 
 /*
