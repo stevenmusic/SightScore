@@ -527,16 +527,22 @@ footer {
 }
 
 /*
- * A screen this wide has room to spare — below it, the grade selector and
- * countdown stay pinned to the score's own top corners (see `.meta` above
- * and `.grade-select`/`.countdown` below); at or above it there's enough
- * width that pinning them there just leaves a stretch of near-empty space
- * under the meta line where `.score-frame`'s reserved top padding used to
- * make room for them. `pinTopRowLayout` (app.js) is what actually moves
- * the #grade/#countdown elements into `.meta-row` at this width — this
- * only styles them once they're there.
+ * Below this, the grade selector and countdown stay pinned to the score's
+ * own top corners (see `.meta` above and `.grade-select`/`.countdown`
+ * below); qualifying for this block (see `TOP_ROW_QUERY` in app.js — kept
+ * in sync with this media query by hand, since CSS can't reference a JS
+ * constant) means pinning them there would just leave a stretch of
+ * near-empty space where `.score-frame`'s reserved top padding used to make
+ * room for them, whether that's because the screen is outright wide or
+ * because it's a phone rotated to landscape and short on the height a
+ * separate row for each would cost. `pinTopRowLayout` (app.js) is what
+ * actually moves the #grade/#countdown elements into `.meta-row` under
+ * either condition — this only styles them structurally once they're
+ * there; font sizes are left to the width-tiered rules elsewhere (the
+ * 561–1024px block above already covers a landscape phone's width, so it
+ * doesn't need its own font sizing here).
  */
-@media (min-width: 1024px) {
+@media (min-width: 1024px), (orientation: landscape) and (max-height: 500px) and (min-width: 680px) {
   .meta-row {
     display: flex;
     align-items: center;
@@ -548,32 +554,38 @@ footer {
      without this it would be offset a second time within the row. */
   .meta-row #meta { margin: 0; flex: 1 1 auto; }
 
-  /* Comfortable to read at the distance a wide screen is usually held or
-     sat back from, rather than reusing phone-sized type just because nothing
-     forces a change at this width. */
-  .meta-row .meta span { font-size: var(--fs-lg); }
-
-  .meta-row .grade-select {
-    flex: none;
-    position: static;
-    font-size: var(--fs-md);
-    padding: 8px 10px;
-  }
-
-  .meta-row .countdown {
-    position: static;
-    /* Sitting inline with the meta line's ~16px text, the phone-sized 44px
-       reads as oversized rather than a considered "biggest thing in the
-       row" — scaled down to stay the clear focal point without dominating
-       everything next to it. */
-    font-size: 36px;
-  }
+  .meta-row .grade-select { flex: none; position: static; }
+  .meta-row .countdown { position: static; }
 
   /* The grade selector and countdown no longer live inside the frame, so
      the extra top padding that used to reserve room for them at its
      corners is dead space now — brought back down to the same rhythm as
      the frame's own bottom padding. */
   .score-frame { padding-top: 22px; }
+}
+
+/*
+ * Font sizes for the combined row, specific to true desktop/wide width —
+ * a landscape phone qualifies for the structural rules above too, but it's
+ * still a phone, and already gets its own sizing from the 561–1024px block
+ * regardless of orientation (a landscape iPhone Pro is 852px wide, well
+ * inside that range) rather than needing a duplicate set here.
+ */
+@media (min-width: 1024px) {
+  /* Comfortable to read at the distance a wide screen is usually held or
+     sat back from, rather than reusing phone-sized type just because nothing
+     forces a change at this width. */
+  .meta-row .meta span { font-size: var(--fs-lg); }
+
+  .meta-row .grade-select { font-size: var(--fs-md); padding: 8px 10px; }
+
+  .meta-row .countdown {
+    /* Sitting inline with the meta line's ~16px text, the phone-sized 44px
+       reads as oversized rather than a considered "biggest thing in the
+       row" — scaled down to stay the clear focal point without dominating
+       everything next to it. */
+    font-size: 36px;
+  }
 }
 
 /* Preparation checklist, shown only while the 30 seconds are running. */

@@ -9,8 +9,9 @@
  * (generating a new test must only ever change the meta strip and the
  * score, never the topbar above them), or if the grade selector / countdown
  * drift from where they belong — pinned to the score frame's corners on a
- * narrow viewport, or sharing the meta row at 1024px and up (see app.js's
- * `pinTopRowLayout`, which moves the actual elements between the two).
+ * narrow viewport, or sharing the meta row at 1024px and up, or on a phone
+ * rotated to landscape (see app.js's `pinTopRowLayout`, which moves the
+ * actual elements between the two, and its `TOP_ROW_QUERY`).
  */
 import { chromium } from 'playwright';
 import { createServer } from 'node:http';
@@ -117,10 +118,15 @@ for (const device of DEVICES) {
     const countdown = document.getElementById('countdown');
     const meta = document.getElementById('meta');
     const metaRow = document.getElementById('meta-row');
-    // Matches the breakpoint in styles.css/app.js (WIDE_LAYOUT_QUERY) —
-    // below it grade/countdown are pinned to the score frame's corners,
-    // at or above it they live in the meta row instead.
-    const wideLayout = window.innerWidth >= 1024;
+    // Same query as app.js's TOP_ROW_QUERY (matchMedia rather than
+    // re-deriving the width/height/orientation logic by hand, so this
+    // can't quietly drift out of sync with it) — below it grade/countdown
+    // are pinned to the score frame's corners, at or above it (outright
+    // wide, or a landscape phone short on height) they live in the meta
+    // row instead.
+    const wideLayout = window.matchMedia(
+      '(min-width: 1024px), (orientation: landscape) and (max-height: 500px) and (min-width: 680px)',
+    ).matches;
     const values = [...meta.querySelectorAll('span:not(.meta-sep)')];
     const lineHeight = values.length
       ? parseFloat(getComputedStyle(values[0]).lineHeight) : 0;

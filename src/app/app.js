@@ -1,9 +1,9 @@
-import { generateTest } from '../generator/generate.js?v=35';
-import { toMusicXml } from '../generator/musicxml.js?v=35';
-import { createHistory, generateUnique } from '../generator/fingerprint.js?v=35';
-import { createKey, pitchAt } from '../generator/theory.js?v=35';
-import { createPlayer } from './playback.js?v=35';
-import { createStage, barTimings } from './stage.js?v=35';
+import { generateTest } from '../generator/generate.js?v=36';
+import { toMusicXml } from '../generator/musicxml.js?v=36';
+import { createHistory, generateUnique } from '../generator/fingerprint.js?v=36';
+import { createKey, pitchAt } from '../generator/theory.js?v=36';
+import { createPlayer } from './playback.js?v=36';
+import { createStage, barTimings } from './stage.js?v=36';
 
 const STORAGE_KEY = 'sightscore.history.v1';
 const LAYOUT_STORAGE_KEY = 'sightscore.layout.v1';
@@ -162,14 +162,21 @@ const MAX_MEASURES_PER_LINE = 5;
 /*
  * Below this, the grade selector, meta line and countdown stay pinned to
  * the score's own top corners (see `pinTopRowLayout`) — there isn't room
- * to spare for a combined row without crowding the meta text. At or above
- * it there is, so all three join one row above the score instead of
- * leaving a stretch of mostly-empty space where the pinned corners used
- * to reserve room for them. Matches the widest two devices/scripts/devices.js
- * checks (iPad landscape, Desktop) against the narrower ones (portrait
- * tablet, iPad) rather than a phone-vs-desktop split.
+ * to spare for a combined row without crowding the meta text. Two ways to
+ * qualify for the combined row instead:
+ *   - wide enough outright (desktop, iPad landscape) — `min-width: 1024px`.
+ *   - a phone rotated to landscape: plenty of *width* (852px on an iPhone
+ *     Pro) but very little *height* (393px), so the pinned-corner layout's
+ *     separate rows for the grade selector and meta line cost exactly the
+ *     vertical space landscape has least of. `max-height: 500px` catches
+ *     this without also catching a portrait phone/tablet, which has height
+ *     to spare; `min-width: 680px` keeps it off phones too narrow to lay
+ *     the row out on even sideways (matches the breakpoint where the
+ *     transport buttons' own labels reappear).
  */
-const WIDE_LAYOUT_QUERY = window.matchMedia('(min-width: 1024px)');
+const TOP_ROW_QUERY = window.matchMedia(
+  '(min-width: 1024px), (orientation: landscape) and (max-height: 500px) and (min-width: 680px)',
+);
 
 const CONFIDENCE_LABEL = {
   verified: null,
@@ -204,7 +211,7 @@ window.addEventListener('unhandledrejection', (event) => fail('發生錯誤', St
  * into #meta itself.
  */
 function pinTopRowLayout() {
-  if (WIDE_LAYOUT_QUERY.matches) {
+  if (TOP_ROW_QUERY.matches) {
     if (elements.grade.parentElement !== elements.metaRow) {
       elements.metaRow.insertBefore(elements.grade, elements.meta);
     }
@@ -353,7 +360,7 @@ async function init() {
   // needs (see the CSS) and so how much room the score actually has, which
   // fitScore's own search has to see fresh rather than reuse a cached
   // layout computed for the other arrangement.
-  WIDE_LAYOUT_QUERY.addEventListener('change', () => {
+  TOP_ROW_QUERY.addEventListener('change', () => {
     pinTopRowLayout();
     if (current) fitScore();
   });
