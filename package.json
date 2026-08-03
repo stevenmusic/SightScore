@@ -10,7 +10,8 @@
     "sample": "node scripts/sample.js",
     "audit": "node scripts/audit.js",
     "devices": "node scripts/devices.js",
-    "smoke": "node scripts/smoke.js"
+    "smoke": "node scripts/smoke.js",
+    "loudness": "node scripts/loudness.js"
   },
   "dependencies": {
     "opensheetmusicdisplay": "^2.1.0"

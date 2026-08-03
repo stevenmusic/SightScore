@@ -1,9 +1,9 @@
-import { generateTest } from '../generator/generate.js?v=36';
-import { toMusicXml } from '../generator/musicxml.js?v=36';
-import { createHistory, generateUnique } from '../generator/fingerprint.js?v=36';
-import { createKey, pitchAt } from '../generator/theory.js?v=36';
-import { createPlayer } from './playback.js?v=36';
-import { createStage, barTimings } from './stage.js?v=36';
+import { generateTest } from '../generator/generate.js?v=37';
+import { toMusicXml } from '../generator/musicxml.js?v=37';
+import { createHistory, generateUnique } from '../generator/fingerprint.js?v=37';
+import { createKey, pitchAt } from '../generator/theory.js?v=37';
+import { createPlayer } from './playback.js?v=37';
+import { createStage, barTimings } from './stage.js?v=37';
 
 const STORAGE_KEY = 'sightscore.history.v1';
 const LAYOUT_STORAGE_KEY = 'sightscore.layout.v1';
@@ -337,6 +337,7 @@ async function init() {
     highlight: elements.highlight,
   });
   window.__stage = stage; // debugging hook, also used by scripts/devices.js
+  window.__playback = player; // debugging hook, also used by scripts/loudness.js
 
   elements.generate.disabled = false;
   elements.generate.addEventListener('click', newTest);

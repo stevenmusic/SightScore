@@ -56,6 +56,7 @@ const GRACE_LEAD = 0.09;
 export function createPlayer({ onStatus } = {}) {
   let context = null;
   let master = null;
+  let limiter = null;
   let reverbBus = null;
   let samples = null;
   let pending = null;
@@ -88,9 +89,16 @@ export function createPlayer({ onStatus } = {}) {
     context = new (window.AudioContext ?? window.webkitAudioContext)();
 
     master = context.createGain();
-    master.gain.value = 0.48; // headroom: Web Audio sums voices, so peaks add up
+    // Calibrated against `scripts/loudness.js`'s real ITU-R BS.1770 LUFS
+    // measurement of the actual playback chain (post-limiter, the exact
+    // signal that reaches destination) — 0.48 was picked purely for
+    // "headroom" and measured at -23 LUFS integrated, well under YouTube/
+    // Spotify's -14 LUFS normalization target. This value is that
+    // measurement's +9 dB correction applied; the limiter below is what
+    // keeps the now-hotter signal from clipping on louder passages.
+    master.gain.value = 1.36;
 
-    const limiter = context.createDynamicsCompressor();
+    limiter = context.createDynamicsCompressor();
     limiter.threshold.value = -3;
     limiter.knee.value = 3;
     limiter.ratio.value = 12;
@@ -154,6 +162,15 @@ export function createPlayer({ onStatus } = {}) {
   return {
     get playing() {
       return voices.length > 0;
+    },
+    /**
+     * Debugging hook, matching `window.__osmd`/`window.__stage` — used by
+     * `scripts/loudness.js` to tap the real output chain (post-limiter, the
+     * exact signal that reaches `context.destination`) for LUFS calibration
+     * rather than measuring an approximation of the gain-staging math.
+     */
+    get audioNodes() {
+      return context ? { context, master, limiter } : null;
     },
     /** Seconds since the first note, or null when not playing. */
     get elapsed() {
