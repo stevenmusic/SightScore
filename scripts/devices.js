@@ -8,7 +8,9 @@
  * with a bar alone on its own line, if the title/controls row ever moves
  * (generating a new test must only ever change the meta strip and the
  * score, never the topbar above them), or if the grade selector / countdown
- * drift off the score frame's corners.
+ * drift from where they belong — pinned to the score frame's corners on a
+ * narrow viewport, or sharing the meta row at 1024px and up (see app.js's
+ * `pinTopRowLayout`, which moves the actual elements between the two).
  */
 import { chromium } from 'playwright';
 import { createServer } from 'node:http';
@@ -114,6 +116,11 @@ for (const device of DEVICES) {
     const grade = document.getElementById('grade');
     const countdown = document.getElementById('countdown');
     const meta = document.getElementById('meta');
+    const metaRow = document.getElementById('meta-row');
+    // Matches the breakpoint in styles.css/app.js (WIDE_LAYOUT_QUERY) —
+    // below it grade/countdown are pinned to the score frame's corners,
+    // at or above it they live in the meta row instead.
+    const wideLayout = window.innerWidth >= 1024;
     const values = [...meta.querySelectorAll('span:not(.meta-sep)')];
     const lineHeight = values.length
       ? parseFloat(getComputedStyle(values[0]).lineHeight) : 0;
@@ -163,12 +170,16 @@ for (const device of DEVICES) {
       // neither's row.
       metaBelowTopbar: metaBox.top >= topbarBox.bottom - 1,
       metaAboveScore: metaBox.bottom <= scoreFrameBox.top + 1,
-      // Grade selector top-left, countdown top-right — both pinned to the
-      // score frame's own corners, not to the controls row.
-      gradeInsideScoreFrame: gradeBox.left >= scoreFrameBox.left - 1 && gradeBox.top >= scoreFrameBox.top - 1,
+      // Grade selector top-left, countdown top-right — pinned to the score
+      // frame's own corners below the breakpoint, or sharing the meta row
+      // (never the controls row) at or above it.
+      gradeInsideScoreFrame: wideLayout
+        ? metaRow.contains(grade)
+        : gradeBox.left >= scoreFrameBox.left - 1 && gradeBox.top >= scoreFrameBox.top - 1,
       gradeNotInControls: !controls.contains(grade),
-      countdownInsideScoreFrame:
-        countdownBox.right <= scoreFrameBox.right + 1 && countdownBox.top >= scoreFrameBox.top - 1,
+      countdownInsideScoreFrame: wideLayout
+        ? metaRow.contains(countdown)
+        : countdownBox.right <= scoreFrameBox.right + 1 && countdownBox.top >= scoreFrameBox.top - 1,
       countdownRightOfGrade: countdownBox.left >= gradeBox.right,
       countdownReachable: reachableAt(countdown, countdownBox),
       /*

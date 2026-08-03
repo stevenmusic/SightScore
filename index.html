@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="src/app/styles.css?v=32">
+  <link rel="stylesheet" href="src/app/styles.css?v=34">
   <!--
     Loaded from vendor/ rather than node_modules/ so the page works as a plain
     static site (GitHub Pages) with no build step and no npm install.
@@ -57,8 +57,18 @@
     reads as "what this page is about" — never inside the controls row, so
     generating a new test (which changes this text's length) can never move
     a button. Hidden until there is a test to describe.
+
+    On a screen with room to spare, the grade selector and countdown join
+    this same row instead of sitting pinned to the score's own corners —
+    app.js moves the actual #grade/#countdown elements in here (rather than
+    duplicating them) so there is still only one of each answering events.
+    This wrapper — not #meta itself — is what they're moved into, because
+    showMeta() replaces #meta's innerHTML wholesale on every test and would
+    wipe out anything appended directly inside it.
   -->
-  <section id="meta" class="meta" hidden></section>
+  <div class="meta-row" id="meta-row">
+    <section id="meta" class="meta" hidden></section>
+  </div>
 
   <main>
     <div class="score-frame" id="score-frame">
@@ -100,6 +110,6 @@
 
   <span id="history-info" class="history-badge"></span>
 
-  <script type="module" src="src/app/app.js?v=30"></script>
+  <script type="module" src="src/app/app.js?v=34"></script>
 </body>
 </html>

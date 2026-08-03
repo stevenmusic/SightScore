@@ -228,6 +228,12 @@ button.link:hover { color: var(--gold); }
  * changes above the score — the controls row is a fixed sibling, never a
  * parent or neighbour this has to share space with, so its own width
  * changing can never push a button anywhere.
+ *
+ * `.meta-row` (the wrapper around this, added for the wide-viewport layout
+ * below) is deliberately a no-op here — narrow viewports keep the grade
+ * selector and countdown pinned to the score's own corners exactly as
+ * before, so this element alone still owns the "space below the topbar"
+ * job it always has.
  */
 .meta {
   display: flex;
@@ -498,6 +504,56 @@ footer {
 
 @media (min-width: 561px) and (max-width: 1024px) {
   body { --body-px: 20px; padding: 0 var(--body-px) 36px; }
+}
+
+/*
+ * A screen this wide has room to spare — below it, the grade selector and
+ * countdown stay pinned to the score's own top corners (see `.meta` above
+ * and `.grade-select`/`.countdown` below); at or above it there's enough
+ * width that pinning them there just leaves a stretch of near-empty space
+ * under the meta line where `.score-frame`'s reserved top padding used to
+ * make room for them. `pinTopRowLayout` (app.js) is what actually moves
+ * the #grade/#countdown elements into `.meta-row` at this width — this
+ * only styles them once they're there.
+ */
+@media (min-width: 1024px) {
+  .meta-row {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    margin: 16px 4px 8px;
+  }
+
+  /* The row now owns the outer spacing `.meta` normally provides itself;
+     without this it would be offset a second time within the row. */
+  .meta-row #meta { margin: 0; flex: 1 1 auto; }
+
+  /* Comfortable to read at the distance a wide screen is usually held or
+     sat back from, rather than reusing phone-sized type just because nothing
+     forces a change at this width. */
+  .meta-row .meta span { font-size: var(--fs-lg); }
+
+  .meta-row .grade-select {
+    flex: none;
+    position: static;
+    font-size: var(--fs-md);
+    padding: 8px 10px;
+  }
+
+  .meta-row .countdown {
+    position: static;
+    /* Sitting inline with the meta line's ~16px text, the phone-sized 44px
+       reads as oversized rather than a considered "biggest thing in the
+       row" — scaled down to stay the clear focal point without dominating
+       everything next to it. */
+    font-size: 36px;
+  }
+
+  /* The grade selector and countdown no longer live inside the frame, so
+     the extra top padding that used to reserve room for them at its
+     corners is dead space now — brought back down to the same rhythm as
+     the frame's own bottom padding. */
+  .score-frame { padding-top: 22px; }
 }
 
 /* Preparation checklist, shown only while the 30 seconds are running. */

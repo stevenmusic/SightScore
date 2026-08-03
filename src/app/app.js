@@ -1,9 +1,9 @@
-import { generateTest } from '../generator/generate.js?v=30';
-import { toMusicXml } from '../generator/musicxml.js?v=30';
-import { createHistory, generateUnique } from '../generator/fingerprint.js?v=30';
-import { createKey, pitchAt } from '../generator/theory.js?v=30';
-import { createPlayer } from './playback.js?v=30';
-import { createStage, barTimings } from './stage.js?v=30';
+import { generateTest } from '../generator/generate.js?v=34';
+import { toMusicXml } from '../generator/musicxml.js?v=34';
+import { createHistory, generateUnique } from '../generator/fingerprint.js?v=34';
+import { createKey, pitchAt } from '../generator/theory.js?v=34';
+import { createPlayer } from './playback.js?v=34';
+import { createStage, barTimings } from './stage.js?v=34';
 
 const STORAGE_KEY = 'sightscore.history.v1';
 const LAYOUT_STORAGE_KEY = 'sightscore.layout.v1';
@@ -18,6 +18,8 @@ const elements = {
   countdown: document.getElementById('countdown'),
   countdownValue: document.getElementById('countdown-value'),
   meta: document.getElementById('meta'),
+  metaRow: document.getElementById('meta-row'),
+  scoreFrame: document.getElementById('score-frame'),
   score: document.getElementById('score'),
   playline: document.getElementById('playline'),
   highlight: document.getElementById('measure-highlight'),
@@ -157,6 +159,18 @@ const SCORE_BOTTOM_GAP = 16;
  */
 const MAX_MEASURES_PER_LINE = 5;
 
+/*
+ * Below this, the grade selector, meta line and countdown stay pinned to
+ * the score's own top corners (see `pinTopRowLayout`) — there isn't room
+ * to spare for a combined row without crowding the meta text. At or above
+ * it there is, so all three join one row above the score instead of
+ * leaving a stretch of mostly-empty space where the pinned corners used
+ * to reserve room for them. Matches the widest two devices/scripts/devices.js
+ * checks (iPad landscape, Desktop) against the narrower ones (portrait
+ * tablet, iPad) rather than a phone-vs-desktop split.
+ */
+const WIDE_LAYOUT_QUERY = window.matchMedia('(min-width: 1024px)');
+
 const CONFIDENCE_LABEL = {
   verified: null,
   partial: '此級數部分參數為推估值',
@@ -180,6 +194,32 @@ function fail(text, detail) {
 
 window.addEventListener('error', (event) => fail('發生錯誤', event.message));
 window.addEventListener('unhandledrejection', (event) => fail('發生錯誤', String(event.reason)));
+
+/**
+ * Move the actual #grade/#countdown elements (not copies — they keep their
+ * ids and listeners either way) between the score's own top corners and a
+ * shared row with the meta line, depending on whether the viewport has
+ * room to spare. `showMeta` replaces #meta's own innerHTML on every test,
+ * which is why they're moved into #meta-row (a stable wrapper) rather than
+ * into #meta itself.
+ */
+function pinTopRowLayout() {
+  if (WIDE_LAYOUT_QUERY.matches) {
+    if (elements.grade.parentElement !== elements.metaRow) {
+      elements.metaRow.insertBefore(elements.grade, elements.meta);
+    }
+    if (elements.countdown.parentElement !== elements.metaRow) {
+      elements.metaRow.appendChild(elements.countdown);
+    }
+  } else {
+    if (elements.grade.parentElement !== elements.scoreFrame) {
+      elements.scoreFrame.insertBefore(elements.grade, elements.scoreFrame.firstChild);
+    }
+    if (elements.countdown.parentElement !== elements.scoreFrame) {
+      elements.scoreFrame.insertBefore(elements.countdown, elements.grade.nextSibling);
+    }
+  }
+}
 
 /**
  * Move the tempo/character-word text to a fixed spot right after bar 1's
@@ -306,6 +346,16 @@ async function init() {
   });
   elements.grade.addEventListener('change', () => {
     if (current) newTest();
+  });
+
+  pinTopRowLayout();
+  // Crossing the breakpoint changes how much top padding `.score-frame`
+  // needs (see the CSS) and so how much room the score actually has, which
+  // fitScore's own search has to see fresh rather than reuse a cached
+  // layout computed for the other arrangement.
+  WIDE_LAYOUT_QUERY.addEventListener('change', () => {
+    pinTopRowLayout();
+    if (current) fitScore();
   });
 
   // Bars per line depend on the container's actual width, so a resize (or a
