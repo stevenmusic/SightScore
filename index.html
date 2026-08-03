@@ -5,6 +5,22 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#FBF7EE">
   <title>SightScore — 視奏隨機題目生成器</title>
+  <!--
+    Safari's address bar and tab strip are browser chrome — a page has no
+    API to hide them, on rotation or otherwise. The actual fix (and what
+    these tags below enable) is launching from a home-screen icon instead
+    of a Safari tab: iOS runs a "web app capable" page in standalone mode,
+    full screen with no browser chrome at all, in both orientations.
+    `manifest.json`'s `display: "standalone"` is the same thing for
+    Android/desktop install prompts; the apple-specific tags are still
+    needed alongside it since iOS Safari doesn't read the manifest for this.
+  -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="SightScore">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%8E%BC%3C/text%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>

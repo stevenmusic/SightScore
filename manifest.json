@@ -1,0 +1,13 @@
+{
+  "name": "SightScore — 視奏隨機題目生成器",
+  "short_name": "SightScore",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#FBF7EE",
+  "theme_color": "#FBF7EE",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
