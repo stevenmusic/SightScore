@@ -1,9 +1,9 @@
-import { generateTest } from '../generator/generate.js?v=37';
-import { toMusicXml } from '../generator/musicxml.js?v=37';
-import { createHistory, generateUnique } from '../generator/fingerprint.js?v=37';
-import { createKey, pitchAt } from '../generator/theory.js?v=37';
-import { createPlayer } from './playback.js?v=37';
-import { createStage, barTimings } from './stage.js?v=37';
+import { generateTest } from '../generator/generate.js?v=38';
+import { toMusicXml } from '../generator/musicxml.js?v=38';
+import { createHistory, generateUnique } from '../generator/fingerprint.js?v=38';
+import { createKey, pitchAt } from '../generator/theory.js?v=38';
+import { createPlayer } from './playback.js?v=38';
+import { createStage, barTimings } from './stage.js?v=38';
 
 const STORAGE_KEY = 'sightscore.history.v1';
 const LAYOUT_STORAGE_KEY = 'sightscore.layout.v1';

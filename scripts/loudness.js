@@ -13,11 +13,12 @@
  * envelope character as a struck string (fast attack, exponential decay),
  * close enough in crest factor for calibration purposes even though the
  * timbre isn't the real recording. Everything downstream of the sample
- * buffer (gain envelope, master gain, limiter, reverb send) is the real,
- * unmodified production code path — `window.__playback.audioNodes`
- * (app.js) exposes the actual context/master/limiter nodes so the K-
- * weighting tap listens to the exact signal that reaches
- * `context.destination`, not an approximation of the gain math.
+ * buffer (gain envelope, master gain, limiter, true-peak safety clip, reverb
+ * send) is the real, unmodified production code path —
+ * `window.__playback.audioNodes` (app.js) exposes the actual
+ * context/master/limiter/output nodes so the K-weighting tap listens to
+ * `output`, the exact signal that reaches `context.destination`, not an
+ * approximation of the gain math.
  *
  * K-weighting is computed from the ITU-R BS.1770-4 analog design
  * (high-shelf + RLB high-pass) via the standard bilinear transform, at
@@ -28,6 +29,12 @@
  * callback each (~93ms at 44.1kHz/4096) rather than the spec's exact
  * 400ms/100ms-hop windows — a simplification with negligible effect on
  * the integrated average for continuous program material like this.
+ *
+ * Also reports true peak (dBTP), not just sample peak: a DAC reconstructs a
+ * continuous waveform between samples, and that reconstruction can overshoot
+ * any individual sample's value, which a signal already pushed close to
+ * 0dBFS by a limiter is exactly the shape most likely to do. See
+ * `measureTruePeak` below for how the 4x-oversampled measurement works.
  */
 import { chromium } from 'playwright';
 import { createServer } from 'node:http';
@@ -156,14 +163,13 @@ async function attachMeter() {
       };
     }
 
-    const { context, limiter } = window.__playback.audioNodes;
+    const { context, output } = window.__playback.audioNodes;
     const { stage1, stage2 } = kWeighting(context.sampleRate);
     const f1 = context.createIIRFilter(stage1.feedforward, stage1.feedback);
     const f2 = context.createIIRFilter(stage2.feedforward, stage2.feedback);
     const processor = context.createScriptProcessor(4096, 2, 2);
 
     window.__loudnessBlocks = [];
-    window.__peakSample = 0;
     processor.onaudioprocess = (event) => {
       const l = event.inputBuffer.getChannelData(0);
       const r = event.inputBuffer.numberOfChannels > 1 ? event.inputBuffer.getChannelData(1) : l;
@@ -175,25 +181,30 @@ async function attachMeter() {
       window.__loudnessBlocks.push(msL + msR);
     };
 
-    // A separate, unweighted tap directly off the limiter (pre-K-weighting)
-    // to check for actual clipping — K-weighting itself alters peak levels,
-    // so peak-safety has to be measured on the real output, not this branch.
+    // A separate, unweighted tap directly off the true final output node
+    // (post-limiter, post true-peak safety clip) to check for actual
+    // clipping — K-weighting itself alters peak levels, so peak-safety has
+    // to be measured on the real output, not this branch. It captures the
+    // raw samples themselves (not just a running max) so a true-peak
+    // (inter-sample) analysis can be done afterwards — a sample peak alone
+    // only checks the discrete values Web Audio computed, not the
+    // continuous waveform a DAC would actually reconstruct between them.
+    window.__peakCapture = { left: [], right: [] };
     const peakTap = context.createScriptProcessor(2048, 2, 2);
     peakTap.onaudioprocess = (event) => {
       const l = event.inputBuffer.getChannelData(0);
       const r = event.inputBuffer.numberOfChannels > 1 ? event.inputBuffer.getChannelData(1) : l;
-      for (let i = 0; i < l.length; i++) {
-        window.__peakSample = Math.max(window.__peakSample, Math.abs(l[i]), Math.abs(r[i]));
-      }
+      window.__peakCapture.left.push(l.slice());
+      window.__peakCapture.right.push(r.slice());
     };
     const peakSink = context.createGain();
     peakSink.gain.value = 0;
-    limiter.connect(peakTap);
+    output.connect(peakTap);
     peakTap.connect(peakSink);
     peakSink.connect(context.destination);
     window.__peakTeardownExtra = () => { peakTap.disconnect(); peakSink.disconnect(); };
 
-    limiter.connect(f1);
+    output.connect(f1);
     f1.connect(f2);
     f2.connect(processor);
     // A ScriptProcessor must be connected to a destination to pull data at
@@ -214,6 +225,72 @@ async function attachMeter() {
   });
 }
 
+/**
+ * True peak (dBTP), per the oversampling approach in ITU-R BS.1770-4 Annex 2 /
+ * EBU R128: a DAC reconstructs a continuous waveform between samples, and
+ * that reconstruction can overshoot any individual sample's value — a
+ * brick-walled or heavily limited signal (this app's post-limiter output,
+ * with sample peaks already sitting near -0.2dBFS) is exactly the shape most
+ * likely to hide an inter-sample overshoot. Measured by 4x-oversampling the
+ * captured raw waveform and re-checking the peak on the oversampled result,
+ * rather than trusting the discrete sample values alone.
+ *
+ * The oversampling itself is done by handing the captured buffer to an
+ * OfflineAudioContext running at 4x the sample rate — Web Audio automatically
+ * resamples a source whose buffer sample rate differs from the rendering
+ * context's, using the browser's own bandlimited interpolation filter. This
+ * isn't bit-exact to the ITU reference filter, but it's a real reconstruction
+ * filter (not a naive linear interpolation), which is what matters for
+ * catching the overshoot a real DAC would also produce.
+ */
+async function measureTruePeak() {
+  return page.evaluate(async () => {
+    const { context } = window.__playback.audioNodes;
+    const chunks = window.__peakCapture ?? { left: [], right: [] };
+    const totalLen = chunks.left.reduce((sum, c) => sum + c.length, 0);
+    if (totalLen === 0) return { samplePeakDb: -Infinity, truePeakDb: -Infinity };
+
+    const left = new Float32Array(totalLen);
+    const right = new Float32Array(totalLen);
+    let offset = 0;
+    for (let i = 0; i < chunks.left.length; i++) {
+      left.set(chunks.left[i], offset);
+      right.set(chunks.right[i], offset);
+      offset += chunks.left[i].length;
+    }
+    window.__peakCapture = { left: [], right: [] };
+
+    let samplePeak = 0;
+    for (let i = 0; i < totalLen; i++) {
+      samplePeak = Math.max(samplePeak, Math.abs(left[i]), Math.abs(right[i]));
+    }
+
+    const OVERSAMPLE = 4;
+    const sourceRate = context.sampleRate;
+    const buffer = new AudioBuffer({ length: totalLen, numberOfChannels: 2, sampleRate: sourceRate });
+    buffer.copyToChannel(left, 0);
+    buffer.copyToChannel(right, 1);
+
+    const offlineCtx = new OfflineAudioContext(2, totalLen * OVERSAMPLE, sourceRate * OVERSAMPLE);
+    const source = offlineCtx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(offlineCtx.destination);
+    source.start(0);
+    const rendered = await offlineCtx.startRendering();
+
+    let truePeak = 0;
+    for (let ch = 0; ch < rendered.numberOfChannels; ch++) {
+      const data = rendered.getChannelData(ch);
+      for (let i = 0; i < data.length; i++) truePeak = Math.max(truePeak, Math.abs(data[i]));
+    }
+
+    return {
+      samplePeakDb: samplePeak > 0 ? 20 * Math.log10(samplePeak) : -Infinity,
+      truePeakDb: truePeak > 0 ? 20 * Math.log10(truePeak) : -Infinity,
+    };
+  });
+}
+
 function integratedLufs(blocks) {
   if (!blocks.length) return null;
   const toLufs = (ms) => -0.691 + 10 * Math.log10(ms);
@@ -230,29 +307,47 @@ function integratedLufs(blocks) {
 async function measureOneTest(grade) {
   await page.selectOption('#grade', String(grade));
   await page.click('#generate');
-  await page.waitForFunction(() => window.__osmd && window.__osmd.GraphicSheet, { timeout: 10000 });
-  await page.waitForTimeout(100);
+  // #play only flips off `disabled` after fitScore()'s layout search finishes,
+  // which runs *after* OSMD's own render — waiting on GraphicSheet alone (as
+  // this used to) races that search on denser grades and can click a still-
+  // disabled button, which silently no-ops and hangs the next wait forever.
+  await page.waitForFunction(() => !document.querySelector('#play').disabled, { timeout: 30000 });
 
   await page.click('#play');
   await page.waitForFunction(() => window.__playback?.audioNodes, { timeout: 30000 });
   await attachMeter();
   await page.waitForFunction(() => window.__playback.playing === false, { timeout: 120000, polling: 200 });
-  const { blocks, peak } = await page.evaluate(() => {
+  const blocks = await page.evaluate(() => {
     window.__loudnessTeardown?.();
-    const collected = { blocks: window.__loudnessBlocks ?? [], peak: window.__peakSample ?? 0 };
+    const collected = window.__loudnessBlocks ?? [];
     window.__loudnessBlocks = [];
     return collected;
   });
-  return { lufs: integratedLufs(blocks), peakDb: peak > 0 ? 20 * Math.log10(peak) : -Infinity };
+  const { samplePeakDb, truePeakDb } = await measureTruePeak();
+  return { lufs: integratedLufs(blocks), samplePeakDb, truePeakDb };
 }
 
 console.log(`Target: ${TARGET_LUFS} LUFS integrated (YouTube/Spotify normalize to -14)\n`);
 const results = [];
+let worstTruePeak = -Infinity;
 for (const grade of GRADES) {
-  const { lufs, peakDb } = await measureOneTest(grade);
-  console.log(`grade ${grade}: ${lufs === null ? 'no signal' : lufs.toFixed(2) + ' LUFS'}, peak ${peakDb.toFixed(2)} dBFS`);
+  // A cold decode/route round-trip occasionally stalls under this sandbox's
+  // resource constraints (not something real users hit — `npm run
+  // devices`/`smoke` exercise the same app reliably) — one retry before
+  // giving up on this grade keeps a batch run from dying on one bad draw.
+  let result;
+  try {
+    result = await measureOneTest(grade);
+  } catch {
+    console.log(`grade ${grade}: retrying after a stall...`);
+    result = await measureOneTest(grade);
+  }
+  const { lufs, samplePeakDb, truePeakDb } = result;
+  console.log(`grade ${grade}: ${lufs === null ? 'no signal' : lufs.toFixed(2) + ' LUFS'}, sample peak ${samplePeakDb.toFixed(2)} dBFS, true peak ${truePeakDb.toFixed(2)} dBTP`);
   if (lufs !== null) results.push(lufs);
+  worstTruePeak = Math.max(worstTruePeak, truePeakDb);
 }
+console.log(`\nworst true peak across tests: ${worstTruePeak.toFixed(2)} dBTP${worstTruePeak > -1 ? '  (above the -1dBTP streaming-safe ceiling)' : ''}`);
 
 if (results.length) {
   const avgPower = results.reduce((sum, l) => sum + 10 ** (l / 10), 0) / results.length;

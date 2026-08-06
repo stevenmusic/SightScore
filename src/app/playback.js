@@ -52,11 +52,22 @@ const MIN_RIT_SCALE = 0.68;
 const MIN_RALL_SCALE = 0.55;
 /** An acciaccatura is crushed against the note it decorates — played just before it, not given its own beat. */
 const GRACE_LEAD = 0.09;
+/**
+ * -1dBTP, the streaming-safe true-peak ceiling (YouTube/Spotify both target
+ * this). `scripts/loudness.js`'s 4x-oversampled true-peak measurement found
+ * the compressor below alone isn't enough to guarantee it: `DynamicsCompressorNode`
+ * has no lookahead, so several notes attacking on the same sample (an ordinary
+ * chord) sum and reach the output before the gain-reduction envelope has time
+ * to respond — one randomly-generated Grade 8 test measured a true peak of
+ * exactly 0dBTP, full scale, despite the compressor's -3dB threshold.
+ */
+const TRUE_PEAK_CEILING = 0.891;
 
 export function createPlayer({ onStatus } = {}) {
   let context = null;
   let master = null;
   let limiter = null;
+  let ceiling = null;
   let reverbBus = null;
   let samples = null;
   let pending = null;
@@ -99,14 +110,26 @@ export function createPlayer({ onStatus } = {}) {
     master.gain.value = 1.36;
 
     limiter = context.createDynamicsCompressor();
-    limiter.threshold.value = -3;
+    limiter.threshold.value = -6;
     limiter.knee.value = 3;
     limiter.ratio.value = 12;
     limiter.attack.value = 0.001;
     limiter.release.value = 0.25;
 
+    // A lookahead-free compressor alone can't guarantee a true-peak ceiling —
+    // see TRUE_PEAK_CEILING above — so a WaveShaper soft-clip sits after it as
+    // a final safety net. `oversample: '4x'` makes the shaping itself immune
+    // to the same inter-sample-overshoot problem it exists to prevent. The
+    // curve is a scaled tanh: near-linear (and so inaudible) for anything
+    // well under the ceiling, and asymptotically approaches but never
+    // crosses it for whatever rare transient the compressor let through.
+    ceiling = context.createWaveShaper();
+    ceiling.oversample = '4x';
+    ceiling.curve = truePeakCurve();
+
     master.connect(limiter);
-    limiter.connect(context.destination);
+    limiter.connect(ceiling);
+    ceiling.connect(context.destination);
 
     reverbBus = context.createGain();
     const preDelay = context.createDelay(0.2);
@@ -165,12 +188,15 @@ export function createPlayer({ onStatus } = {}) {
     },
     /**
      * Debugging hook, matching `window.__osmd`/`window.__stage` — used by
-     * `scripts/loudness.js` to tap the real output chain (post-limiter, the
-     * exact signal that reaches `context.destination`) for LUFS calibration
-     * rather than measuring an approximation of the gain-staging math.
+     * `scripts/loudness.js` to tap the real output chain for LUFS/true-peak
+     * calibration rather than measuring an approximation of the gain-staging
+     * math. `output` (the true-peak safety clip) is the exact signal that
+     * reaches `context.destination`; `limiter` is exposed too since it's
+     * still the node earlier LUFS calibration measured from and some callers
+     * may want the pre-safety-net signal specifically.
      */
     get audioNodes() {
-      return context ? { context, master, limiter } : null;
+      return context ? { context, master, limiter, output: ceiling } : null;
     },
     /** Seconds since the first note, or null when not playing. */
     get elapsed() {
@@ -629,6 +655,23 @@ function fallbackNote(context, buses, midi, at, duration, envelope = {}) {
   oscillator.start(at);
   oscillator.stop(at + sustain + tail + 0.05);
   return oscillator;
+}
+
+/**
+ * WaveShaper curve for the true-peak safety clip: `TRUE_PEAK_CEILING * tanh(x
+ * / TRUE_PEAK_CEILING)`. tanh's slope is 1 at the origin and falls off as `x`
+ * grows, so this is near-identity (inaudible) for anything well under the
+ * ceiling and asymptotically approaches but never reaches it beyond that —
+ * softer than a hard clip, which would add odd-harmonic distortion right at
+ * the moments this is meant to protect.
+ */
+function truePeakCurve(steps = 1024) {
+  const curve = new Float32Array(steps);
+  for (let i = 0; i < steps; i++) {
+    const x = (i / (steps - 1)) * 2 - 1;
+    curve[i] = TRUE_PEAK_CEILING * Math.tanh(x / TRUE_PEAK_CEILING);
+  }
+  return curve;
 }
 
 /**
