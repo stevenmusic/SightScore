@@ -7,15 +7,15 @@
  *   articulation and tempo term.
  */
 
-import { createRandom, randomSeed } from './random.js?v=42';
-import { createKey, dstepRange, degreeOf, pitchAt, chordDegrees, LETTERS } from './theory.js?v=42';
-import { buildProgression, firstChord, lastChord, halfCadenceBar } from './harmony.js?v=42';
+import { createRandom, randomSeed } from './random.js?v=43';
+import { createKey, dstepRange, degreeOf, pitchAt, chordDegrees, LETTERS } from './theory.js?v=43';
+import { buildProgression, firstChord, lastChord, halfCadenceBar } from './harmony.js?v=43';
 import {
   assignPitches, stackChordTones, soundingTimeline, harmoniseLeadingNotes, harmoniseRepeatedLeadingNotes,
   relaxParallels,
-} from './melody.js?v=42';
-import { DIVISIONS, cellsFor, fillBar, wholeBarRest } from './rhythm.js?v=42';
-import { meterInfo, rescaleCells } from './meter.js?v=42';
+} from './melody.js?v=43';
+import { DIVISIONS, cellsFor, fillBar, wholeBarRest } from './rhythm.js?v=43';
+import { meterInfo, rescaleCells } from './meter.js?v=43';
 
 const TEMPO_BPM = {
   Grave: 46, Largo: 52, Adagio: 60, Lento: 58, Andante: 76, Andantino: 84,
@@ -676,6 +676,13 @@ function applyExpression(rng, rules, score) {
   if (!modulated && rules.otherFeatures.some((feature) => feature.includes('半音音群') || /chromatic/i.test(feature))) {
     addChromaticGroup(rng, score);
   }
+
+  // Runs last so it sees final pitches (post-modulation) and the final bar
+  // layout (post-chromatic-group) — it only reads MIDI values and sets a
+  // flag, so it doesn't need excluding from either of those.
+  if (rules.otherFeatures.some((feature) => feature.includes('跨譜表'))) {
+    addCrossStaffWriting(rng, score);
+  }
 }
 
 /**
@@ -840,6 +847,73 @@ function addModulation(rng, rules, score) {
   // a clef change — stored at the score level rather than per-staff bar.
   score.keyChange = { barIndex: pivotBar, fifths: newFifths, mode: 'major', tonic: newKey.tonic };
   return true;
+}
+
+/**
+ * Grade 8's declared "跨譜表寫作" (cross-staff writing): a single note that
+ * already sits in the *other* staff's comfortable register gets printed on
+ * that staff instead of stacking ledger lines — the same underlying idea
+ * as `addClefChanges` (Grade 6/7), but for a reach too brief (one isolated
+ * note, not a multi-bar span) to justify changing the whole staff's clef.
+ * The two features don't overlap in practice: `addClefChanges` only runs
+ * for Grade 6/7, this only for Grade 8.
+ *
+ * `musicxml.js` renders a marked event with `<staff>` set to the *other*
+ * staff and a voice number reserved for crossed notes, so it visually
+ * lands on the target staff without disturbing either staff's own
+ * duration bookkeeping (`<staff>`/`<voice>` are pure placement metadata —
+ * they don't affect the `<backup>` timing math at all).
+ */
+function addCrossStaffWriting(rng, score) {
+  const timelines = {
+    1: soundingTimeline(score.staves[1], score.barDuration),
+    2: soundingTimeline(score.staves[2], score.barDuration),
+  };
+  const candidates = [];
+
+  for (const staffNumber of [1, 2]) {
+    const otherStaff = staffNumber === 1 ? 2 : 1;
+    const flat = [];
+    score.staves[staffNumber].forEach((bar, barIndex) => {
+      let offset = 0;
+      bar.events.forEach((event, eventIndex) => {
+        const start = barIndex * score.barDuration + offset;
+        offset += event.dur;
+        if (!event.rest && event.pitch) flat.push({ bar, eventIndex, event, start });
+      });
+    });
+
+    for (let i = 1; i < flat.length - 1; i++) {
+      const { bar, eventIndex, event, start } = flat[i];
+      // A plain, undecorated single note only — nothing else on it that
+      // crossing staves would orphan or misplace. Restricted to note values
+      // that are never beamed (quarter or longer) — a beamed eighth/16th
+      // crossed alone would leave its beam reaching across to a staff its
+      // beam partners never moved to.
+      if (event.chord || event.grace || event.slur || (event.articulations?.length)) continue;
+      if (['eighth', '16th', '32nd', '64th'].includes(event.type)) continue;
+      const extreme = staffNumber === 1 ? event.pitch.midi <= 55 : event.pitch.midi >= 62;
+      if (!extreme) continue;
+      // Isolated, not sustained: the notes immediately either side of it in
+      // the *same* hand stay in that hand's own normal register — a whole
+      // extreme span is what `addClefChanges` is for, not this.
+      const prevExtreme = staffNumber === 1 ? flat[i - 1].event.pitch.midi <= 55 : flat[i - 1].event.pitch.midi >= 62;
+      const nextExtreme = staffNumber === 1 ? flat[i + 1].event.pitch.midi <= 55 : flat[i + 1].event.pitch.midi >= 62;
+      if (prevExtreme || nextExtreme) continue;
+      // Clear of whatever the target staff is actually sounding at that
+      // instant — the whole point of crossing there is that it is free.
+      const clash = timelines[otherStaff].some((entry) => (
+        entry.start < start + event.dur && entry.end > start
+        && entry.midis.some((midi) => Math.abs(midi - event.pitch.midi) <= 2)
+      ));
+      if (clash) continue;
+      candidates.push({ bar, eventIndex, event, targetStaff: otherStaff });
+    }
+  }
+  if (!candidates.length) return;
+
+  const { event, targetStaff } = rng.pick(candidates);
+  event.crossStaff = targetStaff;
 }
 
 const HOME_CLEF = { 1: { sign: 'G', line: 2 }, 2: { sign: 'F', line: 4 } };

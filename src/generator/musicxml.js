@@ -10,7 +10,7 @@
  *   - a tie needs <tie> (sound) *and* <notations><tied> (looks)
  */
 
-import { keyAlterations, LETTERS } from './theory.js?v=42';
+import { keyAlterations, LETTERS } from './theory.js?v=43';
 
 const ACCIDENTAL_NAMES = {
   '-2': 'flat-flat', '-1': 'flat', 0: 'natural', 1: 'sharp', 2: 'double-sharp',
@@ -153,9 +153,17 @@ function renderBar(bar, staffNumber, score, keyAlters) {
   for (const direction of directionsAt(0)) lines.push(...renderDirection(direction, staffNumber));
 
   bar.events.forEach((event, index) => {
+    // A crossed note (generate.js's addCrossStaffWriting, Grade 8's
+    // "跨譜表寫作") prints on the *other* staff — its own hand's timing and
+    // <backup> bookkeeping are untouched, only where it visually lands. A
+    // dedicated voice number (rather than the target staff's own 1/2) keeps
+    // it from colliding with whatever that staff's own voice is doing at
+    // the same instant, since the crossed note's rhythm belongs to its own
+    // hand, not the staff it's borrowing.
+    const printedStaff = event.crossStaff ?? staffNumber;
     lines.push(...renderNote(event, {
-      staffNumber,
-      voice: staffNumber,
+      staffNumber: printedStaff,
+      voice: event.crossStaff ? 5 : staffNumber,
       keyAlters,
       beams: beams[index],
       tuplet: tuplets[index],

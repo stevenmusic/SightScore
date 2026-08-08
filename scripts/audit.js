@@ -513,6 +513,7 @@ function auditExpression(grade, tests) {
   const found = {
     slur: 0, staccato: 0, tenuto: 0, accent: 0, staccatissimo: 0, marcato: 0,
     wedge: 0, pedal: 0, ornament: 0, tempoChange: 0, clefChange: 0, chromaticGroup: 0, modulation: 0,
+    crossStaff: 0,
   };
   const dynamicsSeen = new Set();
 
@@ -520,7 +521,7 @@ function auditExpression(grade, tests) {
     let has = {
       slur: false, staccato: false, tenuto: false, accent: false, staccatissimo: false, marcato: false,
       wedge: false, pedal: false, ornament: false, tempoChange: false, clefChange: false, chromaticGroup: false,
-      modulation: !!score.keyChange,
+      modulation: !!score.keyChange, crossStaff: false,
     };
     for (const staffNumber of [1, 2]) {
       for (const bar of score.staves[staffNumber]) {
@@ -543,6 +544,7 @@ function auditExpression(grade, tests) {
         for (const event of bar.events) {
           if (event.slur) has.slur = true;
           if (event.grace) has.ornament = true;
+          if (event.crossStaff) has.crossStaff = true;
           for (const a of event.articulations ?? []) {
             if (a === 'staccato') has.staccato = true;
             if (a === 'tenuto') has.tenuto = true;
@@ -598,6 +600,11 @@ function auditExpression(grade, tests) {
   if (R.otherFeatures.some((f) => f.includes('轉調') || /modulat/i.test(f))) {
     const rate = pct(found.modulation, n);
     lines.push(check('expression', grade, 'modulation', `${fixed(rate)}%`,
+      rate > 0, '>0% of tests (declared, so should appear at least occasionally)'));
+  }
+  if (R.otherFeatures.some((f) => f.includes('跨譜表'))) {
+    const rate = pct(found.crossStaff, n);
+    lines.push(check('expression', grade, 'crossStaff', `${fixed(rate)}%`,
       rate > 0, '>0% of tests (declared, so should appear at least occasionally)'));
   }
 
