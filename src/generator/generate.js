@@ -7,15 +7,15 @@
  *   articulation and tempo term.
  */
 
-import { createRandom, randomSeed } from './random.js?v=39';
-import { createKey, dstepRange, degreeOf, pitchAt, chordDegrees } from './theory.js?v=39';
-import { buildProgression, firstChord, lastChord, halfCadenceBar } from './harmony.js?v=39';
+import { createRandom, randomSeed } from './random.js?v=40';
+import { createKey, dstepRange, degreeOf, pitchAt, chordDegrees } from './theory.js?v=40';
+import { buildProgression, firstChord, lastChord, halfCadenceBar } from './harmony.js?v=40';
 import {
   assignPitches, stackChordTones, soundingTimeline, harmoniseLeadingNotes, harmoniseRepeatedLeadingNotes,
   relaxParallels,
-} from './melody.js?v=39';
-import { DIVISIONS, cellsFor, fillBar, wholeBarRest } from './rhythm.js?v=39';
-import { meterInfo, rescaleCells } from './meter.js?v=39';
+} from './melody.js?v=40';
+import { DIVISIONS, cellsFor, fillBar, wholeBarRest } from './rhythm.js?v=40';
+import { meterInfo, rescaleCells } from './meter.js?v=40';
 
 const TEMPO_BPM = {
   Grave: 46, Largo: 52, Adagio: 60, Lento: 58, Andante: 76, Andantino: 84,
@@ -654,6 +654,81 @@ function applyExpression(rng, rules, score) {
 
   if (rules.grade >= 7) {
     addOrnaments(rng, score);
+  }
+
+  // Grade 6's otherFeatures describe either hand ('偶爾出現短暫換譜號'), Grade
+  // 7's specifically the left hand going up ('左手上行進入高音譜號') — both are
+  // the same underlying mechanism (a hand sitting persistently in the other
+  // staff's comfortable register), so one gate covers both wordings.
+  if (rules.otherFeatures.some((feature) => feature.includes('換譜號') || feature.includes('譜號變換'))) {
+    addClefChanges(score);
+  }
+}
+
+const HOME_CLEF = { 1: { sign: 'G', line: 2 }, 2: { sign: 'F', line: 4 } };
+const AWAY_CLEF = { 1: { sign: 'F', line: 4 }, 2: { sign: 'G', line: 2 } };
+
+/**
+ * A hand's line occasionally sits persistently in the *other* staff's
+ * comfortable register — the left hand's contour reaching toward the top of
+ * its window, or the right hand's toward the bottom of its own. Real
+ * engraving switches that staff's clef for the span rather than stacking
+ * ledger lines. This is a pure rendering decision keyed off pitches the
+ * ordinary window/arch machinery already produced (`buildStaff`, untouched
+ * here) — not a forced detour into the other register — which is exactly
+ * why it reads as "occasionally": it only fires where a hand's own window
+ * for this particular test already happens to sit high (or low) enough that
+ * a multi-bar span of it crosses the threshold on its own.
+ */
+function addClefChanges(score) {
+  for (const staffNumber of [1, 2]) {
+    const bars = score.staves[staffNumber];
+    const qualifies = (bar) => {
+      // A stacked chord (melody.js's `stackChordTones`) lives in `event.chord`
+      // on the same event, not as separate `bar.events` entries — missing it
+      // here would let a bar qualify on its melody note alone while a chord
+      // tone stacked underneath sits well outside the target clef's comfort
+      // zone, which is exactly the kind of unreadable notation this feature
+      // exists to avoid, not produce.
+      const midis = [];
+      for (const event of bar.events) {
+        if (event.rest || !event.pitch) continue;
+        midis.push(event.pitch.midi);
+        for (const chordPitch of event.chord ?? []) midis.push(chordPitch.midi);
+      }
+      if (!midis.length) return false;
+      return staffNumber === 1
+        ? midis.every((midi) => midi <= 58) // Bb3 or below: bass clef territory
+        : midis.every((midi) => midi >= 59); // B3 or above: treble clef territory
+    };
+
+    // The longest qualifying contiguous span, excluding the very first and
+    // last bar — a change right at the opening or the closing cadence reads
+    // as odd, and the final bar's pitch is pinned by `endOnTonic` regardless.
+    let bestStart = -1;
+    let bestLen = 0;
+    let runStart = -1;
+    for (let i = 1; i < bars.length - 1; i++) {
+      if (qualifies(bars[i])) {
+        if (runStart === -1) runStart = i;
+        const len = i - runStart + 1;
+        if (len > bestLen) {
+          bestLen = len;
+          bestStart = runStart;
+        }
+      } else {
+        runStart = -1;
+      }
+    }
+
+    // More than four bars stops reading as "occasionally reaches over" and
+    // starts reading as "this piece changed clef" — left alone rather than
+    // forced past that point.
+    if (bestLen < 1 || bestLen > 4) continue;
+
+    bars[bestStart].clefChange = AWAY_CLEF[staffNumber];
+    const after = bestStart + bestLen;
+    if (after < bars.length) bars[after].clefChange = HOME_CLEF[staffNumber];
   }
 }
 

@@ -507,17 +507,18 @@ function auditExpression(grade, tests) {
   const R = rules.grades[String(grade)];
   const found = {
     slur: 0, staccato: 0, tenuto: 0, accent: 0, staccatissimo: 0, marcato: 0,
-    wedge: 0, pedal: 0, ornament: 0, tempoChange: 0,
+    wedge: 0, pedal: 0, ornament: 0, tempoChange: 0, clefChange: 0,
   };
   const dynamicsSeen = new Set();
 
   for (const score of tests) {
     let has = {
       slur: false, staccato: false, tenuto: false, accent: false, staccatissimo: false, marcato: false,
-      wedge: false, pedal: false, ornament: false, tempoChange: false,
+      wedge: false, pedal: false, ornament: false, tempoChange: false, clefChange: false,
     };
     for (const staffNumber of [1, 2]) {
       for (const bar of score.staves[staffNumber]) {
+        if (bar.clefChange) has.clefChange = true;
         for (const d of bar.directions) {
           if (d.kind === 'dynamics') dynamicsSeen.add(d.value);
           if (d.kind === 'wedge') has.wedge = true;
@@ -562,6 +563,18 @@ function auditExpression(grade, tests) {
   expect('pedal', R.otherFeatures.some((f) => f.includes('踏板') || /pedal/i.test(f)));
   expect('ornament', grade >= 7);
   expect('tempoChange', grade >= 6);
+  // Grade 6/7's declared clef change (generate.js's addClefChanges) is a
+  // pure detection off pitches the ordinary window/arch machinery already
+  // produced — not forced — so it is deliberately not expected at the same
+  // >=2% floor as the forced features above. It exists to catch the
+  // opposite failure: the gate silently breaking and the rate dropping to
+  // exactly 0%, which is exactly the "declared feature never appears" bug
+  // this whole section exists to catch.
+  if (R.otherFeatures.some((f) => f.includes('換譜號') || f.includes('譜號變換'))) {
+    const rate = pct(found.clefChange, n);
+    lines.push(check('expression', grade, 'clefChange', `${fixed(rate)}%`,
+      rate > 0, '>0% of tests (declared, so should appear at least occasionally)'));
+  }
 
   const unusedDynamics = R.dynamics.filter((d) => !dynamicsSeen.has(d));
   lines.push(check('expression', grade, 'dynamics used / allowed',

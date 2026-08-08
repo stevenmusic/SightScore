@@ -10,7 +10,7 @@
  *   - a tie needs <tie> (sound) *and* <notations><tied> (looks)
  */
 
-import { keyAlterations, LETTERS } from './theory.js?v=39';
+import { keyAlterations, LETTERS } from './theory.js?v=40';
 
 const ACCIDENTAL_NAMES = {
   '-2': 'flat-flat', '-1': 'flat', 0: 'natural', 1: 'sharp', 2: 'double-sharp',
@@ -70,6 +70,16 @@ export function toMusicXml(score, options = {}) {
 
     for (const staffNumber of [1, 2]) {
       const bar = score.staves[staffNumber][barIndex];
+      // A mid-piece clef change (generate.js's addClefChanges) is its own
+      // <attributes> block, not a <direction> — it has to land in this
+      // staff's own note stream at the point the change takes effect, which
+      // is why this sits here rather than going through `bar.directions`
+      // (those are <direction> elements and render inside `renderBar`).
+      if (bar.clefChange) {
+        lines.push('      <attributes>');
+        lines.push(`        <clef number="${staffNumber}"><sign>${bar.clefChange.sign}</sign><line>${bar.clefChange.line}</line></clef>`);
+        lines.push('      </attributes>');
+      }
       lines.push(...renderBar(bar, staffNumber, score, keyAlters));
       if (staffNumber === 1) {
         lines.push(`      <backup><duration>${score.barDuration}</duration></backup>`);

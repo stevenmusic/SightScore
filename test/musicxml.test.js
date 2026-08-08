@@ -36,13 +36,29 @@ test('one part, two staves, one measure per bar', () => {
   });
 });
 
-test('attributes and clefs are declared once, in the first measure', () => {
-  eachXml((xml) => {
-    assert.equal(countMatches(xml, /<attributes>/g), 1);
-    assert.equal(countMatches(xml, /<sign>G<\/sign>/g), 1);
-    assert.equal(countMatches(xml, /<sign>F<\/sign>/g), 1);
+test('attributes and clefs are declared once in the first measure, plus exactly one block per real mid-piece clef change', () => {
+  eachXml((xml, score) => {
     const firstMeasureEnd = xml.indexOf('</measure>');
+    assert.equal(countMatches(xml.slice(0, firstMeasureEnd), /<attributes>/g), 1);
     assert.ok(xml.indexOf('<attributes>') < firstMeasureEnd);
+
+    // Grade 6/7 can legitimately insert a mid-piece clef change
+    // (generate.js's addClefChanges) — each is its own <attributes> block
+    // containing exactly one <clef>, on top of the opening declaration.
+    // Re-deriving the expected count from `score.staves[n][i].clefChange`
+    // keeps this strict rather than merely loosened to "at least one".
+    const clefChanges = [1, 2].flatMap(
+      (staffNumber) => score.staves[staffNumber].map((bar) => bar.clefChange).filter(Boolean),
+    );
+    assert.equal(countMatches(xml, /<attributes>/g), 1 + clefChanges.length);
+    assert.equal(
+      countMatches(xml, /<sign>G<\/sign>/g),
+      1 + clefChanges.filter((clef) => clef.sign === 'G').length,
+    );
+    assert.equal(
+      countMatches(xml, /<sign>F<\/sign>/g),
+      1 + clefChanges.filter((clef) => clef.sign === 'F').length,
+    );
   });
 });
 
