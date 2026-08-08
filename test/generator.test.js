@@ -167,8 +167,12 @@ test('Grade 2 plays hands together but stays in a five-finger position', () => {
 });
 
 test('every test cadences on the tonic', () => {
+  // A modulating test (generate.js's addModulation, Grade 8's "曲中轉調")
+  // genuinely ends in the new key, not the printed opening key — that is
+  // what modulation means. score.keyChange carries the destination tonic
+  // for exactly this: cadence checks after it should use the new key.
   eachTest((score, gradeRules, context) => {
-    const tonicPitchClass = tonicPitchClassOf(score.key);
+    const tonicPitchClass = tonicPitchClassOf(score.keyChange ?? score.key);
     // Where the hands alternate (Grade 1) only the hand still playing at the
     // end carries the cadence; the other one has already dropped out.
     const staves = gradeRules.texture.handsPlayTogether === false

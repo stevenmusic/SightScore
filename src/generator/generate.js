@@ -7,15 +7,15 @@
  *   articulation and tempo term.
  */
 
-import { createRandom, randomSeed } from './random.js?v=41';
-import { createKey, dstepRange, degreeOf, pitchAt, chordDegrees } from './theory.js?v=41';
-import { buildProgression, firstChord, lastChord, halfCadenceBar } from './harmony.js?v=41';
+import { createRandom, randomSeed } from './random.js?v=42';
+import { createKey, dstepRange, degreeOf, pitchAt, chordDegrees, LETTERS } from './theory.js?v=42';
+import { buildProgression, firstChord, lastChord, halfCadenceBar } from './harmony.js?v=42';
 import {
   assignPitches, stackChordTones, soundingTimeline, harmoniseLeadingNotes, harmoniseRepeatedLeadingNotes,
   relaxParallels,
-} from './melody.js?v=41';
-import { DIVISIONS, cellsFor, fillBar, wholeBarRest } from './rhythm.js?v=41';
-import { meterInfo, rescaleCells } from './meter.js?v=41';
+} from './melody.js?v=42';
+import { DIVISIONS, cellsFor, fillBar, wholeBarRest } from './rhythm.js?v=42';
+import { meterInfo, rescaleCells } from './meter.js?v=42';
 
 const TEMPO_BPM = {
   Grave: 46, Largo: 52, Adagio: 60, Lento: 58, Andante: 76, Andantino: 84,
@@ -664,7 +664,16 @@ function applyExpression(rng, rules, score) {
     addClefChanges(score);
   }
 
-  if (rules.otherFeatures.some((feature) => feature.includes('半音音群') || /chromatic/i.test(feature))) {
+  // Modulation runs before the chromatic group, and the two are made
+  // mutually exclusive on one test (see addModulation's doc comment) —
+  // addChromaticGroup reads score.key directly, and a candidate landing
+  // in an already-modulated span would be spelled against the wrong key.
+  let modulated = false;
+  if (rules.otherFeatures.some((feature) => feature.includes('轉調') || /modulat/i.test(feature))) {
+    modulated = addModulation(rng, rules, score);
+  }
+
+  if (!modulated && rules.otherFeatures.some((feature) => feature.includes('半音音群') || /chromatic/i.test(feature))) {
     addChromaticGroup(rng, score);
   }
 }
@@ -745,6 +754,92 @@ function addChromaticGroup(rng, score) {
     raiseSeventh: degreeOf(pitch.dstep, key) === 6,
   }));
   bar.events.splice(eventIndex, 1, ...group);
+}
+
+/**
+ * Grade 8's declared "曲中轉調" (mid-piece modulation): the consequent
+ * phrase (from the period's half cadence onward, `halfCadenceBar` — the
+ * same split point the period structure already uses) moves to the
+ * dominant major key for the rest of the piece.
+ *
+ * This does not generate a second phrase in a second key — the whole piece
+ * is built once, in one key, by the ordinary unmodified pipeline, and this
+ * rigidly transposes an already-fully-validated span (+4 diatonic steps, a
+ * perfect fifth) rather than re-deriving it. That is what makes it safe:
+ * transposition does not change any note's relationship to any other note
+ * (interval to the other hand, position in its own chord, distance from a
+ * neighbour), only its absolute level and notated spelling — so every
+ * invariant already checked for this span (no clash, no parallel motion,
+ * cadence shape) still holds afterwards for free. `progression`'s roman
+ * numerals need no change either, since they are already key-relative: a
+ * transposed ii-V-I reads as ii-V-I in the new key exactly as it did in the
+ * old one.
+ *
+ * Scope is deliberately narrow for a first real implementation: major-key
+ * pieces only (a minor piece's most natural modulation, to the relative
+ * major, shares the outgoing key's signature and so would print no visible
+ * change — a weaker fit for a sight-reading feature about *reading* a key
+ * change), and only when there is a real period structure with room to
+ * modulate into (`halfCadenceBar` non-null, plus at least two bars left
+ * after the pivot for a real cadence in the new key).
+ */
+function addModulation(rng, rules, score) {
+  if (score.key.mode !== 'major') return false;
+  if (!rng.chance(0.35)) return false;
+
+  const startBar = halfCadenceBar(score.barCount);
+  if (startBar === null) return false;
+  const pivotBar = startBar + 1;
+  if (pivotBar > score.barCount - 3) return false;
+
+  const originalKey = createKey(score.key);
+  const newFifths = originalKey.fifths + 1;
+  if (Math.abs(newFifths) > 6) return false; // stay within a printable key signature
+  // The new tonic's *letter* doesn't depend on which key spells it (a fifth
+  // above is always 4 letters up), but its accidental does — spelling it
+  // via the original key's own alteration for that degree (e.g. Gb major's
+  // dominant is Db, not D) matches how every other key.tonic in this
+  // codebase is written ("F#", "Bb", never a bare letter that needs one).
+  const dominantInOriginalKey = pitchAt(originalKey.tonicLetter + 4, originalKey);
+  const newTonic = dominantInOriginalKey.step
+    + (dominantInOriginalKey.alter === 1 ? '#' : dominantInOriginalKey.alter === -1 ? 'b' : '');
+  const newKey = createKey({ tonic: newTonic, mode: 'major', fifths: newFifths });
+
+  const transposePitch = (pitch) => pitchAt(pitch.dstep + 4, newKey);
+
+  // A transposed note can walk past the grade's declared range even though
+  // the untransposed original never did — checked before touching anything,
+  // since this is a dry run over the same events the mutation pass below
+  // would otherwise commit regardless.
+  for (const hand of ['rightHand', 'leftHand']) {
+    const staffNumber = hand === 'rightHand' ? 1 : 2;
+    const { minMidi, maxMidi } = rules.range[hand];
+    for (let barIndex = pivotBar; barIndex < score.barCount; barIndex++) {
+      for (const event of score.staves[staffNumber][barIndex].events) {
+        if (event.rest || !event.pitch) continue;
+        const midi = transposePitch(event.pitch).midi;
+        if (midi < minMidi || midi > maxMidi) return false;
+      }
+    }
+  }
+
+  for (const staffNumber of [1, 2]) {
+    for (let barIndex = pivotBar; barIndex < score.barCount; barIndex++) {
+      for (const event of score.staves[staffNumber][barIndex].events) {
+        if (event.grace) event.grace.pitch = transposePitch(event.grace.pitch);
+        if (event.rest || !event.pitch) continue;
+        event.pitch = transposePitch(event.pitch);
+        event.dstep = event.pitch.dstep;
+        event.raiseSeventh = false; // major key throughout — no harmonic-minor 7th to raise
+        if (event.chord) event.chord = event.chord.map(transposePitch);
+      }
+    }
+  }
+
+  // A key-signature change is part-wide (one <key> for both staves), unlike
+  // a clef change — stored at the score level rather than per-staff bar.
+  score.keyChange = { barIndex: pivotBar, fifths: newFifths, mode: 'major', tonic: newKey.tonic };
+  return true;
 }
 
 const HOME_CLEF = { 1: { sign: 'G', line: 2 }, 2: { sign: 'F', line: 4 } };

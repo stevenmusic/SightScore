@@ -211,20 +211,31 @@ test('beams never cross a beat boundary', () => {
 test('printed accidentals agree with the key signature', () => {
   eachTest((score, _rules, context) => {
     const xml = toMusicXml(score);
-    const expected = keyAlterations(score.key.fifths);
-    const notes = xml.split('<note>').slice(1).map((n) => n.split('</note>')[0]);
+    const originalAlters = keyAlterations(score.key.fifths);
+    // A modulating test (generate.js's addModulation) prints a real key
+    // change partway through — accidentals from that bar on have to be
+    // judged against the *new* signature, not the opening one.
+    const modulatedAlters = score.keyChange ? keyAlterations(score.keyChange.fifths) : null;
 
-    for (const note of notes) {
-      const step = note.match(/<step>([A-G])<\/step>/)?.[1];
-      if (!step) continue;
-      const alter = Number(note.match(/<alter>(-?\d+)<\/alter>/)?.[1] ?? 0);
-      const printed = note.includes('<accidental>');
-      const needed = alter !== expected[LETTERS.indexOf(step)];
-      assert.equal(
-        printed, needed,
-        `grade ${context.grade} seed ${context.seed}: ${step} alter ${alter} `
-        + `${printed ? 'prints' : 'omits'} an accidental but should ${needed ? 'print' : 'omit'} one`,
-      );
+    const measures = xml.split(/<measure number="(\d+)">/).slice(1);
+    for (let i = 0; i < measures.length; i += 2) {
+      const barIndex = Number(measures[i]) - 1;
+      const expected = modulatedAlters && barIndex >= score.keyChange.barIndex
+        ? modulatedAlters : originalAlters;
+      const notes = measures[i + 1].split('<note>').slice(1).map((n) => n.split('</note>')[0]);
+
+      for (const note of notes) {
+        const step = note.match(/<step>([A-G])<\/step>/)?.[1];
+        if (!step) continue;
+        const alter = Number(note.match(/<alter>(-?\d+)<\/alter>/)?.[1] ?? 0);
+        const printed = note.includes('<accidental>');
+        const needed = alter !== expected[LETTERS.indexOf(step)];
+        assert.equal(
+          printed, needed,
+          `grade ${context.grade} seed ${context.seed} bar ${barIndex + 1}: ${step} alter ${alter} `
+          + `${printed ? 'prints' : 'omits'} an accidental but should ${needed ? 'print' : 'omit'} one`,
+        );
+      }
     }
   });
 });

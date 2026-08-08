@@ -151,13 +151,18 @@ function auditHarmony(grade, tests) {
     /*
      * The bass should land on the tonic — but where the hands alternate
      * (Grade 1) the left hand may have dropped out long before the end, so
-     * the closing bass note is whichever hand is still playing.
+     * the closing bass note is whichever hand is still playing. A modulating
+     * test (generate.js's addModulation) genuinely ends in the new key, not
+     * the printed opening one — that is what modulation means — so the
+     * check has to judge the ending against whichever key is actually
+     * sounding there.
      */
+    const finalKey = score.keyChange ? createKey(score.keyChange) : key;
     for (const staffNumber of [2, 1]) {
       const lastNotes = notesOfBar(score.staves[staffNumber][score.barCount - 1]);
       if (!lastNotes.length) continue;
       const last = lastNotes[lastNotes.length - 1];
-      if (degreeOf(last.dstep, key) === 0) finalTonicBass += 1;
+      if (degreeOf(last.dstep, finalKey) === 0) finalTonicBass += 1;
       break;
     }
   }
@@ -507,7 +512,7 @@ function auditExpression(grade, tests) {
   const R = rules.grades[String(grade)];
   const found = {
     slur: 0, staccato: 0, tenuto: 0, accent: 0, staccatissimo: 0, marcato: 0,
-    wedge: 0, pedal: 0, ornament: 0, tempoChange: 0, clefChange: 0, chromaticGroup: 0,
+    wedge: 0, pedal: 0, ornament: 0, tempoChange: 0, clefChange: 0, chromaticGroup: 0, modulation: 0,
   };
   const dynamicsSeen = new Set();
 
@@ -515,6 +520,7 @@ function auditExpression(grade, tests) {
     let has = {
       slur: false, staccato: false, tenuto: false, accent: false, staccatissimo: false, marcato: false,
       wedge: false, pedal: false, ornament: false, tempoChange: false, clefChange: false, chromaticGroup: false,
+      modulation: !!score.keyChange,
     };
     for (const staffNumber of [1, 2]) {
       for (const bar of score.staves[staffNumber]) {
@@ -587,6 +593,11 @@ function auditExpression(grade, tests) {
   if (R.otherFeatures.some((f) => f.includes('半音音群') || /chromatic/i.test(f))) {
     const rate = pct(found.chromaticGroup, n);
     lines.push(check('expression', grade, 'chromaticGroup', `${fixed(rate)}%`,
+      rate > 0, '>0% of tests (declared, so should appear at least occasionally)'));
+  }
+  if (R.otherFeatures.some((f) => f.includes('轉調') || /modulat/i.test(f))) {
+    const rate = pct(found.modulation, n);
+    lines.push(check('expression', grade, 'modulation', `${fixed(rate)}%`,
       rate > 0, '>0% of tests (declared, so should appear at least occasionally)'));
   }
 

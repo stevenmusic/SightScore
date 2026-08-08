@@ -10,7 +10,7 @@
  *   - a tie needs <tie> (sound) *and* <notations><tied> (looks)
  */
 
-import { keyAlterations, LETTERS } from './theory.js?v=41';
+import { keyAlterations, LETTERS } from './theory.js?v=42';
 
 const ACCIDENTAL_NAMES = {
   '-2': 'flat-flat', '-1': 'flat', 0: 'natural', 1: 'sharp', 2: 'double-sharp',
@@ -29,6 +29,15 @@ export function toMusicXml(score, options = {}) {
   const title = options.title
     ?? `Grade ${score.grade} Sight-Reading — ${score.key.tonic} ${score.key.mode}`;
   const keyAlters = keyAlterations(score.key.fifths);
+  // generate.js's addModulation (曲中轉調) transposes everything from
+  // score.keyChange.barIndex onward into a new key — accidentals from that
+  // point on have to be judged against the *new* key signature, or a note
+  // that's perfectly diatonic there prints a spurious accidental (or a
+  // genuine accidental goes unmarked) against the old one.
+  const modulatedKeyAlters = score.keyChange ? keyAlterations(score.keyChange.fifths) : null;
+  const keyAltersAt = (barIndex) => (
+    modulatedKeyAlters && barIndex >= score.keyChange.barIndex ? modulatedKeyAlters : keyAlters
+  );
   const lines = [];
 
   lines.push('<?xml version="1.0" encoding="UTF-8"?>');
@@ -68,6 +77,15 @@ export function toMusicXml(score, options = {}) {
       lines.push('      </direction>');
     }
 
+    // A mid-piece modulation (generate.js's addModulation) is part-wide —
+    // one <key> for both staves, unlike a clef change — so it goes before
+    // the per-staff loop, the same spot the opening declaration uses.
+    if (score.keyChange && score.keyChange.barIndex === barIndex) {
+      lines.push('      <attributes>');
+      lines.push(`        <key><fifths>${score.keyChange.fifths}</fifths><mode>${score.keyChange.mode}</mode></key>`);
+      lines.push('      </attributes>');
+    }
+
     for (const staffNumber of [1, 2]) {
       const bar = score.staves[staffNumber][barIndex];
       // A mid-piece clef change (generate.js's addClefChanges) is its own
@@ -80,7 +98,7 @@ export function toMusicXml(score, options = {}) {
         lines.push(`        <clef number="${staffNumber}"><sign>${bar.clefChange.sign}</sign><line>${bar.clefChange.line}</line></clef>`);
         lines.push('      </attributes>');
       }
-      lines.push(...renderBar(bar, staffNumber, score, keyAlters));
+      lines.push(...renderBar(bar, staffNumber, score, keyAltersAt(barIndex)));
       if (staffNumber === 1) {
         lines.push(`      <backup><duration>${score.barDuration}</duration></backup>`);
       }
