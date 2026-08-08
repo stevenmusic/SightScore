@@ -7,15 +7,15 @@
  *   articulation and tempo term.
  */
 
-import { createRandom, randomSeed } from './random.js?v=40';
-import { createKey, dstepRange, degreeOf, pitchAt, chordDegrees } from './theory.js?v=40';
-import { buildProgression, firstChord, lastChord, halfCadenceBar } from './harmony.js?v=40';
+import { createRandom, randomSeed } from './random.js?v=41';
+import { createKey, dstepRange, degreeOf, pitchAt, chordDegrees } from './theory.js?v=41';
+import { buildProgression, firstChord, lastChord, halfCadenceBar } from './harmony.js?v=41';
 import {
   assignPitches, stackChordTones, soundingTimeline, harmoniseLeadingNotes, harmoniseRepeatedLeadingNotes,
   relaxParallels,
-} from './melody.js?v=40';
-import { DIVISIONS, cellsFor, fillBar, wholeBarRest } from './rhythm.js?v=40';
-import { meterInfo, rescaleCells } from './meter.js?v=40';
+} from './melody.js?v=41';
+import { DIVISIONS, cellsFor, fillBar, wholeBarRest } from './rhythm.js?v=41';
+import { meterInfo, rescaleCells } from './meter.js?v=41';
 
 const TEMPO_BPM = {
   Grave: 46, Largo: 52, Adagio: 60, Lento: 58, Andante: 76, Andantino: 84,
@@ -663,6 +663,88 @@ function applyExpression(rng, rules, score) {
   if (rules.otherFeatures.some((feature) => feature.includes('換譜號') || feature.includes('譜號變換'))) {
     addClefChanges(score);
   }
+
+  if (rules.otherFeatures.some((feature) => feature.includes('半音音群') || /chromatic/i.test(feature))) {
+    addChromaticGroup(rng, score);
+  }
+}
+
+/**
+ * Grade 8's declared "半音音群" (chromatic note group): a brief chromatic
+ * scalar run filling a melodic third, e.g. C-C#-D-D#-E in place of a plain
+ * leap from C to E. Decorative and melody-only, the same precedent
+ * `addOrnaments`' grace notes set (not clash-checked against the other
+ * hand — a passing chromatic figure is not a harmony event).
+ *
+ * Only a *major* third (4 semitones) whose passed-through diatonic degree
+ * splits it into two clean whole tones is filled — this is deliberately
+ * conservative rather than attempting every possible third: a minor third
+ * (3 semitones) doesn't divide evenly into equal chromatic steps without a
+ * triplet, and an uneven diatonic split (e.g. a semitone plus a tone, which
+ * happens near some scale degrees) would place the middle passing note
+ * off the exact chromatic midpoint. Filtering to the clean case rather than
+ * forcing the uneven ones keeps every note built from `pitchAt` — its
+ * `chromaticAlter` raises/lowers a real diatonic degree by a semitone, so
+ * the spelling is always the *next* scale degree's accidental (C#, D#),
+ * never a stacked double-sharp on one letter.
+ */
+function addChromaticGroup(rng, score) {
+  const key = createKey(score.key);
+  const bars = score.staves[1];
+
+  const flat = [];
+  bars.forEach((bar) => {
+    let offset = 0;
+    bar.events.forEach((event, eventIndex) => {
+      if (!event.rest && event.pitch) flat.push({ bar, eventIndex, event, offset });
+      offset += event.dur;
+    });
+  });
+  if (flat.length < 4) return;
+
+  const candidates = [];
+  for (let i = 1; i < flat.length - 2; i++) {
+    const a = flat[i];
+    const b = flat[i + 1];
+    // Plain (undotted) quarter only — a dotted quarter's duration is 1.5x
+    // and doesn't quarter evenly into four true 16ths (caught as a real
+    // failure: `dur/4` on a dotted quarter produced a 16th 1.5x too long).
+    if (a.event.type !== 'quarter' || a.event.dots) continue;
+    // Must start on a clean beat boundary, or the four inserted 16ths
+    // straddle two beats and `computeBeams` correctly refuses to beam them
+    // together — caught as a real "beam crosses a beat boundary" failure,
+    // from a quarter note that started off-beat (e.g. after a pickup rest).
+    if (a.offset % a.bar.beatDuration !== 0) continue;
+    // A plain note only — not already decorated, slurred, or chorded, so
+    // there is nothing else on this event that a four-way split would orphan.
+    if (a.event.slur || a.event.grace || a.event.chord || (a.event.articulations?.length)) continue;
+    const semitones = b.event.pitch.midi - a.event.pitch.midi;
+    if (Math.abs(semitones) !== 4) continue;
+    const direction = Math.sign(semitones);
+    const midStep = a.event.dstep + direction;
+    const midNatural = pitchAt(midStep, key);
+    if (midNatural.midi !== a.event.pitch.midi + 2 * direction) continue;
+    candidates.push({ ...a, direction, midStep, midNatural });
+  }
+  if (!candidates.length) return;
+
+  const { bar, eventIndex, event, direction, midStep, midNatural } = rng.pick(candidates);
+  const sixteenth = event.dur / 4;
+  const pitches = [
+    event.pitch,
+    pitchAt(event.dstep, key, { chromaticAlter: direction }),
+    midNatural,
+    pitchAt(midStep, key, { chromaticAlter: direction }),
+  ];
+  const group = pitches.map((pitch) => ({
+    type: '16th', dur: sixteenth, dots: 0, rest: false, pitch, dstep: pitch.dstep,
+    // Matches how every other pitch-assignment path tags this (melody.js) —
+    // a same-dstep repeat elsewhere in the piece is checked against it, and
+    // an unset field there reads as a disagreement even when the two notes
+    // are otherwise identical.
+    raiseSeventh: degreeOf(pitch.dstep, key) === 6,
+  }));
+  bar.events.splice(eventIndex, 1, ...group);
 }
 
 const HOME_CLEF = { 1: { sign: 'G', line: 2 }, 2: { sign: 'F', line: 4 } };
