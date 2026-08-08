@@ -440,14 +440,28 @@ footer {
  * the bottom of the screen. Fixed positioning keeps it anchored exactly
  * where it reads as "an ambient counter", regardless of how tall the
  * rest of the page is.
+ *
+ * That same viewport-relative pinning used to make it unreadable on a tall
+ * test: a page just over one viewport tall (a longer score on a tablet, say)
+ * puts `.message`'s own in-flow text at almost this exact corner at rest —
+ * two transparent, backgroundless texts landed on the same pixels and both
+ * became illegible. A solid pill (same treatment as `.badge` above) fixes
+ * that the way any floating chip/FAB elsewhere on the web does: it always
+ * reads cleanly on its own, at the cost of covering a small, fixed-size
+ * corner of whatever's behind it — a normal, bounded trade a formless
+ * transparent overlap never had.
  */
 .history-badge {
   position: fixed;
   left: 8px;
   bottom: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  padding: 3px 10px;
+  background: var(--bg);
   color: var(--muted);
   font-size: var(--fs-2xs);
-  opacity: .7;
+  white-space: nowrap;
   pointer-events: none;
   z-index: 1;
 }

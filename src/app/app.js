@@ -1,9 +1,9 @@
-import { generateTest } from '../generator/generate.js?v=38';
-import { toMusicXml } from '../generator/musicxml.js?v=38';
-import { createHistory, generateUnique } from '../generator/fingerprint.js?v=38';
-import { createKey, pitchAt } from '../generator/theory.js?v=38';
-import { createPlayer } from './playback.js?v=38';
-import { createStage, barTimings } from './stage.js?v=38';
+import { generateTest } from '../generator/generate.js?v=39';
+import { toMusicXml } from '../generator/musicxml.js?v=39';
+import { createHistory, generateUnique } from '../generator/fingerprint.js?v=39';
+import { createKey, pitchAt } from '../generator/theory.js?v=39';
+import { createPlayer } from './playback.js?v=39';
+import { createStage, barTimings } from './stage.js?v=39';
 
 const STORAGE_KEY = 'sightscore.history.v1';
 const LAYOUT_STORAGE_KEY = 'sightscore.layout.v1';
@@ -493,6 +493,23 @@ async function startCountdown() {
   runPreparationCountdown();
 }
 
+/**
+ * Whether the rendered score fits the viewport without scrolling — the same
+ * check `scripts/devices.js` audits per device (`scoreBottom <=
+ * viewportHeight`, measured off the rendered SVG rather than the bar boxes
+ * so pedal brackets/hairpins/slurs hanging outside the staves count). A
+ * phone routinely fails this (see CLAUDE.md: deliberately left to scroll
+ * rather than shrink into illegibility), so the preparation message can't
+ * unconditionally claim the whole piece is on screen — real ABRSM
+ * preparation time is built around seeing the whole test at a glance, and
+ * telling a scrolling phone user otherwise actively misleads the one thing
+ * this countdown is simulating.
+ */
+function scoreFitsViewport() {
+  const svg = elements.score.querySelector('svg');
+  return svg ? svg.getBoundingClientRect().bottom <= window.innerHeight : true;
+}
+
 function runPreparationCountdown() {
   let remaining = rules.exam.preparationSeconds;
   elements.countdownValue.textContent = String(remaining);
@@ -501,7 +518,9 @@ function runPreparationCountdown() {
   elements.checklist.innerHTML = PREPARATION_STEPS
     .map((step) => `<li>${escapeHtml(step)}</li>`)
     .join('');
-  say('準備時間：整份樂譜已經在畫面上，時間到會提示開始。');
+  say(scoreFitsViewport()
+    ? '準備時間：整份樂譜已經在畫面上，時間到會提示開始。'
+    : '準備時間：可上下捲動看完整份樂譜，時間到會提示開始。');
 
   countdownTimer = setInterval(() => {
     remaining -= 1;
