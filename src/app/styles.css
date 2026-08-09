@@ -383,6 +383,28 @@ button.link:hover { color: var(--gold); }
   position: relative;
   z-index: 1;
   min-height: 10rem;
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity .22s ease-out, transform .22s ease-out;
+}
+
+/*
+ * Applied only once — after fitScore() has already settled on a final
+ * layout, not during OSMD's own repeated measuring renders (fitScore calls
+ * osmd.render() many times while searching for a bars-per-line/zoom
+ * combination that fits; fading on every one of those would flicker,
+ * not read as an entrance). A short, understated motion — 4px and 180ms,
+ * matching the rest of the app's transitions — not a flourish; a new test
+ * is a fresh page turn, not a modal opening.
+ */
+.score.entering {
+  opacity: 0;
+  transform: translateY(4px);
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .score { transition: none; }
 }
 
 /*

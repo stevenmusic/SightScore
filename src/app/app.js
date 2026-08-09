@@ -1,9 +1,9 @@
-import { generateTest } from '../generator/generate.js?v=43';
-import { toMusicXml } from '../generator/musicxml.js?v=43';
-import { createHistory, generateUnique } from '../generator/fingerprint.js?v=43';
-import { createKey, pitchAt } from '../generator/theory.js?v=43';
-import { createPlayer } from './playback.js?v=43';
-import { createStage, barTimings } from './stage.js?v=43';
+import { generateTest } from '../generator/generate.js?v=44';
+import { toMusicXml } from '../generator/musicxml.js?v=44';
+import { createHistory, generateUnique } from '../generator/fingerprint.js?v=44';
+import { createKey, pitchAt } from '../generator/theory.js?v=44';
+import { createPlayer } from './playback.js?v=44';
+import { createStage, barTimings } from './stage.js?v=44';
 
 const STORAGE_KEY = 'sightscore.history.v1';
 const LAYOUT_STORAGE_KEY = 'sightscore.layout.v1';
@@ -399,6 +399,11 @@ async function newTest() {
   const { score } = generateUnique(() => generateTest(rules, { grade }), history);
   current = { score, xml: toMusicXml(score) };
 
+  // Held at opacity 0 through the whole render + fitScore search (which
+  // calls osmd.render() many times while measuring candidate layouts) and
+  // only released once a final layout is settled — see the .entering rule.
+  elements.score.classList.add('entering');
+
   say('渲染中…');
   try {
     await osmd.load(current.xml);
@@ -406,10 +411,18 @@ async function newTest() {
     say('按「開始 30 秒準備」模擬考試流程。');
   } catch (error) {
     fail('渲染失敗', error.message);
+    elements.score.classList.remove('entering');
     return;
   }
 
   await fitScore();
+  // Two frames: the first lets the browser paint the held opacity-0 state
+  // (removing `transition: none` alone wouldn't stop the two class changes
+  // from collapsing into one paint), the second flips to the visible state
+  // so the opacity/transform change is what actually animates.
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => elements.score.classList.remove('entering'));
+  });
   showMeta(score);
   elements.meta.hidden = false;
   elements.countdown.hidden = false;
