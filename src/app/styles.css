@@ -302,17 +302,20 @@ button.link:hover { color: var(--gold); }
 }
 
 /*
- * The grade selector lives over the score's own white area rather than in
- * the controls row — it's a "what to generate onto this paper" input, not a
- * playback control, so it reads more clearly pinned to the paper it's about
- * to fill. The countdown (below) mirrors it at the opposite top corner, for
- * the same reason: both are about this particular sheet, not the page.
+ * The grade selector (and, alongside it, the key selector) live over the
+ * score's own white area rather than in the controls row — they're
+ * "what to generate onto this paper" inputs, not playback controls, so they
+ * read more clearly pinned to the paper they're about to fill. The
+ * countdown (below) mirrors the pair at the opposite top corner, for the
+ * same reason: all of them are about this particular sheet, not the page.
  */
-.grade-select {
+.grade-controls {
   position: absolute;
   top: 14px;
   left: 16px;
   z-index: 2;
+  display: flex;
+  gap: 6px;
 }
 
 .countdown {
@@ -533,7 +536,7 @@ footer {
    */
 
   .score-frame { padding: 48px 8px 12px; }
-  .grade-select { top: 10px; left: 8px; }
+  .grade-controls { top: 10px; left: 8px; }
   .countdown { top: 10px; right: 8px; font-size: 32px; }
   .message { font-size: var(--fs-xs); }
 }
@@ -563,9 +566,9 @@ footer {
 }
 
 /*
- * Below this, the grade selector and countdown stay pinned to the score's
- * own top corners (see `.meta` above and `.grade-select`/`.countdown`
- * below); qualifying for this block (see `TOP_ROW_QUERY` in app.js — kept
+ * Below this, the grade/key controls and countdown stay pinned to the
+ * score's own top corners (see `.meta` above and `.grade-controls`/
+ * `.countdown` below); qualifying for this block (see `TOP_ROW_QUERY` in app.js — kept
  * in sync with this media query by hand, since CSS can't reference a JS
  * constant) means pinning them there would just leave a stretch of
  * near-empty space where `.score-frame`'s reserved top padding used to make
@@ -590,7 +593,7 @@ footer {
      without this it would be offset a second time within the row. */
   .meta-row #meta { margin: 0; flex: 1 1 auto; }
 
-  .meta-row .grade-select { flex: none; position: static; }
+  .meta-row .grade-controls { flex: none; position: static; }
   .meta-row .countdown { position: static; }
 
   /* The grade selector and countdown no longer live inside the frame, so

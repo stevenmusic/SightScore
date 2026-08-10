@@ -7,15 +7,15 @@
  *   articulation and tempo term.
  */
 
-import { createRandom, randomSeed } from './random.js?v=44';
-import { createKey, dstepRange, degreeOf, pitchAt, chordDegrees, LETTERS } from './theory.js?v=44';
-import { buildProgression, firstChord, lastChord, halfCadenceBar } from './harmony.js?v=44';
+import { createRandom, randomSeed } from './random.js?v=45';
+import { createKey, dstepRange, degreeOf, pitchAt, chordDegrees, LETTERS } from './theory.js?v=45';
+import { buildProgression, firstChord, lastChord, halfCadenceBar } from './harmony.js?v=45';
 import {
   assignPitches, stackChordTones, soundingTimeline, harmoniseLeadingNotes, harmoniseRepeatedLeadingNotes,
   relaxParallels,
-} from './melody.js?v=44';
-import { DIVISIONS, cellsFor, fillBar, wholeBarRest } from './rhythm.js?v=44';
-import { meterInfo, rescaleCells } from './meter.js?v=44';
+} from './melody.js?v=45';
+import { DIVISIONS, cellsFor, fillBar, wholeBarRest } from './rhythm.js?v=45';
+import { meterInfo, rescaleCells } from './meter.js?v=45';
 
 const TEMPO_BPM = {
   Grave: 46, Largo: 52, Adagio: 60, Lento: 58, Andante: 76, Andantino: 84,
@@ -70,7 +70,12 @@ export function generateTest(rulesTable, options) {
   const seed = options.seed ?? randomSeed();
   const rng = createRandom(seed);
 
-  const key = createKey(pickKey(rng, rules));
+  // A specific tonic/mode (the app's key selector) overrides the random
+  // pick — resolved against this grade's own key list so it also picks up
+  // the correct `fifths`, rather than trusting the caller to know it.
+  const key = createKey(
+    options.tonic && options.mode ? resolveKey(rules, options.tonic, options.mode) : pickKey(rng, rules),
+  );
   const meter = meterInfo(pickTimeSignature(rng, rules, rulesTable));
   const barCount = pickBarCount(rng, rules, meter.text);
   // A bar splitting into two chords is a faster harmonic rhythm than
@@ -158,25 +163,45 @@ function pickTimeSignature(rng, rules, rulesTable) {
   return rng.weighted(candidates).text;
 }
 
-function pickKey(rng, rules) {
+/**
+ * Every key a grade allows, split by mode — the same list `pickKey` draws
+ * from at random and the app's key selector offers explicitly, so both stay
+ * in agreement about what "valid at this grade" means without duplicating
+ * Grade 8's allKeys table in two places.
+ * @returns {{major: {tonic: string, fifths: number}[], minor: {tonic: string, fifths: number}[]}}
+ */
+export function keyOptionsFor(rules) {
   if (rules.keys.allKeys) {
     // Grade 8: every key up to six accidentals.
     const majors = ['C', 'G', 'D', 'A', 'E', 'B', 'F#', 'F', 'Bb', 'Eb', 'Ab', 'Db', 'Gb'];
     const fifthsFor = { C: 0, G: 1, D: 2, A: 3, E: 4, B: 5, 'F#': 6, F: -1, Bb: -2, Eb: -3, Ab: -4, Db: -5, Gb: -6 };
     // g#/d#/a# minor are left out: their leading notes need double sharps.
     const minors = { A: 0, E: 1, B: 2, 'F#': 3, 'C#': 4, D: -1, G: -2, C: -3, F: -4, Bb: -5, Eb: -6 };
-    if (rng.chance(0.6)) {
-      const tonic = rng.pick(majors);
-      return { tonic, mode: 'major', fifths: fifthsFor[tonic] };
-    }
-    const tonic = rng.pick(Object.keys(minors));
-    return { tonic, mode: 'minor', fifths: minors[tonic] };
+    return {
+      major: majors.map((tonic) => ({ tonic, fifths: fifthsFor[tonic] })),
+      minor: Object.keys(minors).map((tonic) => ({ tonic, fifths: minors[tonic] })),
+    };
   }
+  return { major: rules.keys.major, minor: rules.keys.minor };
+}
 
-  const majors = rules.keys.major.map((k) => ({ ...k, mode: 'major' }));
-  const minors = rules.keys.minor.map((k) => ({ ...k, mode: 'minor' }));
-  // Majors are more common in the specimen books than minors.
-  return rng.chance(0.65) ? rng.pick(majors) : rng.pick(minors);
+function pickKey(rng, rules) {
+  const { major, minor } = keyOptionsFor(rules);
+  const majors = major.map((k) => ({ ...k, mode: 'major' }));
+  const minors = minor.map((k) => ({ ...k, mode: 'minor' }));
+  // Majors are more common in the specimen books than minors — Grade 8's
+  // allKeys table used a slightly different weight (0.6) than the rest
+  // (0.65) even before this was factored out, so that stays grade-specific.
+  return rng.chance(rules.keys.allKeys ? 0.6 : 0.65) ? rng.pick(majors) : rng.pick(minors);
+}
+
+/** Resolve a user-picked tonic/mode against this grade's own key list, so it
+ * also picks up the correct `fifths` rather than trusting the caller to know it. */
+function resolveKey(rules, tonic, mode) {
+  const { major, minor } = keyOptionsFor(rules);
+  const found = (mode === 'major' ? major : minor).find((k) => k.tonic === tonic);
+  if (!found) throw new Error(`${tonic} ${mode} is not available at grade ${rules.grade}`);
+  return { tonic: found.tonic, mode, fifths: found.fifths };
 }
 
 function pickBarCount(rng, rules, timeSignature) {

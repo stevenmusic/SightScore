@@ -1,15 +1,17 @@
-import { generateTest } from '../generator/generate.js?v=44';
-import { toMusicXml } from '../generator/musicxml.js?v=44';
-import { createHistory, generateUnique } from '../generator/fingerprint.js?v=44';
-import { createKey, pitchAt } from '../generator/theory.js?v=44';
-import { createPlayer } from './playback.js?v=44';
-import { createStage, barTimings } from './stage.js?v=44';
+import { generateTest, keyOptionsFor } from '../generator/generate.js?v=45';
+import { toMusicXml } from '../generator/musicxml.js?v=45';
+import { createHistory, generateUnique } from '../generator/fingerprint.js?v=45';
+import { createKey, pitchAt } from '../generator/theory.js?v=45';
+import { createPlayer } from './playback.js?v=45';
+import { createStage, barTimings } from './stage.js?v=45';
 
 const STORAGE_KEY = 'sightscore.history.v1';
 const LAYOUT_STORAGE_KEY = 'sightscore.layout.v1';
 
 const elements = {
+  gradeControls: document.getElementById('grade-controls'),
   grade: document.getElementById('grade'),
+  key: document.getElementById('key'),
   generate: document.getElementById('generate'),
   prepare: document.getElementById('prepare'),
   play: document.getElementById('play'),
@@ -203,27 +205,28 @@ window.addEventListener('error', (event) => fail('發生錯誤', event.message))
 window.addEventListener('unhandledrejection', (event) => fail('發生錯誤', String(event.reason)));
 
 /**
- * Move the actual #grade/#countdown elements (not copies — they keep their
- * ids and listeners either way) between the score's own top corners and a
- * shared row with the meta line, depending on whether the viewport has
- * room to spare. `showMeta` replaces #meta's own innerHTML on every test,
- * which is why they're moved into #meta-row (a stable wrapper) rather than
- * into #meta itself.
+ * Move the actual #grade-controls (grade + key together, see index.html)
+ * and #countdown elements (not copies — they keep their ids and listeners
+ * either way) between the score's own top corners and a shared row with
+ * the meta line, depending on whether the viewport has room to spare.
+ * `showMeta` replaces #meta's own innerHTML on every test, which is why
+ * they're moved into #meta-row (a stable wrapper) rather than into #meta
+ * itself.
  */
 function pinTopRowLayout() {
   if (TOP_ROW_QUERY.matches) {
-    if (elements.grade.parentElement !== elements.metaRow) {
-      elements.metaRow.insertBefore(elements.grade, elements.meta);
+    if (elements.gradeControls.parentElement !== elements.metaRow) {
+      elements.metaRow.insertBefore(elements.gradeControls, elements.meta);
     }
     if (elements.countdown.parentElement !== elements.metaRow) {
       elements.metaRow.appendChild(elements.countdown);
     }
   } else {
-    if (elements.grade.parentElement !== elements.scoreFrame) {
-      elements.scoreFrame.insertBefore(elements.grade, elements.scoreFrame.firstChild);
+    if (elements.gradeControls.parentElement !== elements.scoreFrame) {
+      elements.scoreFrame.insertBefore(elements.gradeControls, elements.scoreFrame.firstChild);
     }
     if (elements.countdown.parentElement !== elements.scoreFrame) {
-      elements.scoreFrame.insertBefore(elements.countdown, elements.grade.nextSibling);
+      elements.scoreFrame.insertBefore(elements.countdown, elements.gradeControls.nextSibling);
     }
   }
 }
@@ -287,6 +290,7 @@ async function init() {
     fail('無法載入規則表', error.message);
     return;
   }
+  populateKeyOptions();
 
   try {
     osmd = new opensheetmusicdisplay.OpenSheetMusicDisplay(elements.score, {
@@ -353,6 +357,12 @@ async function init() {
     updateHistoryInfo();
   });
   elements.grade.addEventListener('change', () => {
+    // Each grade allows a different key list, so the dropdown has to be
+    // rebuilt before (possibly) generating off it.
+    populateKeyOptions();
+    if (current) newTest();
+  });
+  elements.key.addEventListener('change', () => {
     if (current) newTest();
   });
 
@@ -385,6 +395,33 @@ async function init() {
   updateHistoryInfo();
 }
 
+/**
+ * Rebuild #key's options for whichever grade is currently selected — each
+ * grade allows a different key list (Grade 8's is every key up to six
+ * accidentals), so this can't be written once in index.html the way
+ * #grade's fixed 1-8 list is. "隨機調性" (empty value) is always first and
+ * is what keeps today's fully-random behaviour the default. If the
+ * previously chosen key is still valid for the new grade it's kept
+ * selected rather than silently reset, so switching, say, Grade 3 to
+ * Grade 5 doesn't quietly drop a still-valid "C 大調" pick back to random.
+ */
+function populateKeyOptions() {
+  const gradeRules = rules.grades[elements.grade.value];
+  const { major, minor } = keyOptionsFor(gradeRules);
+  const previous = elements.key.value;
+
+  elements.key.innerHTML = '<option value="">隨機調性</option>';
+  for (const { tonic } of major) {
+    elements.key.insertAdjacentHTML('beforeend', `<option value="${tonic}:major">${escapeHtml(tonic)} 大調</option>`);
+  }
+  for (const { tonic } of minor) {
+    elements.key.insertAdjacentHTML('beforeend', `<option value="${tonic}:minor">${escapeHtml(tonic)} 小調</option>`);
+  }
+
+  const stillValid = [...elements.key.options].some((option) => option.value === previous);
+  elements.key.value = stillValid ? previous : '';
+}
+
 async function newTest() {
   stopCountdown();
   player.stop();
@@ -396,7 +433,11 @@ async function newTest() {
   player.preload();
 
   const grade = Number(elements.grade.value);
-  const { score } = generateUnique(() => generateTest(rules, { grade }), history);
+  // '' (隨機調性) keeps the fully-random pickKey() behaviour; otherwise
+  // every retry generateUnique makes is forced to the same chosen key,
+  // same as it's forced to the same grade.
+  const [tonic, mode] = elements.key.value ? elements.key.value.split(':') : [];
+  const { score } = generateUnique(() => generateTest(rules, { grade, tonic, mode }), history);
   current = { score, xml: toMusicXml(score) };
 
   // Held at opacity 0 through the whole render + fitScore search (which

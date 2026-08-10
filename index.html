@@ -25,7 +25,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="src/app/styles.css?v=44">
+  <link rel="stylesheet" href="src/app/styles.css?v=45">
   <!--
     Loaded from vendor/ rather than node_modules/ so the page works as a plain
     static site (GitHub Pages) with no build step and no npm install.
@@ -88,16 +88,29 @@
 
   <main>
     <div class="score-frame" id="score-frame">
-      <select id="grade" class="grade-select" aria-label="級數" title="級數">
-        <option value="1">Grade 1</option>
-        <option value="2">Grade 2</option>
-        <option value="3">Grade 3</option>
-        <option value="4">Grade 4</option>
-        <option value="5">Grade 5</option>
-        <option value="6">Grade 6</option>
-        <option value="7">Grade 7</option>
-        <option value="8">Grade 8</option>
-      </select>
+      <!--
+        Grouped so both pin to (and move between) the score-frame corner and
+        the wide-screen meta-row together, as one unit — see grade-controls
+        in styles.css and pinTopRowLayout in app.js. #key's options are
+        rebuilt by app.js whenever the grade changes, since each grade
+        allows a different key list; "隨機調性" (the default) keeps today's
+        fully-random behaviour.
+      -->
+      <div class="grade-controls" id="grade-controls">
+        <select id="grade" class="grade-select" aria-label="級數" title="級數">
+          <option value="1">Grade 1</option>
+          <option value="2">Grade 2</option>
+          <option value="3">Grade 3</option>
+          <option value="4">Grade 4</option>
+          <option value="5">Grade 5</option>
+          <option value="6">Grade 6</option>
+          <option value="7">Grade 7</option>
+          <option value="8">Grade 8</option>
+        </select>
+        <select id="key" class="grade-select" aria-label="調性" title="調性">
+          <option value="">隨機調性</option>
+        </select>
+      </div>
       <!--
         Preparation countdown, pinned to the score's own top-right corner —
         symmetric with the grade selector at the top-left. Both read as
@@ -126,6 +139,6 @@
 
   <span id="history-info" class="history-badge"></span>
 
-  <script type="module" src="src/app/app.js?v=44"></script>
+  <script type="module" src="src/app/app.js?v=45"></script>
 </body>
 </html>
