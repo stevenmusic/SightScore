@@ -177,7 +177,7 @@ const MAX_MEASURES_PER_LINE = 5;
  *     transport buttons' own labels reappear).
  */
 const TOP_ROW_QUERY = window.matchMedia(
-  '(min-width: 1024px), (orientation: landscape) and (max-height: 500px) and (min-width: 680px)',
+  '(min-width: 900px), (orientation: landscape) and (max-height: 420px) and (min-width: 600px)',
 );
 
 const CONFIDENCE_LABEL = {

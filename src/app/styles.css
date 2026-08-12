@@ -496,9 +496,14 @@ footer {
  * that (but above the phone breakpoint) they used to silently overflow
  * their panel with no icon-only fallback to catch them — a gap discovered
  * by resizing the window through it, not by any of the fixed device widths
- * this app is normally checked against. 680px leaves a safety margin.
+ * this app is normally checked against. The shared 900px step leaves a
+ * generous margin over that measured 604px limit.
  */
-@media (max-width: 680px) {
+/* 收成圖示的那一階移到共用斷點的 600px。上面量到「完整文字的控制列需要約 604px」,
+   600px 直接收合會差那 4px,所以 600~900px 這一段改讓按鈕的字級與內距跟著寬度連續縮放
+   (見下方 .btn 的 clamp),把整列壓進 600px 以內——用 clamp 取代「再多開一個 680px 斷點」,
+   平板也就不必為了遷就斷點而失去按鈕文字 */
+@media (max-width: 600px) {
   .topbar { padding: 10px 8px; }
   .controls { gap: 6px; }
   /* Every button becomes its icon so the row still fits on one line. */
@@ -507,7 +512,7 @@ footer {
   .grade-select { font-size: var(--fs-xs); padding: 6px 4px; }
 }
 
-@media (max-width: 560px) {
+@media (max-width: 600px) {
   body { --body-px: 12px; padding: 0 var(--body-px) 28px; }
   /*
    * Measured directly against a ScrollScore screenshot taken at the same
@@ -541,7 +546,7 @@ footer {
   .message { font-size: var(--fs-xs); }
 }
 
-@media (min-width: 561px) and (max-width: 1024px) {
+@media (min-width: 600px) and (max-width: 900px) {
   body { --body-px: 20px; padding: 0 var(--body-px) 36px; }
 
   /*
@@ -549,9 +554,9 @@ footer {
    * hand — held on a stand or propped up like real sheet music, closer to a
    * desktop's viewing distance than a phone's — so reusing the phone-tuned
    * base sizes here read small even though there isn't room yet for the
-   * combined row 1024px and up gets. `.btn.icon-only`'s own width stays
+   * combined row 900px and up gets. `.btn.icon-only`'s own width stays
    * explicit rather than inherited from the plain `.btn` rule below it in
-   * the 680px block, so icon-only buttons stay square instead of 42px
+   * the 900px block, so icon-only buttons stay square instead of 42px
    * tall but still 36px wide in the part of this range narrow enough to
    * also be in icon-only mode.
    */
@@ -578,10 +583,10 @@ footer {
  * actually moves the #grade/#countdown elements into `.meta-row` under
  * either condition — this only styles them structurally once they're
  * there; font sizes are left to the width-tiered rules elsewhere (the
- * 561–1024px block above already covers a landscape phone's width, so it
+ * 600–900px block above already covers a landscape phone's width, so it
  * doesn't need its own font sizing here).
  */
-@media (min-width: 1024px), (orientation: landscape) and (max-height: 500px) and (min-width: 680px) {
+@media (min-width: 900px), (orientation: landscape) and (max-height: 420px) and (min-width: 600px) {
   .meta-row {
     display: flex;
     align-items: center;
@@ -606,11 +611,11 @@ footer {
 /*
  * Font sizes for the combined row, specific to true desktop/wide width —
  * a landscape phone qualifies for the structural rules above too, but it's
- * still a phone, and already gets its own sizing from the 561–1024px block
+ * still a phone, and already gets its own sizing from the 600–900px block
  * regardless of orientation (a landscape iPhone Pro is 852px wide, well
  * inside that range) rather than needing a duplicate set here.
  */
-@media (min-width: 1024px) {
+@media (min-width: 900px) {
   /* Comfortable to read at the distance a wide screen is usually held or
      sat back from, rather than reusing phone-sized type just because nothing
      forces a change at this width. */
@@ -639,6 +644,34 @@ footer {
 
 .checklist li { margin-bottom: 2px; break-inside: avoid; }
 
-@media (max-width: 560px) {
+@media (max-width: 600px) {
   .checklist { columns: 1; }
+}
+
+/* ══ 共用斷點:觸控裝置的點擊目標 ══════════════════════════════════
+   與 ScrollScore / LoudNorm / HarmonyMap 同一組。放在檔案最後,
+   才不會被上面各寬度階的 .btn 尺寸蓋掉。 */
+@media (pointer: coarse) {
+  .btn { height: 44px; min-width: 44px; }
+  .btn.icon-only { width: 44px; }
+}
+/* 手機橫向:高度吃緊,44px 會再吃掉寶貴的高度,取 36px 折衷 */
+@media (pointer: coarse) and (max-height: 420px) {
+  .btn { height: 36px; }
+  .btn.icon-only { width: 36px; }
+}
+/* 觸控目標寬度連續縮放:320px 只放得下 38px(仍遠高於 WCAG 2.2 AA 2.5.8 要求的 24px,
+   而且高度維持 44px),400px 以上就回到 Apple HIG 建議的 44px */
+@media (pointer: coarse) and (max-width: 420px) {
+  .btn { min-width: clamp(38px, 10.5vw, 44px); }
+  .btn.icon-only { width: clamp(38px, 10.5vw, 44px); }
+}
+
+/* ══ 600~900px:保留按鈕文字,改用連續縮放把整列壓進寬度 ══════════════
+   完整文字的控制列在原本的字級下需要約 604px。與其為它多開一個斷點,
+   不如讓字級與左右內距跟著視窗寬度連續縮放:600px 時收到最小、900px 以上回到原尺寸。
+   這樣平板不會因為遷就共用斷點而被迫變成圖示按鈕。 */
+@media (min-width: 600px) and (max-width: 900px) {
+  .btn { font-size: clamp(12px, 1.55vw, 16px); padding: 0 clamp(8px, 1.3vw, 14px); }
+  .grade-select { font-size: clamp(12px, 1.55vw, 16px); padding: 8px clamp(6px, 1vw, 10px); }
 }
