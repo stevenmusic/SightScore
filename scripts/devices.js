@@ -9,7 +9,7 @@
  * (generating a new test must only ever change the meta strip and the
  * score, never the topbar above them), or if the grade selector / countdown
  * drift from where they belong — pinned to the score frame's corners on a
- * narrow viewport, or sharing the meta row at 1024px and up, or on a phone
+ * narrow viewport, or sharing the meta row at 900px and up, or on a phone
  * rotated to landscape (see app.js's `pinTopRowLayout`, which moves the
  * actual elements between the two, and its `TOP_ROW_QUERY`).
  */
@@ -30,7 +30,7 @@ const DEVICES = [
   { name: 'iPhone 15 Pro Max', width: 430, height: 932, scale: 3 },
   { name: 'iPhone Pro landscape', width: 852, height: 393, scale: 3 },
   // Between the phone breakpoint and the tablet sizes below — the width
-  // range where the topbar's icon-only breakpoint (680px) actually matters,
+  // range where the topbar's icon-only breakpoint (600px) actually matters,
   // and where a full-label overflow was previously found only by resizing
   // through it rather than by any of the other fixed widths here.
   { name: 'Portrait tablet (narrow)', width: 744, height: 1133, scale: 2 },
@@ -125,7 +125,7 @@ for (const device of DEVICES) {
     // wide, or a landscape phone short on height) they live in the meta
     // row instead.
     const wideLayout = window.matchMedia(
-      '(min-width: 1024px), (orientation: landscape) and (max-height: 500px) and (min-width: 680px)',
+      '(min-width: 900px), (orientation: landscape) and (max-height: 420px) and (min-width: 600px)',
     ).matches;
     const values = [...meta.querySelectorAll('span:not(.meta-sep)')];
     const lineHeight = values.length
