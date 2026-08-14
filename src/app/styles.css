@@ -107,7 +107,16 @@ body {
   border-bottom: 1px solid var(--line);
 }
 
-.title-block { min-width: 0; }
+.title-block { min-width: 0; display: flex; align-items: center; gap: 6px; }
+
+/* Hub 頁(stevenmusic.github.io)是後來才生的,工具頁原本沒有回首頁的路徑——
+   跟 ScrollScore 用同一套安靜文字連結,不用 .btn 那套實心/邊框樣式 */
+.home-link {
+  display: inline-flex; align-items: center; gap: 4px; flex: none;
+  color: var(--muted); font-size: var(--fs-sm); text-decoration: none;
+  padding: 6px 4px; border-radius: var(--radius-sm); transition: color .15s;
+}
+.home-link:hover, .home-link:focus-visible { color: var(--gold-bright); }
 
 h1 {
   font-family: "Noto Serif TC", serif;
@@ -508,7 +517,7 @@ footer {
   .controls { gap: 6px; }
   /* Every button becomes its icon so the row still fits on one line. */
   .btn { width: 36px; height: 36px; padding: 0; }
-  .btn .btn-label { display: none; }
+  .btn .btn-label, .home-link .btn-label { display: none; }
   .grade-select { font-size: var(--fs-xs); padding: 6px 4px; }
 }
 
