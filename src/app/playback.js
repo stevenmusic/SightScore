@@ -151,7 +151,10 @@ export function createPlayer({ onStatus } = {}) {
     if (samples) return Promise.resolve(samples);
     if (pending) return pending;
 
-    onStatus?.('載入鋼琴音色中…');
+    // Passed as an i18n key, not already-localized text — app.js's onStatus
+    // callback resolves it via t(), so a language switch mid-load still
+    // re-renders correctly (see app.js's `lastMessage`/`refreshDynamicText`).
+    onStatus?.('loadingSamples');
     pending = Promise.all(download())
       .then((entries) => Promise.all(
         entries.filter(Boolean).map(
@@ -162,7 +165,7 @@ export function createPlayer({ onStatus } = {}) {
       ))
       .then((decoded) => {
         samples = decoded.filter(Boolean).sort((a, b) => a.midi - b.midi);
-        onStatus?.(samples.length ? null : '鋼琴音色載入失敗，暫用備援音色');
+        onStatus?.(samples.length ? null : 'samplesFailed');
         return samples;
       });
     return pending;

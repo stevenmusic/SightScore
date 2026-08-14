@@ -1,9 +1,14 @@
-import { generateTest, keyOptionsFor } from '../generator/generate.js?v=46';
-import { toMusicXml } from '../generator/musicxml.js?v=46';
-import { createHistory, generateUnique } from '../generator/fingerprint.js?v=46';
-import { createKey, pitchAt } from '../generator/theory.js?v=46';
-import { createPlayer } from './playback.js?v=46';
-import { createStage, barTimings } from './stage.js?v=46';
+import { generateTest, keyOptionsFor } from '../generator/generate.js?v=47';
+import { toMusicXml } from '../generator/musicxml.js?v=47';
+import { createHistory, generateUnique } from '../generator/fingerprint.js?v=47';
+import { createKey, pitchAt } from '../generator/theory.js?v=47';
+import { createPlayer } from './playback.js?v=47';
+import { createStage, barTimings } from './stage.js?v=47';
+import { initLanguage, applyLanguage, getLanguage, t, onLanguageChange } from './i18n.js?v=47';
+
+// As early as possible, before any other DOM work below, so the page never
+// paints in the wrong language for a returning en visitor.
+initLanguage();
 
 const STORAGE_KEY = 'sightscore.history.v1';
 const LAYOUT_STORAGE_KEY = 'sightscore.layout.v1';
@@ -30,6 +35,7 @@ const elements = {
   historyInfo: document.getElementById('history-info'),
   clearHistory: document.getElementById('clear-history'),
   confidence: document.getElementById('confidence'),
+  langToggle: document.getElementById('lang-toggle'),
 };
 
 /* ScrollScore's icon paths, so the two apps show the same glyphs. */
@@ -37,8 +43,10 @@ const PLAY_ICON_D = 'M8 5v14l11-7z';
 const PAUSE_ICON_D = 'M6 5h4v14H6zM14 5h4v14h-4z';
 
 const player = createPlayer({
-  // Only loading progress and failures; play() reports the rest.
-  onStatus: (text) => { if (text) say(text); },
+  // Only loading progress and failures; play() reports the rest. playback.js
+  // passes i18n keys (not already-localized text) so a language switch mid
+  // load still re-renders correctly — see `refreshDynamicText`.
+  onStatus: (key) => { if (key) say(key); },
 });
 const history = createHistory({
   capacity: 60,
@@ -180,29 +188,41 @@ const TOP_ROW_QUERY = window.matchMedia(
   '(min-width: 900px), (orientation: landscape) and (max-height: 420px) and (min-width: 600px)',
 );
 
-const CONFIDENCE_LABEL = {
+/** Keyed by `score.confidence` — matches the i18n dictionary's own key names
+ * one-to-one, so a lookup here is just `t(CONFIDENCE_LABEL_KEY[confidence])`. */
+const CONFIDENCE_LABEL_KEY = {
   verified: null,
-  partial: '此級數部分參數為推估值',
-  inferred: '此級數參數為推估值，尚待官方大綱核對',
+  partial: 'confidencePartial',
+  inferred: 'confidenceInferred',
 };
+
+/**
+ * The last status/error shown in `#message`, kept as an i18n key (+ params)
+ * rather than only as rendered text — so a language switch mid-message (say,
+ * while "Rendering…" is on screen) can re-render it in the new language
+ * instead of leaving stale text from the old one. See `refreshDynamicText`.
+ */
+let lastMessage = null;
 
 init();
 
 /** Ordinary status text, clearing any error styling left behind. */
-function say(text) {
+function say(key, params) {
+  lastMessage = { kind: 'say', key, params };
   elements.message.className = 'message';
-  elements.message.textContent = text;
+  elements.message.textContent = t(key, params);
 }
 
 /** Surface failures on the page — a blank screen tells the user nothing. */
-function fail(text, detail) {
+function fail(key, detail) {
+  lastMessage = { kind: 'fail', key, detail };
   elements.message.className = 'message error';
-  elements.message.textContent = detail ? `${text}（${detail}）` : text;
+  elements.message.textContent = detail ? t('errorDetail', { text: t(key), detail }) : t(key);
   elements.generate.disabled = true;
 }
 
-window.addEventListener('error', (event) => fail('發生錯誤', event.message));
-window.addEventListener('unhandledrejection', (event) => fail('發生錯誤', String(event.reason)));
+window.addEventListener('error', (event) => fail('errorGeneric', event.message));
+window.addEventListener('unhandledrejection', (event) => fail('errorGeneric', String(event.reason)));
 
 /**
  * Move the actual #grade-controls (grade + key together, see index.html)
@@ -275,10 +295,7 @@ async function init() {
   elements.generate.disabled = true;
 
   if (typeof opensheetmusicdisplay === 'undefined') {
-    fail(
-      '找不到樂譜渲染函式庫 OSMD（vendor/opensheetmusicdisplay.min.js 未載入）。'
-      + '請確認該檔案存在，並透過 http 開啟頁面（直接以 file:// 開啟不會運作）',
-    );
+    fail('loadingOSMD');
     return;
   }
 
@@ -287,7 +304,7 @@ async function init() {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     rules = await response.json();
   } catch (error) {
-    fail('無法載入規則表', error.message);
+    fail('failLoadRules', error.message);
     return;
   }
   populateKeyOptions();
@@ -330,7 +347,7 @@ async function init() {
       pinTempoTermPosition();
     };
   } catch (error) {
-    fail('無法初始化樂譜渲染器', error.message);
+    fail('failInitRenderer', error.message);
     return;
   }
   window.__osmd = osmd; // debugging hook, also used by scripts/smoke.js
@@ -365,6 +382,21 @@ async function init() {
   elements.key.addEventListener('change', () => {
     if (current) newTest();
   });
+  elements.langToggle.addEventListener('click', () => {
+    applyLanguage(getLanguage() === 'en' ? 'zh' : 'en');
+  });
+  // `aria-pressed` is a boolean, not translated text, so it's set here
+  // rather than via a static `data-i18n-attr`; `refreshDynamicText` covers
+  // everything else app.js itself builds or labels dynamically. `initLanguage()`
+  // (top of this module) already applied whichever language was stored
+  // before this listener existed to hear about it, so aria-pressed is
+  // synced once explicitly here too — otherwise a returning "en" visitor's
+  // toggle would render as unpressed until the next actual switch.
+  onLanguageChange((lang) => {
+    elements.langToggle.setAttribute('aria-pressed', lang === 'en' ? 'true' : 'false');
+    refreshDynamicText();
+  });
+  elements.langToggle.setAttribute('aria-pressed', getLanguage() === 'en' ? 'true' : 'false');
 
   pinTopRowLayout();
   // Crossing the breakpoint changes how much top padding `.score-frame`
@@ -396,6 +428,32 @@ async function init() {
 }
 
 /**
+ * Re-renders every piece of text app.js builds or labels itself — the stuff
+ * no static `data-i18n`/`data-i18n-attr` element in index.html can reach,
+ * because it's assembled at runtime (select options, the meta strip, the
+ * preparation checklist) or depends on state that isn't just "which language"
+ * (the last status/error message, the play/stop button's playing state).
+ * Called once after every `applyLanguage()` — see the `onLanguageChange`
+ * subscription in `init()`. Safe to call before `rules`/`current` exist:
+ * each piece guards on the state it actually needs.
+ */
+function refreshDynamicText() {
+  if (lastMessage) {
+    if (lastMessage.kind === 'say') say(lastMessage.key, lastMessage.params);
+    else fail(lastMessage.key, lastMessage.detail);
+  }
+  if (rules) populateKeyOptions();
+  if (current) showMeta(current.score);
+  setPlayState(player.playing);
+  updateHistoryInfo();
+  if (!elements.checklist.hidden) {
+    elements.checklist.innerHTML = PREPARATION_STEP_KEYS
+      .map((key) => `<li>${escapeHtml(t(key))}</li>`)
+      .join('');
+  }
+}
+
+/**
  * Rebuild #key's options for whichever grade is currently selected — each
  * grade allows a different key list (Grade 8's is every key up to six
  * accidentals), so this can't be written once in index.html the way
@@ -410,12 +468,12 @@ function populateKeyOptions() {
   const { major, minor } = keyOptionsFor(gradeRules);
   const previous = elements.key.value;
 
-  elements.key.innerHTML = '<option value="">隨機調性</option>';
+  elements.key.innerHTML = `<option value="">${escapeHtml(t('randomKey'))}</option>`;
   for (const { tonic } of major) {
-    elements.key.insertAdjacentHTML('beforeend', `<option value="${tonic}:major">${escapeHtml(tonic)} 大調</option>`);
+    elements.key.insertAdjacentHTML('beforeend', `<option value="${tonic}:major">${escapeHtml(t('majorKey', { tonic }))}</option>`);
   }
   for (const { tonic } of minor) {
-    elements.key.insertAdjacentHTML('beforeend', `<option value="${tonic}:minor">${escapeHtml(tonic)} 小調</option>`);
+    elements.key.insertAdjacentHTML('beforeend', `<option value="${tonic}:minor">${escapeHtml(t('minorKey', { tonic }))}</option>`);
   }
 
   const stillValid = [...elements.key.options].some((option) => option.value === previous);
@@ -445,13 +503,13 @@ async function newTest() {
   // only released once a final layout is settled — see the .entering rule.
   elements.score.classList.add('entering');
 
-  say('渲染中…');
+  say('renderingStatus');
   try {
     await osmd.load(current.xml);
     osmd.render();
-    say('按「開始 30 秒準備」模擬考試流程。');
+    say('readyStatus');
   } catch (error) {
-    fail('渲染失敗', error.message);
+    fail('failRender', error.message);
     elements.score.classList.remove('entering');
     return;
   }
@@ -477,15 +535,19 @@ async function newTest() {
 }
 
 function showMeta(score) {
-  const mode = score.key.mode === 'major' ? '大調' : '小調';
+  // `metaKeyMajor`/`metaKeyMinor` are a deliberately tighter English form
+  // ("F# min") than the key-select dropdown's own "{tonic} minor" — this
+  // field alone has a fixed CSS width (see `.meta-key`, sized for the
+  // Chinese "Gb 大調"), and the full English word routinely overflowed it.
+  const keyTemplate = score.key.mode === 'major' ? 'metaKeyMajor' : 'metaKeyMinor';
   // No labels — just the values in a fixed order, separated by "丨". The
   // key/time/bar-count fields have a fixed CSS width so the separators
   // never move when a new test changes their text length; only the tempo
   // field (last, nothing after it) is free to vary.
   const fields = [
-    ['meta-key', `${score.key.tonic} ${mode}`],
+    ['meta-key', t(keyTemplate, { tonic: score.key.tonic })],
     ['meta-time', score.timeSignature.text],
-    ['meta-bars', `${score.barCount} 小節`],
+    ['meta-bars', t('barsSuffix', { count: score.barCount })],
     // The tempo term itself already prints above bar 1 in the score
     // (pinTempoTermPosition keeps it at a fixed spot there); showing it a
     // second time here was redundant, so only the metronome mark remains.
@@ -495,23 +557,19 @@ function showMeta(score) {
     .map(([cls, value]) => `<span class="${cls}">${escapeHtml(value)}</span>`)
     .join('<span class="meta-sep">丨</span>');
 
-  const warning = CONFIDENCE_LABEL[score.confidence];
-  elements.confidence.hidden = !warning;
-  if (warning) elements.confidence.textContent = warning;
+  const warningKey = CONFIDENCE_LABEL_KEY[score.confidence];
+  elements.confidence.hidden = !warningKey;
+  if (warningKey) elements.confidence.textContent = t(warningKey);
 }
 
 /*
  * The standard preparation order from the knowledge base. Reading it beats
  * staring at bar 1: the tempo should be set by the busiest bar, not the first.
+ * The actual text lives in i18n.js (prepStep1..6) — kept as keys here rather
+ * than resolved once, so `refreshDynamicText` can re-render this list in
+ * place when the language changes while it's on screen.
  */
-const PREPARATION_STEPS = [
-  '調號 — 幾個升降記號？主音在哪？',
-  '拍號 — 幾拍子？複拍子用大拍感覺（6/8 是兩大拍）',
-  '速度術語 — 決定起頭速度',
-  '把位 — 兩手從哪裡開始，中途換不換',
-  '掃描難點 — 臨時記號、最密的一小節、最大的跳進',
-  '用最難的那一小節決定速度，然後心裡數一小節',
-];
+const PREPARATION_STEP_KEYS = ['prepStep1', 'prepStep2', 'prepStep3', 'prepStep4', 'prepStep5', 'prepStep6'];
 
 /**
  * The tonic triad in root position, near the middle of the keyboard — what
@@ -540,7 +598,7 @@ async function startCountdown() {
   stopCountdown();
   player.stop();
   elements.checklist.hidden = true;
-  say('給音中……');
+  say('givingPitch');
 
   await player.playChord(tonicTriadMidis(current.score.key)).catch(() => {});
 
@@ -569,12 +627,10 @@ function runPreparationCountdown() {
   elements.countdownValue.textContent = String(remaining);
   elements.countdown.className = 'countdown running';
   elements.checklist.hidden = false;
-  elements.checklist.innerHTML = PREPARATION_STEPS
-    .map((step) => `<li>${escapeHtml(step)}</li>`)
+  elements.checklist.innerHTML = PREPARATION_STEP_KEYS
+    .map((key) => `<li>${escapeHtml(t(key))}</li>`)
     .join('');
-  say(scoreFitsViewport()
-    ? '準備時間：整份樂譜已經在畫面上，時間到會提示開始。'
-    : '準備時間：可上下捲動看完整份樂譜，時間到會提示開始。');
+  say(scoreFitsViewport() ? 'prepFitsScreen' : 'prepScrolls');
 
   countdownTimer = setInterval(() => {
     remaining -= 1;
@@ -585,7 +641,7 @@ function runPreparationCountdown() {
       elements.checklist.hidden = true;
       // Continuity outscores accuracy: going back to fix a slip is counted as
       // a second mistake.
-      say('時間到——不要停、不要回頭改，彈完再按播放比對。');
+      say('prepDone');
     }
   }, 1000);
 }
@@ -598,9 +654,8 @@ function stopCountdown() {
 function setPlayState(playing) {
   elements.play.classList.toggle('is-active', playing);
   elements.playIcon.setAttribute('d', playing ? PAUSE_ICON_D : PLAY_ICON_D);
-  const label = playing ? '停止' : '播放';
-  elements.play.setAttribute('aria-label', label);
-  elements.play.title = playing ? '停止播放' : '播放正確版本';
+  elements.play.setAttribute('aria-label', t(playing ? 'playAriaStop' : 'playAriaPlay'));
+  elements.play.title = t(playing ? 'playTitleStop' : 'playTitlePlay');
 }
 
 /**
@@ -954,14 +1009,14 @@ function togglePlayback() {
   })
     .then(() => {
       if (!player.playing) return;
-      say('播放中——目前小節以色塊標示，同時顯示下一行。');
+      say('playingStatus');
       startFollowing();
     })
-    .catch((error) => fail('播放失敗', error.message));
+    .catch((error) => fail('failPlayback', error.message));
 }
 
 function updateHistoryInfo() {
-  elements.historyInfo.textContent = `已紀錄${history.size}題`;
+  elements.historyInfo.textContent = t('historyCount', { count: history.size });
 }
 
 function escapeHtml(value) {

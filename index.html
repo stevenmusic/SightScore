@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#FBF7EE">
-  <title>SightScore — 視奏隨機題目生成器</title>
+  <title data-i18n="pageTitle">SightScore — 視奏隨機題目生成器</title>
   <!--
     Safari's address bar and tab strip are browser chrome — a page has no
     API to hide them, on rotation or otherwise. The actual fix (and what
@@ -25,7 +25,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="src/app/styles.css?v=46">
+  <link rel="stylesheet" href="src/app/styles.css?v=47">
   <!--
     Loaded from vendor/ rather than node_modules/ so the page works as a plain
     static site (GitHub Pages) with no build step and no npm install.
@@ -44,8 +44,8 @@
   -->
   <header class="topbar">
     <div class="title-block">
-      <a href="https://stevenmusic.github.io/" class="home-link" aria-label="回首頁" title="回首頁">
-        <span aria-hidden="true">←</span><span class="btn-label">首頁</span>
+      <a href="https://stevenmusic.github.io/" class="home-link" data-i18n-attr="aria-label:homeAria,title:homeAria">
+        <span aria-hidden="true">←</span><span class="btn-label" data-i18n="homeText">首頁</span>
       </a>
       <h1>Sight<span>Score</span></h1>
     </div>
@@ -53,21 +53,32 @@
     <section class="controls">
       <button class="btn primary" id="generate">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
-        <span class="btn-label">產生新題目</span>
+        <span class="btn-label" data-i18n="generateLabel">產生新題目</span>
       </button>
 
       <button class="btn" id="prepare" disabled>
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 1h6"/></svg>
-        <span class="btn-label">開始 30 秒準備</span>
+        <span class="btn-label" data-i18n="prepareLabel">開始 30 秒準備</span>
       </button>
 
-      <button class="btn icon-only" id="play" disabled aria-label="播放" title="播放正確版本">
+      <button class="btn icon-only" id="play" disabled data-i18n-attr="aria-label:playAriaPlay,title:playTitlePlay" aria-label="播放" title="播放正確版本">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path id="playIcon" d="M8 5v14l11-7z"/></svg>
       </button>
 
-      <button class="btn icon-only" id="stop" disabled aria-label="停止" title="停止並回到開頭">
+      <button class="btn icon-only" id="stop" disabled data-i18n-attr="aria-label:stopAria,title:stopTitle" aria-label="停止" title="停止並回到開頭">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 6h2.6v12H6zm4.4 6l8.6 6V6z"/></svg>
       </button>
+
+      <!--
+        Compact language switch — same fixed-size icon-only button as
+        play/stop above so toggling it never nudges anything else in this
+        row. `#lang-toggle`'s own text always names the language you'd
+        switch *to* (see i18n.js's `langToggleLabel`), not the one that's
+        currently active. `aria-pressed` (set by app.js, not a static
+        `data-i18n-attr`, since it's a boolean rather than translated text)
+        reflects whether English is the one currently on.
+      -->
+      <button class="btn icon-only" id="lang-toggle" type="button" aria-pressed="false" data-i18n="langToggleLabel" data-i18n-attr="aria-label:langToggleAria,title:langToggleTitle">EN</button>
     </section>
   </header>
 
@@ -100,7 +111,7 @@
         fully-random behaviour.
       -->
       <div class="grade-controls" id="grade-controls">
-        <select id="grade" class="grade-select" aria-label="級數" title="級數">
+        <select id="grade" class="grade-select" data-i18n-attr="aria-label:gradeLabel,title:gradeLabel" aria-label="級數" title="級數">
           <option value="1">Grade 1</option>
           <option value="2">Grade 2</option>
           <option value="3">Grade 3</option>
@@ -110,8 +121,8 @@
           <option value="7">Grade 7</option>
           <option value="8">Grade 8</option>
         </select>
-        <select id="key" class="grade-select" aria-label="調性" title="調性">
-          <option value="">隨機調性</option>
+        <select id="key" class="grade-select" data-i18n-attr="aria-label:keyLabel,title:keyLabel" aria-label="調性" title="調性">
+          <option value="" data-i18n="randomKey">隨機調性</option>
         </select>
       </div>
       <!--
@@ -122,7 +133,7 @@
         the engraving. Hidden until there is a test to prepare for.
       -->
       <div class="countdown" id="countdown" hidden>
-        <span id="countdown-value">30</span><span class="unit">秒</span>
+        <span id="countdown-value">30</span><span class="unit" data-i18n="countdownUnit">秒</span>
       </div>
       <div class="stage" id="stage">
         <div class="measure-highlight" id="measure-highlight"></div>
@@ -135,13 +146,13 @@
   </main>
 
   <footer>
-    <button id="clear-history" class="link">清除出題紀錄</button>
+    <button id="clear-history" class="link" data-i18n="clearHistory">清除出題紀錄</button>
     <span class="spacer"></span>
     <span id="confidence" class="badge" hidden></span>
   </footer>
 
   <span id="history-info" class="history-badge"></span>
 
-  <script type="module" src="src/app/app.js?v=46"></script>
+  <script type="module" src="src/app/app.js?v=47"></script>
 </body>
 </html>
