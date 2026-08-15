@@ -192,8 +192,12 @@ h1 span { color: var(--ivory); font-weight: 600; }
 .btn:disabled { opacity: .35; cursor: not-allowed; }
 .btn:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 
-/* Play and stop carry an icon only — no label at any width. */
-.btn.icon-only { width: 38px; padding: 0; }
+/* Play and stop carry an icon only — no label at any width. flex-shrink:0
+   keeps it from being squeezed narrower than its own set width by the
+   nowrap controls row (aspect-ratio alone isn't reliable here once this is
+   a flex item with min-width in play, so width is set explicitly to match
+   height at each breakpoint below instead). */
+.btn.icon-only { width: 38px; padding: 0; flex-shrink: 0; }
 .btn.icon-only.is-active { background: var(--gold); color: var(--bg); }
 
 select {
@@ -515,8 +519,11 @@ footer {
 @media (max-width: 600px) {
   .topbar { padding: 10px 8px; }
   .controls { gap: 6px; }
-  /* Every button becomes its icon so the row still fits on one line. */
+  /* Every button becomes its icon so the row still fits on one line.
+     .btn.icon-only's own width (higher specificity, set above) would
+     otherwise keep winning over this at 38px and break the circle. */
   .btn { width: 36px; height: 36px; padding: 0; }
+  .btn.icon-only { width: 36px; }
   .btn .btn-label, .home-link .btn-label { display: none; }
   .grade-select { font-size: var(--fs-xs); padding: 6px 4px; }
 }
@@ -566,7 +573,7 @@ footer {
    * combined row 900px and up gets. `.btn.icon-only`'s own width stays
    * explicit rather than inherited from the plain `.btn` rule below it in
    * the 900px block, so icon-only buttons stay square instead of 42px
-   * tall but still 36px wide in the part of this range narrow enough to
+   * tall but still 38px wide in the part of this range narrow enough to
    * also be in icon-only mode.
    */
   .btn { font-size: 16px; height: 42px; }
@@ -663,17 +670,19 @@ footer {
 @media (pointer: coarse) {
   .btn { height: 44px; min-width: 44px; }
   .btn.icon-only { width: 44px; }
+  #lang-toggle { font-size: var(--fs-sm); }
 }
 /* 手機橫向:高度吃緊,44px 會再吃掉寶貴的高度,取 36px 折衷 */
 @media (pointer: coarse) and (max-height: 420px) {
   .btn { height: 36px; }
   .btn.icon-only { width: 36px; }
 }
-/* 觸控目標寬度連續縮放:320px 只放得下 38px(仍遠高於 WCAG 2.2 AA 2.5.8 要求的 24px,
-   而且高度維持 44px),400px 以上就回到 Apple HIG 建議的 44px */
+/* 觸控目標寬度連續縮放:320px 只放得下 38px(仍遠高於 WCAG 2.2 AA 2.5.8 要求的 24px),
+   400px 以上就回到 Apple HIG 建議的 44px。只放寬有文字標籤按鈕的最小寬度——
+   .btn.icon-only 固定維持 44px 寬,跟 ScrollScore/LoudNorm/HarmonyMap 的圖示按鈕
+   一樣不隨窄螢幕縮小,才能維持正圓形(否則高度不縮但寬度縮,會變成橢圓) */
 @media (pointer: coarse) and (max-width: 420px) {
-  .btn { min-width: clamp(38px, 10.5vw, 44px); }
-  .btn.icon-only { width: clamp(38px, 10.5vw, 44px); }
+  .btn:not(.icon-only) { min-width: clamp(38px, 10.5vw, 44px); }
 }
 
 /* ══ 600~900px:保留按鈕文字,改用連續縮放把整列壓進寬度 ══════════════
