@@ -45,7 +45,10 @@
   color-scheme: light;
 }
 
-* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+/* touch-action:manipulation only disables the double-tap-to-zoom gesture; pinch-zoom
+   is unaffected -- unlike locking the viewport with user-scalable=no, which would also
+   block zoom for anyone who actually needs it */
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
 
 body {
   background: var(--bg);
