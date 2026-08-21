@@ -7,15 +7,15 @@
  *   articulation and tempo term.
  */
 
-import { createRandom, randomSeed } from './random.js?v=47';
-import { createKey, dstepRange, degreeOf, pitchAt, chordDegrees, LETTERS } from './theory.js?v=47';
-import { buildProgression, firstChord, lastChord, halfCadenceBar } from './harmony.js?v=47';
+import { createRandom, randomSeed } from './random.js?v=48';
+import { createKey, dstepRange, degreeOf, pitchAt, chordDegrees, LETTERS } from './theory.js?v=48';
+import { buildProgression, firstChord, lastChord, halfCadenceBar } from './harmony.js?v=48';
 import {
   assignPitches, stackChordTones, soundingTimeline, harmoniseLeadingNotes, harmoniseRepeatedLeadingNotes,
   relaxParallels,
-} from './melody.js?v=47';
-import { DIVISIONS, cellsFor, fillBar, wholeBarRest } from './rhythm.js?v=47';
-import { meterInfo, rescaleCells } from './meter.js?v=47';
+} from './melody.js?v=48';
+import { DIVISIONS, cellsFor, fillBar, wholeBarRest } from './rhythm.js?v=48';
+import { meterInfo, rescaleCells } from './meter.js?v=48';
 
 const TEMPO_BPM = {
   Grave: 46, Largo: 52, Adagio: 60, Lento: 58, Andante: 76, Andantino: 84,
@@ -765,6 +765,14 @@ function addChromaticGroup(rng, score) {
     const midStep = a.event.dstep + direction;
     const midNatural = pitchAt(midStep, key);
     if (midNatural.midi !== a.event.pitch.midi + 2 * direction) continue;
+    // The two chromatic passing tones raise/lower `a`'s own letter and
+    // `midStep`'s letter by `direction`. If the key signature already
+    // alters either letter the same way (e.g. F# in a sharp key), applying
+    // `direction` again writes a double sharp/flat instead of the intended
+    // single accidental — skip rather than write that.
+    const letterA = ((a.event.dstep % 7) + 7) % 7;
+    const letterMid = ((midStep % 7) + 7) % 7;
+    if (key.alters[letterA] === direction || key.alters[letterMid] === direction) continue;
     candidates.push({ ...a, direction, midStep, midNatural });
   }
   if (!candidates.length) return;

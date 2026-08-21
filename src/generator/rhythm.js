@@ -124,8 +124,11 @@ export function fillBar(rng, cells, beatsPerBar, options = {}) {
   let restsUsed = 0;
 
   while (remaining > 0) {
+    const position = beatsPerBar - remaining;
     const candidates = cells.filter(
-      (cell) => cell.beats <= remaining && (!cell.rests || restsUsed + cell.rests <= restBudget),
+      (cell) => cell.beats <= remaining
+        && (!cell.rests || restsUsed + cell.rests <= restBudget)
+        && !crossesMidBar(cell, position, beatsPerBar),
     );
     if (!candidates.length) {
       throw new Error(`no rhythm cell fits ${remaining} remaining beat(s)`);
@@ -142,6 +145,23 @@ export function fillBar(rng, cells, beatsPerBar, options = {}) {
   }
 
   return { cellIds, events };
+}
+
+/**
+ * A single rest cell placed at `position` (beats from bar start) that would
+ * straddle the bar's structural half-way point (beat 3 in 4/4) hides that
+ * beat instead of showing it — real engraving splits it into two rests
+ * instead. A rest that spans the whole bar is exempt: that's the ordinary
+ * whole-bar-rest convention, not a beat obscured mid-bar.
+ */
+function crossesMidBar(cell, position, beatsPerBar) {
+  const half = beatsPerBar / 2;
+  if (!Number.isInteger(half)) return false;
+  const isSoleRest = cell.events.length === 1 && cell.events[0].rest;
+  if (!isSoleRest) return false;
+  const end = position + cell.beats;
+  if (position === 0 && end === beatsPerBar) return false;
+  return position < half && end > half;
 }
 
 /** Total division count of an event list. */
