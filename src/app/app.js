@@ -1,10 +1,10 @@
-import { generateTest, keyOptionsFor } from '../generator/generate.js?v=50';
-import { toMusicXml } from '../generator/musicxml.js?v=50';
-import { createHistory, generateUnique } from '../generator/fingerprint.js?v=50';
-import { createKey, pitchAt } from '../generator/theory.js?v=50';
-import { createPlayer } from './playback.js?v=50';
-import { createStage, barTimings } from './stage.js?v=50';
-import { initLanguage, applyLanguage, getLanguage, t, onLanguageChange } from './i18n.js?v=50';
+import { generateTest, keyOptionsFor } from '../generator/generate.js?v=51';
+import { toMusicXml } from '../generator/musicxml.js?v=51';
+import { createHistory, generateUnique } from '../generator/fingerprint.js?v=51';
+import { createKey, pitchAt } from '../generator/theory.js?v=51';
+import { createPlayer } from './playback.js?v=51';
+import { createStage, barTimings } from './stage.js?v=51';
+import { initLanguage, applyLanguage, getLanguage, t, onLanguageChange } from './i18n.js?v=51';
 
 // As early as possible, before any other DOM work below, so the page never
 // paints in the wrong language for a returning en visitor.
@@ -55,58 +55,38 @@ const history = createHistory({
 });
 
 /*
- * Two tests of the same grade and bar count are the same "shape" of test, so
- * a Grade 1 four-bar test should read the same size as another Grade 1
- * four-bar test — the way a real printed sight-reading book keeps a
- * consistent page layout for same-length tests. `fitScore`'s own search is
- * driven by measuring the *rendered* content — how wide a bar comes out
- * depends on the beats it holds, note density, chords, accidentals,
- * dynamics — so two same-shaped tests could still land on a different
- * bars-per-line/zoom combination and read as visibly different sizes for no
- * reason a reader could point to. Keyed by shape and persisted (not just
- * per-session) so the same shape always converges on the same size. The
- * first test of a given shape establishes the canonical layout; a later
- * same-shaped test whose own content is denser and needs more shrinking
- * ratchets the cached zoom down to match (see `fitScore`) rather than
- * shrinking only for that one render and forgetting it — otherwise two
- * same-shaped tests could each shrink by a different amount from the
- * original cached zoom and still end up visibly different sizes from each
- * other, which was happening in practice (confirmed by generating dozens of
- * same-shaped Grade 6 tests: the same "4/4, 12 bars" shape rendered at three
- * different zoom levels). The ratchet only ever shrinks, never grows, so
- * nothing that fit before starts overflowing. `matchesRequestedLayout` (see
- * `fitScore`) is what keeps the two dimensions below safe to fold into the
- * cache key at all: a shape that no longer actually fits (a wider metre, a
- * narrower viewport) gets caught and re-searched rather than silently
- * rendered wrong.
+ * Which bars-per-line count a given shape of test settled on, remembered so
+ * two tests of the same grade and bar count break their lines the same way —
+ * the way a printed sight-reading book keeps a consistent page layout for
+ * same-length tests. The count is decided by measuring the *rendered*
+ * content (bar width depends on note density, chords, accidentals), so
+ * without this two same-shaped tests could land on different counts for no
+ * reason a reader could point to.
  *
- * Two axes are deliberately coarser than "exact value" rather than dropped
- * outright:
+ * Only the line breaking lives here. The staff size used to be the other half
+ * of this entry, searched per test and ratcheted down when a denser test of
+ * the same shape needed more shrinking; it is now fixed per viewport
+ * (`STAFF_ZOOM`) and never searched, so there is nothing left to ratchet.
+ * `matchesRequestedLayout` (see `fitScore`) is what keeps the two axes below
+ * safe to fold into the key: a cached count OSMD no longer honours for this
+ * test's content is caught and re-searched rather than silently rendered as a
+ * different number of lines.
+ *
+ * Two axes are deliberately coarser than "exact value" rather than dropped:
  *
  * - Time signature is bucketed by how much content a bar actually holds —
  *   `narrow` for four quarter notes' worth or fewer (2/4, 3/4, 4/4, 2/2,
  *   3/8, 5/8, 6/8, 7/8), `wide` for more (9/8, 5/4, 12/8, 7/4). This keys off
- *   the real beat content rather than a hand-picked "simple time signature"
- *   family: 2/2 and 3/8 hold no more (3/8 far less) than a 4/4 bar despite
- *   not being in the classic 2/4-3/4-4/4 family, so lumping them in with
- *   9/8-and-up was overcautious. Dropping metre entirely made every
- *   same-length test read the same size regardless of time signature, which
- *   was the point — but a 2/4 test and a 12/8 test of the same bar count do
- *   not actually need the same amount of room, and forcing them into one
- *   shared canonical zoom means whichever metre happens to establish the
- *   cache first either strands the other one needlessly small or gets it
- *   re-searched on every single render (never settling into the fast path).
- *   Two buckets keeps same-length tests reading consistently within a
- *   similar-content family without conflating metres that need noticeably
- *   more room.
- * - Viewport width is bucketed too (`layoutWidthClass`), because a size
- *   established on a narrow phone has no business being the "canonical"
- *   layout a desktop is then held to — the desktop has room for more bars
- *   per line and a larger zoom, and reusing the phone's cramped answer would
- *   waste that space for no reason a reader on a wide screen could point to.
- *   Coarse tiers rather than the exact pixel width, so minor viewport
- *   differences (393 vs 430, two phones) still share one canonical layout
- *   instead of each phone model getting its own.
+ *   real beat content rather than a hand-picked "simple time signature"
+ *   family: 2/2 and 3/8 hold no more than a 4/4 bar despite not being in the
+ *   classic 2/4-3/4-4/4 family. Dropping metre entirely was tried — a 2/4
+ *   test and a 12/8 test of the same bar count genuinely do not fit the same
+ *   number of bars on a line, so they would keep re-searching instead of
+ *   settling.
+ * - Viewport width is bucketed (`layoutWidthClass`), since how many bars fit
+ *   a line is a question about the screen. Coarse tiers rather than exact
+ *   pixels, so two phones (393 vs 430) share one answer instead of each
+ *   model getting its own.
  */
 const layoutCache = (() => {
   try {
@@ -143,6 +123,20 @@ function layoutWidthClass() {
   return 'wide';
 }
 
+/**
+ * The one staff size this viewport uses, for every test at every grade. Fixed
+ * rather than searched — see `STAFF_ZOOM`.
+ */
+function staffZoom() {
+  return STAFF_ZOOM[layoutWidthClass()] ?? BASE_ZOOM;
+}
+
+/*
+ * Only the line breaking is cached now: the zoom that used to be the other
+ * half of this entry is fixed per viewport, so there is nothing left to
+ * ratchet. The metre bucket and width tier stay in the key because both still
+ * change how many bars fit on a line.
+ */
 function layoutShapeKey(score) {
   return `${score.grade}:${score.barCount}:${timeSignatureClass(score.timeSignature)}:${layoutWidthClass()}`;
 }
@@ -155,8 +149,57 @@ let countdownTimer = null;
 let followFrame = null;
 let resizeTimer = null;
 const BASE_ZOOM = 1;
-/** Below this, engraving reads as too small to sight-read from. */
-const MIN_ZOOM = 0.5;
+/*
+ * The staff is a property of the *page*, not of the test printed on it.
+ *
+ * `fitScore` used to search for a zoom per test and cache it per shape, so
+ * the five lines of the stave — and the clefs sitting on them — landed
+ * somewhere different depending on what had been generated: measured across
+ * 40 renders on one desktop viewport, the gap between staff lines ran from
+ * 5.13px to 10.00px (12 distinct sizes, a full 2x), the treble stave's own y
+ * moved over a 78px range and the bass stave's over 151px. A reader meets one
+ * sheet of paper and then another that is half the size, which reads as the
+ * page wobbling rather than as a deliberate fit.
+ *
+ * So the staff size is now fixed per viewport tier and never searched. Line
+ * breaking is the only free variable left — bars-per-line still adapts to the
+ * content, which is what the barlines are allowed to do. The cost is that a
+ * long, dense test no longer shrinks itself to fit the window; it keeps full
+ * size and the page scrolls, the same trade the phone tiers already made.
+ */
+const STAFF_ZOOM = { phone: 0.46, compact: 0.66, medium: 0.78, wide: 0.78 };
+/*
+ * `medium` and `wide` share a value on purpose: `body` is capped at 64rem, so
+ * the score column is 1024px wide on a 1280px screen and on a 2560px one
+ * alike, and the staff has exactly the same room in both. The values are
+ * calibrated against that width rather than guessed — each is the largest
+ * that still lets `scripts/devices.js` place at least two bars on every line
+ * (no stranded single bars) and, outside a landscape phone, keep the whole
+ * test on screen. Raising the phone tier to 0.5 was tried and reverted: a
+ * 430px-wide screen could not fit two bars of a dense test at that size, so
+ * the line breaking fell back to OSMD's greedy wrap and stranded bars alone
+ * on their own lines.
+ */
+/*
+ * Fixed vertical spacing, in OSMD units (one unit is one staff-line gap), set
+ * where they comfortably clear the tallest thing ordinary writing at these
+ * grades puts between the staves — dynamics and a hairpin under the treble,
+ * ledger lines reaching down toward the bass. See the OSMD construction for
+ * why these are set at all.
+ */
+const STAFF_GAP_UNITS = 7;
+const SYSTEM_GAP_UNITS = 9;
+const PAGE_TOP_UNITS = 7;
+/*
+ * Where the treble clef sits, measured from the top of the engraving in staff
+ * units (one unit is one line gap, so this scales with the staff size rather
+ * than being a pixel guess). Chosen above the most headroom OSMD ever asks
+ * for on its own — measured 10.0 to 13.1 units across grades — so `pinScoreTop`
+ * only ever pushes the score *down* into the space it reserves. Padding
+ * downward can never crowd anything; pulling upward could clip a high ledger
+ * line or the tempo word, so the target is deliberately generous.
+ */
+const SCORE_TOP_UNITS = 15;
 /** Breathing room under the last system, so it never sits on the screen edge. */
 const SCORE_BOTTOM_GAP = 16;
 /*
@@ -262,6 +305,74 @@ function pinTopRowLayout() {
  * the key has one, otherwise the clef) rather than a fixed pixel value, so
  * it scales with whatever zoom the piece is rendered at.
  */
+/**
+ * Land the treble clef on the same pixel row for every test.
+ *
+ * Fixing the zoom holds the *spacing* of the five lines, but not where they
+ * sit: OSMD reserves room above the first stave for whatever sticks up out of
+ * it — the tempo word, a high ledger line, a slur — and adds that to its page
+ * margin rather than taking the larger of the two, so no margin setting can
+ * hold it still (measured: the treble stave's own y took 18 different values
+ * across 32 renders, a 28px range, and regenerating visibly jogged the whole
+ * page up and down).
+ *
+ * So the score is padded down to a fixed target instead. `SCORE_TOP_UNITS`
+ * sits above the most headroom OSMD ever asks for, which makes every
+ * correction a downward one — the score is only ever pushed further into
+ * blank space, never pulled up into content. When a test somehow needs more
+ * than the target, the padding simply goes to zero and that test keeps
+ * OSMD's own spacing, which is the behaviour this replaced.
+ *
+ * The clef is the anchor rather than the staff lines because it is both what
+ * the eye actually fixes on and a single cheap query — its own height is a
+ * fixed multiple of the staff size, so pinning its top pins the stave with it.
+ */
+function pinScoreTop() {
+  const svg = elements.score.querySelector('svg');
+  if (!svg) return;
+  elements.score.style.paddingTop = '0px';
+  const clef = svg.querySelector('g.vf-clef');
+  if (!clef) return;
+  const natural = clef.getBoundingClientRect().top - svg.getBoundingClientRect().top;
+  // One OSMD unit is ten pixels before zoom, so the target tracks staff size.
+  const target = SCORE_TOP_UNITS * 10 * osmd.zoom;
+  const shift = target - natural;
+  elements.score.style.paddingTop = `${shift > 0 ? shift : 0}px`;
+}
+
+/**
+ * Hold the staves in the same place on every render.
+ *
+ * OSMD spaces the two staves of a grand staff — and the systems below them —
+ * by taking the *larger* of a fixed distance and a skyline measured from
+ * whatever content sticks out: ledger lines, slurs, hairpins, dynamics. With
+ * only the zoom fixed the staff lines kept their spacing but the staves
+ * themselves still shuffled: measured over 40 renders, the treble stave's y
+ * moved across a 37px range, the bass stave's across 71px, and the gap
+ * between them took 18 different values. Set the fixed terms high enough to
+ * win against the skyline in ordinary writing at these grades and the fixed
+ * term is the one that decides, so every test puts its clefs on the same
+ * pixels and only the notes change.
+ *
+ * This runs before *every* render rather than once at construction because
+ * OSMD's `drawingParameters` preset reassigns these same rules
+ * (`StaffDistance`, `BetweenStaffDistance`, `MinSkyBottomDist*`) behind us —
+ * setting them once looked like it worked and silently did nothing.
+ * `StaffDistance` is the one that actually governs the gap inside a grand
+ * staff (`addStaffLineToMusicSystem` reads it); `BetweenStaffDistance` is set
+ * alongside it for the same value rather than left at whatever the preset
+ * chose.
+ */
+function applyFixedSpacing() {
+  const rules = osmd.EngravingRules;
+  rules.StaffDistance = STAFF_GAP_UNITS;
+  rules.BetweenStaffDistance = STAFF_GAP_UNITS;
+  rules.MinimumDistanceBetweenSystems = SYSTEM_GAP_UNITS;
+  rules.MinSkyBottomDistBetweenStaves = 0;
+  rules.MinSkyBottomDistBetweenSystems = 0;
+  rules.PageTopMargin = PAGE_TOP_UNITS;
+}
+
 function pinTempoTermPosition() {
   const svg = elements.score.querySelector('svg');
   if (!svg) return;
@@ -343,8 +454,10 @@ async function init() {
     // every one of `fitScore`'s repeated renders gets the correction too.
     const rawRender = osmd.render.bind(osmd);
     osmd.render = (...args) => {
+      applyFixedSpacing();
       rawRender(...args);
       pinTempoTermPosition();
+      pinScoreTop();
     };
   } catch (error) {
     fail('failInitRenderer', error.message);
@@ -659,33 +772,19 @@ function setPlayState(playing) {
 }
 
 /**
- * Shrinks zoom, re-rendering each step, until no line holds only a single
- * bar (unreadable) or the legibility floor is hit. Returns the layout from
- * the last render. Whatever `EngravingRules.RenderXMeasuresPerLineAkaSystem`
- * is currently set to stays in effect across every render in the loop — used
- * both unforced (to find a legible natural size) and forced (since that rule
- * is a target, not a guarantee: if the forced bar count doesn't actually fit
- * the container at the current zoom, OSMD still wraps it further, splitting
- * one intended line into several, sometimes down to single bars each).
+ * One render at this viewport's fixed staff size, reporting the layout OSMD
+ * actually produced and whether it fits the window without scrolling.
+ *
+ * Whatever `EngravingRules.RenderXMeasuresPerLineAkaSystem` is currently set
+ * to stays in effect — and it is a target, not a guarantee: if the requested
+ * bar count does not fit the container, OSMD silently wraps further instead,
+ * which is what `matchesRequestedLayout` exists to catch.
  */
-function shrinkUntilNoSingleBarLines(zoom, { fitHeight = false } = {}) {
-  /*
-   * Only shrink for height when the caller is actually looking for a layout
-   * that fits the screen. On a phone nothing fits, so folding the height into
-   * the loop unconditionally drove every candidate to the zoom floor and made
-   * the whole page tiny — the opposite of leaving a small screen alone.
-   */
-  const available = fitHeight ? availableScoreHeight() : Infinity;
-  osmd.zoom = zoom;
+function renderAtStaffZoom() {
+  osmd.zoom = staffZoom();
   osmd.render();
-  let layout = stage.measure();
-  while (zoom > MIN_ZOOM && (hasSingleBarLine(layout) || renderedScoreHeight() > available)) {
-    zoom = Math.max(MIN_ZOOM, zoom * 0.92);
-    osmd.zoom = zoom;
-    osmd.render();
-    layout = stage.measure();
-  }
-  return { layout, zoom, fitsHeight: renderedScoreHeight() <= available };
+  const layout = stage.measure();
+  return { layout, fitsHeight: renderedScoreHeight() <= availableScoreHeight() };
 }
 
 /**
@@ -700,7 +799,16 @@ function shrinkUntilNoSingleBarLines(zoom, { fitHeight = false } = {}) {
  */
 function renderedScoreHeight() {
   const svg = document.querySelector('#score svg');
-  return svg ? svg.getBoundingClientRect().height : 0;
+  if (!svg) return 0;
+  /*
+   * From the top of the score container to the bottom of the engraving, so
+   * the padding `pinScoreTop` adds above the first stave counts toward the
+   * fit. Measuring the SVG alone would report a score that fits while the
+   * padding pushed it off the bottom of the screen.
+   */
+  const container = document.getElementById('score');
+  const top = container ? container.getBoundingClientRect().top : svg.getBoundingClientRect().top;
+  return svg.getBoundingClientRect().bottom - top;
 }
 
 /**
@@ -757,29 +865,24 @@ function matchesRequestedLayout(layout, n, totalBars) {
 
 /**
  * The whole test always renders on the page in normal flow — no fullscreen
- * step, no cropped follow-window — so the only fitting left to do is layout.
- * OSMD's own line
- * breaking is also a greedy fill (pack bars onto a line until the next one
- * doesn't fit), which leaves a lone bar on a line when the content doesn't
- * happen to divide evenly, and tends to front-load earlier lines since
- * bar-to-bar width varies with note density. `RenderXMeasuresPerLineAkaSystem`
- * fixes both by forcing a uniform bars-per-line count instead of a greedy
- * wrap — the question is which count.
+ * step, no cropped follow-window — and the staff size is fixed for this
+ * viewport (see `STAFF_ZOOM`), so the only thing left to decide is where the
+ * lines break.
  *
- * A short/simple test (a Grade 1 six-bar piece, say) can render at full
- * legible zoom with a natural wrap of just 1-2 bars per line — nothing
- * forces it smaller, so it reads as conspicuously oversized even though a
- * slightly smaller (but still comfortably legible) zoom would fit
- * noticeably more per line. So rather than matching whatever the natural
- * unforced wrap happens to produce, try progressively more bars per line —
- * from `MAX_MEASURES_PER_LINE` down to 2 — and take the first (most
- * compact) count that still renders with zoom no smaller than `MIN_ZOOM`,
- * no line stranding a single bar, and no silent OSMD re-wrap into some
- * other shape (`matchesRequestedLayout`). `n=3` on 10 bars would strand one
- * bar on a fourth line (3+3+3+1) rather than sharing it with the others,
- * so any `n` that leaves a remainder of exactly 1 is skipped outright.
- * Denser/longer tests simply fail every candidate down to 2 and fall back
- * to the natural wrap, which is always guaranteed single-bar-line-free.
+ * OSMD's own line breaking is a greedy fill (pack bars onto a line until the
+ * next one doesn't fit), which strands a lone bar whenever the content
+ * doesn't divide evenly and front-loads earlier lines, since bar-to-bar width
+ * varies with note density. `RenderXMeasuresPerLineAkaSystem` fixes both by
+ * forcing a uniform count — the question is which count.
+ *
+ * Try progressively fewer bars per line, from `MAX_MEASURES_PER_LINE` down to
+ * 2, and take the first (most compact) count OSMD actually honours without
+ * stranding a bar or silently re-wrapping into some other shape
+ * (`matchesRequestedLayout`). `n=3` on 10 bars would strand one bar on a
+ * fourth line (3+3+3+1) rather than sharing it, so any `n` leaving a
+ * remainder of exactly 1 is skipped outright. A test where no uniform count
+ * works falls back to the natural wrap, which is always free of stranded
+ * bars.
  */
 async function fitScore() {
   if (!current || !osmd) return;
@@ -787,63 +890,39 @@ async function fitScore() {
   const shapeKey = layoutShapeKey(current.score);
   const totalBars = current.score.barCount;
   const cached = layoutCache[shapeKey];
+
   if (cached) {
     osmd.EngravingRules.RenderXMeasuresPerLineAkaSystem = cached.measuresPerLine;
-    const result = shrinkUntilNoSingleBarLines(cached.zoom, { fitHeight: true });
+    const result = renderAtStaffZoom();
     /*
-     * The cached `measuresPerLine` is only meaningful if OSMD still honours
-     * it for *this* test's content — denser content can push OSMD into
-     * silently re-wrapping into a different (still non-stranded) shape even
-     * at the cached zoom (see `matchesRequestedLayout`). Reusing a
-     * mismatched shape would render this test with a visibly different
-     * number of lines than every other same-shaped test that hit the fast
-     * path, which is the bug this cache exists to prevent in the first
-     * place — so a mismatch here means the cache is stale for this content
-     * and falls through to a full, freshly-verified search below instead of
-     * trusting it.
+     * The cached count is only meaningful if OSMD still honours it for *this*
+     * test's content — denser content can push it into silently re-wrapping
+     * into a different (still non-stranded) shape. Reusing a mismatched shape
+     * would give this test a visibly different number of lines from every
+     * other same-shaped test, which is the bug the cache exists to prevent,
+     * so a mismatch falls through to a fresh search below.
      */
-    if (matchesRequestedLayout(result.layout, cached.measuresPerLine, totalBars)) {
-      /*
-       * Denser content than whatever first established this shape's canonical
-       * zoom (more accidentals, chords, sixteenth-note passages) needs more
-       * shrinking to avoid a stranded bar or fit the screen — and previously
-       * that shrink was thrown away every time, so the *next* same-shaped test
-       * started over from the original cached zoom and could land on a
-       * different amount of shrink again, one test smaller than another for no
-       * reason a reader could point to (exactly the "same shape, different
-       * size" symptom). Ratcheting the cache down to whatever the tightest
-       * render actually needed makes every later same-shaped test — including
-       * less-dense ones that would fit the old, larger cached zoom just fine —
-       * converge on that one shared size instead. This only ever shrinks the
-       * cached value, never grows it, so a render that already fits the cached
-       * zoom is untouched and nothing that fit before can start overflowing.
-       */
-      if (result.zoom < cached.zoom) {
-        layoutCache[shapeKey] = { measuresPerLine: cached.measuresPerLine, zoom: result.zoom };
-        saveLayoutCache();
-      }
-      ensureFitsHeight(result.zoom);
+    if (cached.measuresPerLine === 0
+      ? !hasSingleBarLine(result.layout)
+      : matchesRequestedLayout(result.layout, cached.measuresPerLine, totalBars)) {
       return;
     }
   }
 
-  osmd.EngravingRules.RenderXMeasuresPerLineAkaSystem = 0;
-  const natural = shrinkUntilNoSingleBarLines(BASE_ZOOM);
-
   const tryCount = (n, mustFitHeight) => {
     osmd.EngravingRules.RenderXMeasuresPerLineAkaSystem = n;
-    const attempt = shrinkUntilNoSingleBarLines(BASE_ZOOM, { fitHeight: mustFitHeight });
-    if (attempt.zoom < MIN_ZOOM || hasSingleBarLine(attempt.layout)) return null;
+    const attempt = renderAtStaffZoom();
+    if (hasSingleBarLine(attempt.layout)) return null;
     if (!matchesRequestedLayout(attempt.layout, n, totalBars)) return null;
     return !mustFitHeight || attempt.fitsHeight ? attempt : null;
   };
 
   /*
    * Two passes over the same candidates: the first insists the whole test fit
-   * the screen, the second drops that. A tablet gets a layout that needs no
-   * scrolling; a phone, where the zoom floor is reached long before the score
-   * is short enough, keeps a legible size and scrolls instead of shrinking
-   * into something nobody can read.
+   * the window, the second drops that. Since the staff size no longer moves,
+   * fitting can only be bought by packing more bars onto a line — and where
+   * even the most compact honoured count is still too tall, the test keeps
+   * full size and the page scrolls rather than the music shrinking.
    */
   const search = (mustFitHeight) => {
     let found = null;
@@ -861,95 +940,27 @@ async function fitScore() {
   /*
    * A count that divides the bars evenly comes first. Taking merely the most
    * compact count that avoids a lone bar is not the same thing: six bars at
-   * four per line gives 4+2, and OSMD does not stretch a final short line to
-   * the full width, so the second line ends up half the length of the first
-   * and its bars visibly smaller. 3+3 fills both lines instead — squarer, and
-   * the bars come out wider because the width is shared evenly. `n=2` is
-   * still tried last within that evenly-divisible pass — never skipped
-   * outright — since only trying it as a last resort after everything larger
-   * has failed already keeps fragmentation to a minimum without needing to
-   * special-case it away; a stale version of this search excluded `n=2`
-   * unconditionally, which combined with `matchesRequestedLayout` rejecting
-   * more silent OSMD re-wraps meant a short, evenly-divisible test (a Grade 1
-   * four-bar piece, say) could run out of candidates it was willing to try
-   * and fall to the unforced natural wrap for no reason — exactly the kind
-   * of shape that most needs `n=2` to be a real option.
+   * four per line gives 4+2, and even with the last line stretched, two bars
+   * spread across a full-width line read as oversized rather than aligned.
+   * 3+3 fills both lines instead. `n=2` is tried last within that pass rather
+   * than skipped, since only reaching it once everything larger has failed
+   * keeps fragmentation down without special-casing it away.
    */
   const chosen = search(true) ?? search(false);
   // `tryCount` leaves `RenderXMeasuresPerLineAkaSystem` set to whichever `n`
-  // it last tried, and the loops stop trying more once `chosen` is found —
-  // so this is still the winning count, captured before the fallback branch
-  // below can reset it back to 0 (natural wrap).
+  // it last tried, and the loops stop once `chosen` is found — so this is
+  // still the winning count, captured before the fallback can reset it.
   const measuresPerLine = chosen ? osmd.EngravingRules.RenderXMeasuresPerLineAkaSystem : 0;
 
   if (!chosen) {
+    // Nothing uniform worked; OSMD's own greedy wrap is always free of
+    // stranded bars, and the staff size stays put either way.
     osmd.EngravingRules.RenderXMeasuresPerLineAkaSystem = 0;
-    osmd.zoom = natural.zoom;
-    osmd.render();
-    stage.measure();
+    renderAtStaffZoom();
   }
 
-  layoutCache[shapeKey] = { measuresPerLine, zoom: chosen ? chosen.zoom : natural.zoom };
+  layoutCache[shapeKey] = { measuresPerLine };
   saveLayoutCache();
-
-  ensureFitsHeight(chosen ? chosen.zoom : natural.zoom);
-}
-
-/**
- * Last word on vertical fit: if the layout just settled on still runs off the
- * bottom, shrink it until it does not — but only when that is actually
- * reachable above the legibility floor.
- *
- * The per-candidate search can miss by a hair (an iPad was overflowing by nine
- * pixels), and the search that ignores height deliberately does not shrink at
- * all. Checking the floor first is what keeps the two cases apart: on a tablet
- * the score comes down the little it needs to, and on a phone — where even the
- * floor would not fit the whole test — nothing is shrunk and the page scrolls,
- * rather than the music being reduced to something unreadable in pursuit of a
- * fit that was never available.
- */
-function ensureFitsHeight(startZoom) {
-  const available = availableScoreHeight();
-  if (renderedScoreHeight() <= available) return;
-
-  const settled = osmd.zoom;
-  osmd.zoom = MIN_ZOOM;
-  osmd.render();
-  const floorFits = renderedScoreHeight() <= available;
-  if (!floorFits) {
-    osmd.zoom = settled;
-    osmd.render();
-    stage.measure();
-    return;
-  }
-
-  /*
-   * Shrinking re-flows the line breaks on the unforced fallback layout, so
-   * this has to keep watching for a bar left alone on a line — otherwise
-   * stopping the moment the height fits can hand back a layout that reads
-   * worse than the one it started from.
-   */
-  let zoom = startZoom;
-  osmd.zoom = zoom;
-  osmd.render();
-  let layout = stage.measure();
-  const startedClean = !hasSingleBarLine(layout);
-  while (zoom > MIN_ZOOM && (renderedScoreHeight() > available || hasSingleBarLine(layout))) {
-    zoom = Math.max(MIN_ZOOM, zoom * 0.94);
-    osmd.zoom = zoom;
-    osmd.render();
-    layout = stage.measure();
-  }
-  /*
-   * Fitting the height is not worth stranding a bar on a line of its own.
-   * Shrinking re-flows the unforced layout, and on the smallest screens that
-   * can turn a clean set of lines into one with a lone bar on the end — a
-   * worse thing to read than a score that needs a scroll.
-   */
-  if (!startedClean || !hasSingleBarLine(layout)) return;
-  osmd.zoom = settled;
-  osmd.render();
-  stage.measure();
 }
 
 function startFollowing() {

@@ -11,7 +11,8 @@
     "audit": "node scripts/audit.js",
     "devices": "node scripts/devices.js",
     "smoke": "node scripts/smoke.js",
-    "loudness": "node scripts/loudness.js"
+    "loudness": "node scripts/loudness.js",
+    "staff": "node scripts/staff-metrics.js"
   },
   "dependencies": {
     "opensheetmusicdisplay": "^2.1.0"
