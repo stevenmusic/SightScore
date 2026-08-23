@@ -1,10 +1,10 @@
-import { generateTest, keyOptionsFor } from '../generator/generate.js?v=53';
-import { toMusicXml } from '../generator/musicxml.js?v=53';
-import { createHistory, generateUnique } from '../generator/fingerprint.js?v=53';
-import { createKey, pitchAt } from '../generator/theory.js?v=53';
-import { createPlayer } from './playback.js?v=53';
-import { createStage, barTimings } from './stage.js?v=53';
-import { initLanguage, applyLanguage, getLanguage, t, onLanguageChange } from './i18n.js?v=53';
+import { generateTest, keyOptionsFor } from '../generator/generate.js?v=54';
+import { toMusicXml } from '../generator/musicxml.js?v=54';
+import { createHistory, generateUnique } from '../generator/fingerprint.js?v=54';
+import { createKey, pitchAt } from '../generator/theory.js?v=54';
+import { createPlayer } from './playback.js?v=54';
+import { createStage, barTimings } from './stage.js?v=54';
+import { initLanguage, applyLanguage, getLanguage, t, onLanguageChange } from './i18n.js?v=54';
 
 // As early as possible, before any other DOM work below, so the page never
 // paints in the wrong language for a returning en visitor.
@@ -484,7 +484,16 @@ function pinTempoTermPosition() {
    */
   const termBox = term.getBBox();
   let highest = Infinity;
-  for (const el of svg.querySelectorAll('g.vf-curve path, g.vf-notehead, g.vf-ledgers')) {
+  /*
+   * Every drawn shape, not a list of the ones worth worrying about. Naming
+   * the obvious candidates — noteheads, ledger lines, slurs — missed beams,
+   * which sit at the far end of upward stems and so reach higher than any of
+   * them; a term cleared of the notes still landed on the beam above them.
+   * Anything with ink can be in the way, so the cheapest correct rule is to
+   * consider all of it and let the horizontal test do the filtering.
+   */
+  for (const el of svg.querySelectorAll('path, rect')) {
+    if (el === term) continue;
     const box = el.getBBox();
     // Only what actually sits under the term horizontally can collide with it.
     if (box.x + box.width < termBox.x || box.x > termBox.x + termBox.width) continue;

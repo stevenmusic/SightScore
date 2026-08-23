@@ -178,9 +178,32 @@ const inspect = () => page.evaluate(() => {
   return { problems, slurs: slurs.length, markings: markings.length, noteheads: noteheads.length };
 });
 
+/*
+ * Faults that must never occur, judged from geometry this script measures
+ * reliably: slurs are sampled along the real curve and text fills its box.
+ * A hairpin or pedal line is *not* in this list — those are judged by their
+ * bounding box, and a hairpin is two thin diverging lines whose box is mostly
+ * hollow, so a notehead inside it may be touching nothing. Testing those by
+ * their real path geometry was tried and made things worse, not better: a
+ * hairpin's own two halves meet end-to-end and read as a collision with
+ * themselves. They stay inside the budget below rather than being called a
+ * certainty they are not.
+ */
+const NEVER = [
+  /slur crosses a notehead/,
+  /two slurs overlap/,
+  // Text against text only. A word fills its box, so two of them overlapping
+  // is certain — that is the doubled-word fault this was written for. A line
+  // against a word is the hollow-box case again: the pedal bracket's box is
+  // 500px of mostly empty space and a "rit." sitting inside it is touching
+  // nothing, so that pairing belongs in the budget, not here.
+  /^".*" overlaps ".*"$/,
+];
+
 const tally = new Map();
 let checked = 0;
 let bad = 0;
+let grazeTests = 0;
 const examples = [];
 for (const grade of GRADES) {
   await page.selectOption('#grade', String(grade));
@@ -199,7 +222,9 @@ for (const grade of GRADES) {
       const shot = valueOf('--screenshot', null);
       if (shot && bad === 1) await page.screenshot({ path: shot, fullPage: true });
     }
-    for (const p of new Set(result.problems)) tally.set(p, (tally.get(p) ?? 0) + 1);
+    const distinct = new Set(result.problems);
+    for (const p of distinct) tally.set(p, (tally.get(p) ?? 0) + 1);
+    if ([...distinct].some((p) => !NEVER.some((re) => re.test(p)))) grazeTests += 1;
   }
 }
 await browser.close();
@@ -222,12 +247,23 @@ console.log(`${checked} rendered tests at ${WIDTH}x${HEIGHT}\n`);
  * instead of a ban, sized above the measured rate with room to spare so it
  * catches a real slide without being permanently red.
  */
-const NEVER = [/notehead/, /two slurs overlap/, /overlaps "/];
-const GRAZE_BUDGET = 12;
+/*
+ * Sized from a pooled measurement, not one run. Each test is randomly
+ * generated, so this rate swings hard on small samples: successive runs
+ * measured 5%, 10.9%, 12%, 14.4% and 20% with nothing changing. A budget set
+ * from the lowest of those sat on the mean and turned the check red about
+ * half the time on noise alone, which is how a guard gets ignored.
+ */
+const GRAZE_BUDGET = 25;
 
 const never = [...tally].filter(([what]) => NEVER.some((re) => re.test(what)));
-const grazes = [...tally].filter(([what]) => !NEVER.some((re) => re.test(what)));
-const grazeTests = grazes.reduce((sum, [, n]) => sum + n, 0);
+/*
+ * Count *tests*, not tally entries. `tally` is keyed by the problem's text,
+ * and one test can contribute several distinct strings (two different
+ * hairpins, say), so summing it counts that test more than once — which is
+ * how this once reported 242% of tests. `grazeTests` is incremented once per
+ * test instead, above.
+ */
 const grazeRate = (100 * grazeTests) / checked;
 
 if (!tally.size) {
@@ -242,6 +278,9 @@ if (!tally.size) {
 
 console.log(`\nmust never happen: ${never.length ? never.map(([w, n]) => `${w} (${n})`).join(', ') : 'none'}`);
 console.log(`slur grazing a hairpin/pedal line: ${grazeRate.toFixed(1)}% of tests (budget ${GRAZE_BUDGET}%)`);
+if (checked < 150) {
+  console.log(`  (only ${checked} tests — this rate swings ~15 points at that sample size; use --runs 24 for a real reading)`);
+}
 
 if (never.length || grazeRate > GRAZE_BUDGET) {
   console.log('\nFAIL');

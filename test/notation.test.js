@@ -382,3 +382,46 @@ test('a minor key does not write both forms of the same degree', () => {
     `${(rate * 100).toFixed(1)}% of minor tests write the same letter both natural and raised`,
   );
 });
+
+/*
+ * Notation has to show the metre's primary division. In a bar that halves
+ * evenly — 4/4, 2/4, 6/8 — that is the half-way point, and a value which
+ * starts after the downbeat and is still sounding across it hides the beat
+ * the reader counts from; real engraving writes it as two notes joined by a
+ * tie. Measured before `crossesMidBar` was extended from rests to notes:
+ * 11.9% of bars in qualifying metres broke this and 38.5% of tests contained
+ * at least one, most often a dotted crotchet on beat 2 of 4/4.
+ *
+ * Two exemptions are part of the rule, not loopholes: a bar with an odd
+ * number of beats has no equal half to show (a minim on beat 1 of 3/4 is
+ * ordinary), and a value starting on the downbeat may run straight through
+ * the middle (a dotted minim plus a crotchet in 4/4, a dotted crotchet
+ * opening a 2/4 bar).
+ */
+test('no note obscures the half-bar', () => {
+  eachTest((score, _rules, context) => {
+    const { beats, beatType } = score.timeSignature;
+    const compound = beatType === 8 && beats % 3 === 0 && beats >= 6;
+    const beatsPerBar = compound ? beats / 3 : beats;
+    if (!Number.isInteger(beatsPerBar / 2)) return;
+    const half = score.barDuration / 2;
+
+    for (const staffNumber of [1, 2]) {
+      score.staves[staffNumber].forEach((bar, barIndex) => {
+        let offset = 0;
+        for (const event of bar.events) {
+          const start = offset;
+          const end = start + event.dur;
+          offset = end;
+          if (event.rest || start === 0) continue;
+          assert.ok(
+            !(start < half && end > half),
+            `grade ${context.grade} seed ${context.seed} staff ${staffNumber} bar ${barIndex + 1}: `
+            + `a ${event.dots ? 'dotted ' : ''}${event.type} starting at ${start} runs through the `
+            + `half-bar at ${half} — it needs writing as two notes and a tie`,
+          );
+        }
+      });
+    }
+  });
+});
