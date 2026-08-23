@@ -50,7 +50,20 @@ test('attributes and clefs are declared once in the first measure, plus exactly 
     const clefChanges = [1, 2].flatMap(
       (staffNumber) => score.staves[staffNumber].map((bar) => bar.clefChange).filter(Boolean),
     );
-    assert.equal(countMatches(xml, /<attributes>/g), 1 + clefChanges.length);
+    /*
+     * A mid-piece modulation (generate.js's addModulation, Grade 8's 曲中轉調)
+     * prints its new key signature as its own part-wide <attributes> block —
+     * a third source of one, alongside the opening declaration and each clef
+     * change. This assertion was rewritten once already to re-derive its
+     * count from `clefChange` markers; modulation arrived afterwards and was
+     * never added, so it over-counted by exactly one for every modulating
+     * test. It passed only because none of the four fixed seeds below drew
+     * one — measured across 250 seeds a grade, all 17 mismatches were
+     * modulating tests and nothing else. The block carries <key> and no
+     * <clef>, so the sign counts below are untouched by it.
+     */
+    const keyChanges = score.keyChange ? 1 : 0;
+    assert.equal(countMatches(xml, /<attributes>/g), 1 + clefChanges.length + keyChanges);
     assert.equal(
       countMatches(xml, /<sign>G<\/sign>/g),
       1 + clefChanges.filter((clef) => clef.sign === 'G').length,
@@ -78,7 +91,17 @@ test('every note carries a staff and a voice', () => {
     for (const note of notes) {
       const body = note.split('</note>')[0];
       assert.ok(/<staff>[12]<\/staff>/.test(body), 'note without a staff');
-      assert.ok(/<voice>[12]<\/voice>/.test(body), 'note without a voice');
+      /*
+       * Voice 5 is legitimate and reserved: Grade 8's cross-staff writing
+       * (generate.js's addCrossStaffWriting) prints a note on the *other*
+       * staff and gives it a voice neither staff's own voice 1/2 uses, so it
+       * cannot collide with what that staff is doing at the same instant.
+       * This assertion predates that feature and still named only 1 and 2 —
+       * it passed purely because none of the four fixed seeds below happened
+       * to produce a crossed note, and started failing the moment unrelated
+       * generator work shifted the PRNG stream (grade 8 seed 11 now does).
+       */
+      assert.ok(/<voice>[125]<\/voice>/.test(body), 'note without a voice');
       // A grace note (acciaccatura) is the one legitimate exception: it
       // borrows its time from the note it decorates, so MusicXML forbids
       // <duration> on it.

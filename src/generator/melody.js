@@ -43,6 +43,9 @@ export function assignPitches({ rng, key, bars, progression, window, options, ag
     // How often a chord-tone-only hand (the bass) may take an off-beat
     // passing/neighbour tone. 0 restores the old chord-tones-only bass.
     bassDecoration = 0,
+    // How often the bass takes an inversion at a harmony arrival, where doing
+    // so keeps the line stepwise. 0 restores root position as the only option.
+    bassInversion = 0,
     endOnTonic = true,
     barDuration = 0,
     arch = 0,
@@ -131,6 +134,15 @@ export function assignPitches({ rng, key, bars, progression, window, options, ag
     // root: a V-I whose bass is on the leading note or the second degree is
     // not the cadence the rest of the test has been heading toward.
     const isCadentialBar = barIndex === bars.length - 2;
+    /*
+     * The closing tonic needs its root in the bass for the same reason the
+     * dominant before it does: the whole test has been heading here, and a
+     * final I sitting in first inversion does not land. Both bars are
+     * therefore off-limits to the smooth-inversion preference below — without
+     * this, offering an inversion wherever it buys a stepwise bass took the
+     * final bar's root position from 92% down to 81-85%.
+     */
+    const isClosingBar = barIndex === bars.length - 1;
 
     bar.events.forEach((event) => {
       if (event.rest) {
@@ -177,8 +189,38 @@ export function assignPitches({ rng, key, bars, progression, window, options, ag
       previousChord = chordHere;
 
       let preferred = null;
-      if (chordToneOnly && harmonyArrives && (isCadentialBar || rng.chance(0.8))) {
-        preferred = nearestWithDegree(allSteps, key, tones[0], previous ?? target);
+      if (chordToneOnly && harmonyArrives) {
+        /*
+         * An inversion is not a coin toss against root position — in real
+         * writing the bass takes the third (far less often the fifth)
+         * *because* doing so keeps the line conjunct: vi6 or IV6 appears
+         * where the third happens to lie a step from where the bass already
+         * is. Rolling a flat chance for "some inversion" and then picking the
+         * nearest chord tone, which is what leaving a fifth of arrivals to
+         * the ordinary weighting amounted to, lands back on the root most of
+         * the time anyway: measured 87-93% root position at downbeats across
+         * the grades, against roughly 60-70% in classical practice.
+         *
+         * So the inversion is offered only where it actually buys a step,
+         * which is both the reason to use one and the thing that makes the
+         * bass sing. The cadential V is never up for it — that one needs its
+         * root — and neither is the opening note, handled below.
+         */
+        /*
+         * Second inversion is not simply a rarer first inversion — a 6/4 is
+         * rule-bound in this idiom (cadential, passing or pedal), not a
+         * colour available wherever the fifth happens to lie a step away.
+         * Offering the third and the fifth on equal terms doubled the 6/4
+         * rate against the pre-change generator; this keeps it a minority of
+         * an already-conditional choice.
+         */
+        const smooth = previous === null || isCadentialBar || isClosingBar
+          ? null
+          : smoothInversion(allSteps, key, tones, previous, rng.chance(0.08));
+        if (smooth !== null && rng.chance(bassInversion)) preferred = smooth;
+        else if (isCadentialBar || isClosingBar || rng.chance(0.8)) {
+          preferred = nearestWithDegree(allSteps, key, tones[0], previous ?? target);
+        }
       } else if (event === penultimateEvent && cadenceTonic !== null) {
         preferred = cadenceApproach(cadenceTonic, previous, window);
       } else if (motifSource && !isFinalNote) {
@@ -1095,6 +1137,24 @@ function leastDistant(steps, target) {
 function nearestWithDegree(steps, key, degree, target) {
   const matches = steps.filter((dstep) => degreeOf(dstep, key) === degree);
   return matches.length ? leastDistant(matches, target) : leastDistant(steps, target);
+}
+
+/**
+ * The chord's third — or, only when `allowFifth` says so, its fifth — if it
+ * sits exactly a step from where the bass already is, which is the reason a
+ * real bass line takes an inversion at all. First inversion is ordinary;
+ * second inversion is a rule-bound special case (cadential, passing or pedal
+ * 6/4), so the caller gates it behind its own low roll rather than letting it
+ * stand in whenever the third does not give the step.
+ */
+function smoothInversion(steps, key, tones, previous, allowFifth = false) {
+  for (const degree of allowFifth ? [tones[1], tones[2]] : [tones[1]]) {
+    for (const dstep of [previous - 1, previous + 1]) {
+      if (!steps.includes(dstep)) continue;
+      if (degreeOf(dstep, key) === degree) return dstep;
+    }
+  }
+  return null;
 }
 
 function nearestWithDegreeSet(steps, key, degrees, target) {

@@ -93,6 +93,8 @@ function auditHarmony(grade, tests) {
   let bassMoves = 0;
   let bassNctOnBeat = 0;
   let bassNctLeapt = 0;
+  let closingRoot = 0;
+  let closingBars = 0;
 
   for (const score of tests) {
     const key = createKey(score.key);
@@ -176,6 +178,25 @@ function auditHarmony(grade, tests) {
       }
     });
 
+    /*
+     * The closing tonic. `final bass note is the tonic` below checks the last
+     * *note*, which the forced ending guarantees; this asks the different
+     * question of whether the final chord actually *lands* in root position,
+     * and it is the one the smooth-inversion preference can quietly erode
+     * (measured 92% -> 81-85% before the closing bar was made off-limits to
+     * it, the same way the cadential dominant already was).
+     */
+    const closingBar = score.staves[2][score.barCount - 1];
+    const closingNote = closingBar ? notesOfBar(closingBar)[0] : null;
+    if (closingNote) {
+      const closingKey = score.keyChange ? createKey(score.keyChange) : key;
+      const closingRootDegree = chordDegrees(firstChord(score.progression[score.barCount - 1] ?? 'I'))[0];
+      const lowest = [closingNote.pitch, ...(closingNote.chord ?? [])]
+        .reduce((low, pitch) => (pitch.dstep < low.dstep ? pitch : low));
+      closingBars += 1;
+      if (degreeOf(lowest.dstep, closingKey) === closingRootDegree) closingRoot += 1;
+    }
+
     const used = score.staves[2].flatMap((bar) => notesOfBar(bar)).map((e) => e.dstep);
     const low = used.length ? Math.min(...used) : 0;
     const high = used.length ? Math.max(...used) : 0;
@@ -251,6 +272,13 @@ function auditHarmony(grade, tests) {
     cadRate >= cadFloor, `>=${cadFloor}% (a V-I cadence needs the dominant root)`));
   lines.push(check('harmony', grade, 'final bass note is the tonic', `${fixed(pct(finalTonicBass, tests0))}%`,
     pct(finalTonicBass, tests0) >= 95, '>=95%'));
+  const closingRate = pct(closingRoot, closingBars);
+  // Same five-finger allowance as the cadential dominant above: in a
+  // five-note hand the tonic's root is often simply not the lowest note
+  // available, which is the syllabus's constraint rather than a fault.
+  const closingFloor = rules.grades[String(grade)].texture.fiveFingerPosition ? 35 : 92;
+  lines.push(check('harmony', grade, 'closing tonic lands in root position', `${fixed(closingRate)}%`,
+    closingRate >= closingFloor, `>=${closingFloor}% (the final chord has to land)`));
   const repeatRate = pct(repeatedChordBars, barTransitions);
   lines.push(check('harmony', grade, 'chord held over from the previous bar', `${fixed(repeatRate)}%`,
     repeatRate >= 5 && repeatRate <= 30, '5%-30% of bar transitions (real writing prolongs a chord sometimes, not never)'));
@@ -271,6 +299,26 @@ function auditHarmony(grade, tests) {
    * the old sterile line back again; too many and the bass stops stating the
    * harmony it exists to state.
    */
+  /*
+   * Inversions exist, and second inversion stays the rarer one. Before the
+   * bass could take an inversion deliberately — it was picked as "the nearest
+   * chord tone" and that is usually the root — downbeats were 87-93% root
+   * position against roughly 60-70% in classical practice, and at Grade 8 the
+   * 6/4 was actually *more* common than the 6/3 (6.8% against 6.0%), which is
+   * backwards: first inversion is ordinary, second inversion is a rule-bound
+   * special case (cadential, passing or pedal). The ratio is what is asserted
+   * rather than an absolute ceiling on the 6/4, because the five-finger
+   * grades reach the fifth for a reason of their own — the root is often
+   * outside the five notes the hand has (see above) — and that is a
+   * constraint, not a fault.
+   */
+  const thirdRate = pct(position.third, position.root + position.third + position.fifth + position.other);
+  const fifthRate = pct(position.fifth, position.root + position.third + position.fifth + position.other);
+  lines.push(check('harmony', grade, 'first inversion in the bass', `${fixed(thirdRate)}%`,
+    thirdRate >= 8, '>=8% of downbeats (a bass that only ever takes roots is not a line)'));
+  lines.push(check('harmony', grade, 'second inversion rarer than first', `${fixed(fifthRate)}%`,
+    fifthRate <= thirdRate, `<=${fixed(thirdRate)}% (a 6/4 is rule-bound, a 6/3 is ordinary)`));
+
   const bassNct = pct(bassNonChordTones, bassNotes);
   lines.push(check('harmony', grade, 'bass notes that decorate (passing/neighbour)', `${fixed(bassNct)}%`,
     bassNct >= 3 && bassNct <= 20, '3%-20% of bass notes (a bass passes between its chord tones, but still states them)'));
@@ -310,6 +358,7 @@ function auditRhythm(grade, tests) {
   let innerBars = 0;
   let phraseEndTail = 0;
   let innerTail = 0;
+  let phraseEndLifts = 0;
 
   for (const score of tests) {
     /*
@@ -333,7 +382,13 @@ function auditRhythm(grade, tests) {
           const last = [...(score.staves[st][barIndex]?.events ?? [])].reverse().find((e) => !e.rest);
           return last ? Math.max(longest, last.dur) : longest;
         }, 0);
-        if (barIndex === half) { phraseEndNotes += notes; phraseEndBars += 1; phraseEndTail += tail; }
+        if (barIndex === half) {
+          phraseEndNotes += notes;
+          phraseEndBars += 1;
+          phraseEndTail += tail;
+          const melody = score.staves[1][barIndex]?.events ?? [];
+          if (melody[melody.length - 1]?.rest) phraseEndLifts += 1;
+        }
         else { innerNotes += notes; innerBars += 1; innerTail += tail; }
       }
     }
@@ -459,6 +514,21 @@ function auditRhythm(grade, tests) {
     const tail = (phraseEndTail / phraseEndBars) / (innerTail / innerBars);
     lines.push(check('rhythm', grade, 'note ending the half-cadence bar, vs elsewhere', fixed(tail, 2),
       tail >= 1.05, '>=1.05 (the phrase arrives on a longer note)'));
+  }
+
+  if (phraseEndBars && grade >= 3) {
+    /*
+     * The lift before the consequent answers. A longer note at the half
+     * cadence is most of the arrival gesture, but a real antecedent usually
+     * also breathes — and the melodic hand was measured resting in 0.1-0.6%
+     * of its bars, i.e. essentially never, so one phrase ran straight into
+     * the next with no gap anywhere in the test. A preference rather than a
+     * rule (a phrase arriving on a held note is a good ending too), so this
+     * asserts that it happens, not that it always happens.
+     */
+    const lift = pct(phraseEndLifts, phraseEndBars);
+    lines.push(check('rhythm', grade, 'melody lifts at the half cadence', `${fixed(lift)}%`,
+      lift >= 10 && lift <= 60, '10%-60% of tests (the antecedent breathes, but not every time)'));
   }
 
   const metres = Object.entries(byMetre).filter(([, v]) => v.n >= 30)

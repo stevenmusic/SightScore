@@ -305,10 +305,40 @@ function buildStaff({ rng, rules, meter, barCount, hand, progression, key, silen
       // final bar it may still rest, and it is not driven all the way down to
       // a single held note.
       const calm = cells.filter((cell) => cell.calm);
-      events = fillBar(rng, calm.length ? calm : cells, meter.cellBeats, {
-        restBudget,
+      const pool = calm.length ? calm : cells;
+      const draw = () => fillBar(rng, pool, meter.cellBeats, {
+        restBudget: Math.max(restBudget, 1),
         activity: activity * 0.55,
       }).events;
+      events = draw();
+      /*
+       * The breath itself. A longer note at the half cadence is most of the
+       * gesture, but a real antecedent usually also *lifts* before the
+       * consequent answers it — and the melodic hand was measured resting in
+       * 0.1-0.6% of its bars at Grade 3 and up, i.e. essentially never, so
+       * the phrase ran straight into the next one with no gap anywhere.
+       * Redraw a few times looking for a bar that ends in a rest rather than
+       * forcing one: the cell library may hold no resting cell the grade can
+       * use, and a phrase that arrives on a held note is a perfectly good
+       * ending too, so this stays a preference. The accompaniment is left
+       * alone — it is the tune that breathes.
+       */
+      /*
+       * Gated to Grade 3 and up, where the period is a real two-hands event —
+       * the same boundary the audit asserts the phrase breath at. At Grade
+       * 1-2 the lift competes with the arrival note instead of complementing
+       * it: those tests are four or six bars with a tiny cell vocabulary, so
+       * a bar that ends in a rest is usually a bar whose *sounding* note got
+       * shorter, and the half-cadence bar stopped arriving on a longer note
+       * than its neighbours at all (measured 1.11 -> 1.02 at Grade 2).
+       */
+      const endsResting = (drawn) => drawn[drawn.length - 1]?.rest === true;
+      if (rules.grade >= 3 && !isAccompaniment && !endsResting(events) && rng.chance(0.5)) {
+        for (let attempt = 0; attempt < 6; attempt++) {
+          const candidate = draw();
+          if (endsResting(candidate)) { events = candidate; break; }
+        }
+      }
     } else if (ostinato && (ostinatoSource === null || (ostinatoRun < 2 && ostinatoBars < ostinatoBudget && rng.chance(0.55)))) {
       /*
        * The accompaniment figure, but not in *every* bar. Reusing it
@@ -411,6 +441,7 @@ function buildStaff({ rng, rules, meter, barCount, hand, progression, key, silen
       chordToneOnly: isLeft,
       // Only the bass is chord-tone-restricted, so only the bass reads this.
       bassDecoration: isLeft ? (rules.generatorHints.bassDecorationPercent ?? 0) / 100 : 0,
+      bassInversion: isLeft ? (rules.generatorHints.bassInversionPercent ?? 0) / 100 : 0,
       endOnTonic: true,
       barDuration: meter.barDuration,
       // The tune is shaped as an arch across the whole test; the bass that
@@ -769,14 +800,35 @@ function addChromaticGroup(rng, score) {
   const bars = score.staves[1];
 
   const flat = [];
-  bars.forEach((bar) => {
+  bars.forEach((bar, barIndex) => {
     let offset = 0;
     bar.events.forEach((event, eventIndex) => {
-      if (!event.rest && event.pitch) flat.push({ bar, eventIndex, event, offset });
+      if (!event.rest && event.pitch) flat.push({ bar, barIndex, eventIndex, event, offset });
       offset += event.dur;
     });
   });
   if (flat.length < 4) return;
+
+  /*
+   * What the left hand is holding while the group would sound. This pass used
+   * to skip the cross-hand check entirely, on the precedent set by the grace
+   * notes in `addOrnaments` — "a passing chromatic figure is not a harmony
+   * event". That precedent does not carry: an acciaccatura is over in an
+   * instant, while these are four real 16ths, and raising a letter the other
+   * hand is sounding *naturally* at that moment is a false relation — F
+   * against F# — which is precisely the error `harmoniseLeadingNotes` exists
+   * to prevent elsewhere in the texture. It was the dominant cause of the
+   * cross-hand semitone clashes the false-relation test kept turning up at
+   * Grade 8, and at no other grade, because no other grade writes these.
+   */
+  const against = soundingTimeline(score.staves[2], score.barDuration);
+  const clashesWithLeft = (midi, start, duration) => against.some((entry) => (
+    entry.start < start + duration && entry.end > start
+    && entry.midis.some((other) => {
+      const interval = Math.abs(midi - other) % 12;
+      return interval === 1 || interval === 11;
+    })
+  ));
 
   const candidates = [];
   for (let i = 1; i < flat.length - 2; i++) {
@@ -808,6 +860,19 @@ function addChromaticGroup(rng, score) {
     const letterA = ((a.event.dstep % 7) + 7) % 7;
     const letterMid = ((midStep % 7) + 7) % 7;
     if (key.alters[letterA] === direction || key.alters[letterMid] === direction) continue;
+    // Every note of the group has to clear the left hand for its own slice of
+    // the beat, not just the note the group replaces.
+    const groupPitches = [
+      a.event.pitch,
+      pitchAt(a.event.dstep, key, { chromaticAlter: direction }),
+      midNatural,
+      pitchAt(midStep, key, { chromaticAlter: direction }),
+    ];
+    const sixteenthDur = a.event.dur / 4;
+    const groupStart = a.barIndex * score.barDuration + a.offset;
+    if (groupPitches.some((pitch, step) => (
+      clashesWithLeft(pitch.midi, groupStart + step * sixteenthDur, sixteenthDur)
+    ))) continue;
     candidates.push({ ...a, direction, midStep, midNatural });
   }
   if (!candidates.length) return;

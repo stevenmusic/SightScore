@@ -191,7 +191,8 @@
           2
         ],
         "restDensityPercent": 10,
-        "bassDecorationPercent": 55
+        "bassDecorationPercent": 55,
+        "bassInversionPercent": 45
       }
     },
     "2": {
@@ -368,7 +369,8 @@
           2
         ],
         "restDensityPercent": 12,
-        "bassDecorationPercent": 60
+        "bassDecorationPercent": 60,
+        "bassInversionPercent": 50
       }
     },
     "3": {
@@ -583,7 +585,8 @@
           2
         ],
         "restDensityPercent": 12,
-        "bassDecorationPercent": 62
+        "bassDecorationPercent": 62,
+        "bassInversionPercent": 65
       }
     },
     "4": {
@@ -803,7 +806,8 @@
           2
         ],
         "restDensityPercent": 12,
-        "bassDecorationPercent": 65
+        "bassDecorationPercent": 65,
+        "bassInversionPercent": 70
       }
     },
     "5": {
@@ -1045,7 +1049,8 @@
           2
         ],
         "restDensityPercent": 12,
-        "bassDecorationPercent": 65
+        "bassDecorationPercent": 65,
+        "bassInversionPercent": 70
       }
     },
     "6": {
@@ -1276,7 +1281,8 @@
           2
         ],
         "restDensityPercent": 10,
-        "bassDecorationPercent": 68
+        "bassDecorationPercent": 68,
+        "bassInversionPercent": 72
       }
     },
     "7": {
@@ -1529,7 +1535,8 @@
           2
         ],
         "restDensityPercent": 10,
-        "bassDecorationPercent": 68
+        "bassDecorationPercent": 68,
+        "bassInversionPercent": 72
       }
     },
     "8": {
@@ -1693,7 +1700,8 @@
           2
         ],
         "restDensityPercent": 10,
-        "bassDecorationPercent": 70
+        "bassDecorationPercent": 70,
+        "bassInversionPercent": 72
       }
     }
   }
