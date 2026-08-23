@@ -25,7 +25,7 @@ import { fileURLToPath } from 'node:url';
 
 import { generateTest } from '../src/generator/generate.js';
 import { createKey, degreeOf, chordDegrees } from '../src/generator/theory.js';
-import { firstChord, lastChord, chordAt } from '../src/generator/harmony.js';
+import { firstChord, lastChord, chordAt, halfCadenceBar } from '../src/generator/harmony.js';
 
 const rules = JSON.parse(
   readFileSync(fileURLToPath(new URL('../src/rules/abrsm-piano-grades.json', import.meta.url)), 'utf8'),
@@ -87,6 +87,12 @@ function auditHarmony(grade, tests) {
   let tests0 = 0;
   let barTransitions = 0;
   let repeatedChordBars = 0;
+  let bassNotes = 0;
+  let bassNonChordTones = 0;
+  let bassSteps = 0;
+  let bassMoves = 0;
+  let bassNctOnBeat = 0;
+  let bassNctLeapt = 0;
 
   for (const score of tests) {
     const key = createKey(score.key);
@@ -117,6 +123,59 @@ function auditHarmony(grade, tests) {
      * failures blames the generator for the syllabus's own constraint, so the
      * root rate below is conditioned on the root being reachable at all.
      */
+    /*
+     * Every bass note, not just the downbeat one — see the checks at the end
+     * of this section for why the downbeat-only view hid the fault.
+     */
+    let previousDstep = null;
+    /*
+     * A modulating test (Grade 8) transposes its consequent phrase into the
+     * dominant, so from `keyChange.barIndex` on, judging a note's scale degree
+     * against the *opening* key marks every correctly-transposed bass note as
+     * a non-chord tone. The same blind spot has bitten two checks in this file
+     * already ("every test cadences on the tonic", "final bass note is the
+     * tonic"); it is fixed here the same way, by switching keys where the
+     * music does.
+     */
+    const bassKeyAt = (barIndex) => (
+      score.keyChange && barIndex >= score.keyChange.barIndex ? createKey(score.keyChange) : key
+    );
+    /*
+     * A hand's own last sounding note is forced onto the tonic (`endOnTonic`),
+     * and where the hands alternate — Grade 1 — that hand may finish well
+     * before the piece's closing I, so its forced tonic legitimately is not a
+     * tone of the harmony sounding there. `repairNonChordTones` and
+     * `resolveClashes` both exempt exactly this note; counting it as a
+     * misbehaving decoration blames the generator for a deliberate ending.
+     */
+    const bassFinal = score.staves[2]
+      .flatMap((bar) => bar.events.filter((event) => !event.rest && event.dstep !== undefined))
+      .at(-1) ?? null;
+    score.staves[2].forEach((bar, barIndex) => {
+      let offset = 0;
+      const barDur = bar.events.reduce((sum, e) => sum + e.dur, 0);
+      const barKey = bassKeyAt(barIndex);
+      for (const event of bar.events) {
+        const at = offset;
+        offset += event.dur;
+        if (event.rest || event.dstep === undefined) continue;
+        if (event === bassFinal) { previousDstep = event.dstep; continue; }
+        const tones = chordDegrees(chordAt(score.progression[barIndex] ?? 'I', at, barDur));
+        const isTone = tones.includes(degreeOf(event.dstep, barKey));
+        bassNotes += 1;
+        if (!isTone) {
+          bassNonChordTones += 1;
+          if (at % bar.beatDuration === 0) bassNctOnBeat += 1;
+          if (previousDstep !== null && Math.abs(event.dstep - previousDstep) !== 1) bassNctLeapt += 1;
+        }
+        if (previousDstep !== null) {
+          bassMoves += 1;
+          if (Math.abs(event.dstep - previousDstep) === 1) bassSteps += 1;
+        }
+        previousDstep = event.dstep;
+      }
+    });
+
     const used = score.staves[2].flatMap((bar) => notesOfBar(bar)).map((e) => e.dstep);
     const low = used.length ? Math.min(...used) : 0;
     const high = used.length ? Math.max(...used) : 0;
@@ -195,6 +254,38 @@ function auditHarmony(grade, tests) {
   const repeatRate = pct(repeatedChordBars, barTransitions);
   lines.push(check('harmony', grade, 'chord held over from the previous bar', `${fixed(repeatRate)}%`,
     repeatRate >= 5 && repeatRate <= 30, '5%-30% of bar transitions (real writing prolongs a chord sometimes, not never)'));
+
+  /*
+   * How the bass behaves *between* the downbeats, which every check above is
+   * blind to: they all sample the note at a harmony arrival, where the bass
+   * is supposed to be a chord tone, so a bass that was chord tones and
+   * nothing else read as perfect here while sounding like arpeggio rubble.
+   * It was exactly that — `pickWeighted` refused a non-chord tone in a
+   * chord-tone-only hand outright, and within one triad the smallest move
+   * available is a third, so the line could hardly ever step at all: measured
+   * 100.0% chord tones and 8-14% stepwise motion at every grade from 2 up,
+   * against 21-36% and 41-73% in the melody, which was always allowed to
+   * decorate. Real keyboard bass writing passes between its chord tones.
+   *
+   * Both directions are faults, so both are bounded. Too few decorations is
+   * the old sterile line back again; too many and the bass stops stating the
+   * harmony it exists to state.
+   */
+  const bassNct = pct(bassNonChordTones, bassNotes);
+  lines.push(check('harmony', grade, 'bass notes that decorate (passing/neighbour)', `${fixed(bassNct)}%`,
+    bassNct >= 3 && bassNct <= 20, '3%-20% of bass notes (a bass passes between its chord tones, but still states them)'));
+  const bassStep = pct(bassSteps, bassMoves);
+  lines.push(check('harmony', grade, 'bass moves by step', `${fixed(bassStep)}%`,
+    bassStep >= 18, '>=18% of bass moves (a chord-tones-only bass structurally cannot step)'));
+  /*
+   * A decoration has to behave like one or it is simply a wrong bass note:
+   * off the beat, stepped into, and not two running. Selection enforces all
+   * three, but later passes relocate notes, so this measures what actually
+   * reached the page rather than what was chosen.
+   */
+  const illBehaved = pct(bassNctOnBeat + bassNctLeapt, bassNonChordTones);
+  lines.push(check('harmony', grade, 'bass decorations that misbehave', `${fixed(illBehaved)}%`,
+    illBehaved <= 12, '<=12% of them (a decoration is off the beat and stepped into, or it is a wrong note)'));
   return lines;
 }
 
@@ -212,8 +303,40 @@ function auditRhythm(grade, tests) {
   const byMetre = {};
   let restBars = 0;
   let totalBars = 0;
+  // The phrase breath at the half cadence — see the check at the end.
+  let phraseEndNotes = 0;
+  let phraseEndBars = 0;
+  let innerNotes = 0;
+  let innerBars = 0;
+  let phraseEndTail = 0;
+  let innerTail = 0;
 
   for (const score of tests) {
+    /*
+     * The phrase breath. A period arrives at its half cadence and real
+     * writing marks that arrival — a longer note, the accompaniment figure
+     * breaking — which is what makes the antecedent read as a question the
+     * consequent answers. Nothing did: measured before this, the half-cadence
+     * bar carried 0.97-1.04x an ordinary bar's notes at every grade from 3 up
+     * and its closing note was no longer than any other bar's, so a test ran
+     * at flat density from bar 1 to the double bar. The final bar is excluded
+     * from the comparison because it already gets its own (stronger) cadence
+     * treatment and would flatter the number.
+     */
+    const half = halfCadenceBar(score.barCount);
+    if (half !== null) {
+      for (let barIndex = 0; barIndex < score.barCount - 1; barIndex++) {
+        const notes = [1, 2].reduce(
+          (sum, st) => sum + notesOfBar(score.staves[st][barIndex] ?? { events: [] }).length, 0,
+        );
+        const tail = [1, 2].reduce((longest, st) => {
+          const last = [...(score.staves[st][barIndex]?.events ?? [])].reverse().find((e) => !e.rest);
+          return last ? Math.max(longest, last.dur) : longest;
+        }, 0);
+        if (barIndex === half) { phraseEndNotes += notes; phraseEndBars += 1; phraseEndTail += tail; }
+        else { innerNotes += notes; innerBars += 1; innerTail += tail; }
+      }
+    }
     for (const staffNumber of [1, 2]) {
       /*
        * A bar the hand sits out has no rhythm to repeat. Counting whole-bar
@@ -313,6 +436,31 @@ function auditRhythm(grade, tests) {
    * to a floor than a fault. Some of it is also the phrase restatement doing
    * its job — the consequent bringing back the antecedent's figure.
    */
+  if (phraseEndBars && innerBars) {
+    const density = (phraseEndNotes / phraseEndBars) / (innerNotes / innerBars);
+    /*
+     * Only asserted from Grade 3. Below it this measures a constraint rather
+     * than a fault, the way the five-finger grades' unreachable chord roots
+     * do: three quarters of Grade 1-2 tests are four bars long and have no
+     * half cadence at all, and in the six-bar ones the hands strictly
+     * alternate — measured, one hand is silent at the half-cadence bar in
+     * 157 of 157 Grade 1 cases — so that bar is already taking the cadence
+     * treatment `buildStaff` gives a bar the other hand is about to sit out,
+     * and "both hands relax together" is not a thing that can happen there.
+     * The note-length check below still applies at every grade, and passes
+     * at Grade 1-2, so the breath is confirmed where it can exist.
+     */
+    if (grade >= 3) {
+      lines.push(check('rhythm', grade, 'half-cadence bar density vs an ordinary bar', fixed(density, 2),
+        density <= 0.92, '<=0.92 (a period breathes at its half cadence)'));
+    } else {
+      lines.push(`       half-cadence bar density vs an ordinary bar: ${fixed(density, 2)} (not asserted below grade 3 — hands alternate)`);
+    }
+    const tail = (phraseEndTail / phraseEndBars) / (innerTail / innerBars);
+    lines.push(check('rhythm', grade, 'note ending the half-cadence bar, vs elsewhere', fixed(tail, 2),
+      tail >= 1.05, '>=1.05 (the phrase arrives on a longer note)'));
+  }
+
   const metres = Object.entries(byMetre).filter(([, v]) => v.n >= 30)
     .sort((a, b) => (b[1].over / b[1].n) - (a[1].over / a[1].n))
     .map(([m, v]) => `${m} ${fixed(pct(v.over, v.n), 0)}%`).join('  ');

@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 
 import { generateTest } from '../src/generator/generate.js';
 import { fingerprintOf, createHistory, generateUnique } from '../src/generator/fingerprint.js';
-import { firstChord, lastChord } from '../src/generator/harmony.js';
+import { firstChord, lastChord, chordAt, halfCadenceBar } from '../src/generator/harmony.js';
+import { createKey, degreeOf, chordDegrees } from '../src/generator/theory.js';
 import { rules, GRADES, expectedDuration, soundingEvents } from './helpers.js';
 
 const SEEDS = Array.from({ length: 40 }, (_, i) => i * 7919 + 13);
@@ -680,4 +681,117 @@ test('chord density stays inside the grade texture', () => {
       );
     }
   });
+});
+
+/*
+ * A bass decoration has to behave like one. `pickWeighted` admits a non-chord
+ * tone in the chord-tone-only hand only off the beat, only stepped into and
+ * only when the note before it was a chord tone; this asserts what actually
+ * survives to the page, since several later passes relocate notes. The
+ * hand's own forced final tonic is exempt for the same reason
+ * `repairNonChordTones` exempts it, and a modulating test is judged against
+ * the key it has moved into rather than the one it opened in.
+ */
+test('a bass decoration is off the beat, stepped into, and never doubled', () => {
+  eachTest((score, _rules, context) => {
+    const opening = createKey(score.key);
+    const destination = score.keyChange ? createKey(score.keyChange) : opening;
+    const bassFinal = score.staves[2]
+      .flatMap((bar) => bar.events.filter((event) => !event.rest && event.dstep !== undefined))
+      .at(-1) ?? null;
+
+    let previous = null;
+    let previousWasChordTone = true;
+    score.staves[2].forEach((bar, barIndex) => {
+      const key = score.keyChange && barIndex >= score.keyChange.barIndex ? destination : opening;
+      const barDuration = bar.events.reduce((sum, event) => sum + event.dur, 0);
+      let offset = 0;
+      for (const event of bar.events) {
+        const at = offset;
+        offset += event.dur;
+        if (event.rest || event.dstep === undefined) continue;
+        if (event === bassFinal) { previous = event.dstep; continue; }
+
+        const tones = chordDegrees(chordAt(score.progression[barIndex] ?? 'I', at, barDuration));
+        const isChordTone = tones.includes(degreeOf(event.dstep, key));
+        const where = `grade ${context.grade} seed ${context.seed} bar ${barIndex + 1} offset ${at}`;
+        if (!isChordTone && previous !== null) {
+          assert.equal(
+            Math.abs(event.dstep - previous), 1,
+            `${where}: bass non-chord tone leapt into`,
+          );
+          assert.ok(previousWasChordTone, `${where}: two bass non-chord tones running`);
+          assert.notEqual(at, 0, `${where}: bass non-chord tone on a downbeat`);
+        }
+        previous = event.dstep;
+        previousWasChordTone = isChordTone;
+      }
+    });
+  });
+});
+
+/*
+ * The bass must actually use the freedom above: restricted to chord tones it
+ * structurally cannot step, since the smallest move inside one triad is a
+ * third. Asserted over the whole sample rather than per test — a single short
+ * test can legitimately have a bass that only leaps.
+ */
+test('the bass line steps between its chord tones rather than only arpeggiating', () => {
+  let moves = 0;
+  let steps = 0;
+  eachTest((score) => {
+    let previous = null;
+    for (const bar of score.staves[2]) {
+      for (const event of bar.events) {
+        if (event.rest || event.dstep === undefined) continue;
+        if (previous !== null) {
+          moves += 1;
+          if (Math.abs(event.dstep - previous) === 1) steps += 1;
+        }
+        previous = event.dstep;
+      }
+    }
+  });
+  const rate = (steps / moves) * 100;
+  assert.ok(rate >= 18, `bass moves by step in only ${rate.toFixed(1)}% of moves`);
+});
+
+/*
+ * A period breathes at its half cadence: the antecedent arrives on a longer
+ * note than an ordinary bar ends on. Without it a test runs at flat density
+ * from bar 1 to the double bar and reads as bars laid end to end. Measured
+ * across the sample, and excluding the final bar, which has its own stronger
+ * cadence treatment.
+ *
+ * Grade 1-2 are excluded, not overlooked: three quarters of their tests are
+ * four bars long and have no half cadence at all, and in the six-bar ones the
+ * hands strictly alternate, so the half-cadence bar is already taking the
+ * cadence treatment `buildStaff` gives a bar the other hand sits out. Folding
+ * them in dilutes the measurement to the point of uselessness — with the
+ * phrase breath switched off the all-grades ratio is 1.05, which any threshold
+ * loose enough to pass a healthy generator would also let through.
+ */
+test('the antecedent phrase arrives on a longer note at its half cadence', () => {
+  let phraseEnd = 0;
+  let phraseEndBars = 0;
+  let elsewhere = 0;
+  let elsewhereBars = 0;
+  eachTest((score, _rules, context) => {
+    if (context.grade < 3) return;
+    const half = halfCadenceBar(score.barCount);
+    if (half === null) return;
+    for (let barIndex = 0; barIndex < score.barCount - 1; barIndex++) {
+      const tail = [1, 2].reduce((longest, staffNumber) => {
+        const last = [...(score.staves[staffNumber][barIndex]?.events ?? [])]
+          .reverse().find((event) => !event.rest);
+        return last ? Math.max(longest, last.dur) : longest;
+      }, 0);
+      if (barIndex === half) { phraseEnd += tail; phraseEndBars += 1; }
+      else { elsewhere += tail; elsewhereBars += 1; }
+    }
+  });
+  const ratio = (phraseEnd / phraseEndBars) / (elsewhere / elsewhereBars);
+  // Measured 1.47 with the phrase breath and 1.05 without it, so this sits
+  // clear of both rather than shaving one of them.
+  assert.ok(ratio >= 1.2, `half-cadence bar ends on a note only ${ratio.toFixed(2)}x an ordinary bar's`);
 });

@@ -172,15 +172,31 @@ test('beams never cross a beat boundary', () => {
     const measures = xml.split('<measure number=').slice(1);
 
     measures.forEach((measure, index) => {
-      // Walk the notes of one staff at a time, tracking beam depth and time.
-      for (const staff of ['1', '2']) {
+      /*
+       * One staff's time flow is the run of notes before the `<backup>`, and
+       * the other's is the run after it — not "the notes tagged `<staff>N</
+       * staff>`". Grade 8's cross-staff writing (`addCrossStaffWriting`) is
+       * the difference: such a note is *printed* on the other staff, so it
+       * carries that staff's tag and a reserved voice, but its `<duration>`
+       * still advances its own hand's flow, because `<staff>`/`<voice>` are
+       * placement metadata and the `<backup>` bookkeeping is untouched.
+       * Filtering by the tag therefore skipped a note that still consumes
+       * time here, desynchronising `offset` from the real bar position and
+       * reporting a beam as crossing a beat boundary when it does not.
+       * Measured on the code as it stood: 19 spurious hits in 15,043 stress
+       * seeds, every one of them a Grade 8 bar containing a crossed note.
+       * Splitting on `<backup>` follows the durations the way the renderer
+       * actually lays them out.
+       */
+      const flows = measure.split('<backup>');
+      flows.forEach((flow, flowIndex) => {
+        const staff = String(flowIndex + 1);
         let offset = 0;
         let depth = 0;
         let beamStartOffset = 0;
-        const notes = measure.split('<note>').slice(1).map((n) => n.split('</note>')[0]);
+        const notes = flow.split('<note>').slice(1).map((n) => n.split('</note>')[0]);
 
         for (const note of notes) {
-          if (!note.includes(`<staff>${staff}</staff>`)) continue;
           if (note.includes('<chord/>')) continue;
           // A grace note borrows its time from the note it decorates and
           // carries no <duration> (and no beam) of its own.
@@ -203,7 +219,7 @@ test('beams never cross a beat boundary', () => {
           offset += duration;
         }
         assert.equal(depth, 0, `measure ${index + 1} staff ${staff}: unbalanced beam`);
-      }
+      });
     });
   });
 });

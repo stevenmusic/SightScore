@@ -12,8 +12,8 @@
  *     nearest chord tone afterwards.
  */
 
-import { chordDegrees, degreeOf, pitchAt } from './theory.js?v=48';
-import { chordAt } from './harmony.js?v=48';
+import { chordDegrees, degreeOf, pitchAt } from './theory.js?v=49';
+import { chordAt } from './harmony.js?v=49';
 
 /**
  * Interval classes that read as dissonant against the bass. A second, tritone
@@ -40,6 +40,9 @@ export function assignPitches({ rng, key, bars, progression, window, options, ag
     stepwiseBias = 0.7,
     maxLeapSemitones = 7,
     chordToneOnly = false,
+    // How often a chord-tone-only hand (the bass) may take an off-beat
+    // passing/neighbour tone. 0 restores the old chord-tones-only bass.
+    bassDecoration = 0,
     endOnTonic = true,
     barDuration = 0,
     arch = 0,
@@ -234,6 +237,7 @@ export function assignPitches({ rng, key, bars, progression, window, options, ag
           stepwiseBias,
           maxLeapSemitones,
           chordToneOnly,
+          bassDecoration,
           sounding,
           preferred,
         });
@@ -503,11 +507,25 @@ function pickWeighted(ctx) {
     rng, key, allSteps, previous, previousLeap, repeatRun, runDirection, runLength, tones,
     arpeggioDirection, arpeggioLength, onBeat, isDownbeat, centre, stepwiseBias, maxLeapSemitones,
     chordToneOnly, sounding, previousWasChordTone, previousWasLeadingNote, previousBass, preferred = null,
+    bassDecoration = 0,
   } = ctx;
   const bass = sounding.length ? Math.min(...sounding) : null;
 
   const previousMidi = soundingMidi(previous, key);
   const ceiling = sounding.length ? Math.max(...sounding) : null;
+
+  /*
+   * Whether *this* bass note is allowed to be a decoration, rolled once for
+   * the note rather than left to the weighting inside the loop below. The
+   * rate has to be gated here because the category lottery at the end of this
+   * function weights step-versus-leap by `stepwiseBias` alone and ignores the
+   * individual candidates' weights entirely: merely admitting non-chord steps
+   * as candidates would hand the bass the melody's own 62-75% stepwise bias
+   * wholesale, overshooting as badly in one direction as the old outright ban
+   * did in the other. A per-note roll is what actually makes
+   * `bassDecorationPercent` mean "this share of eligible bass notes".
+   */
+  const decorateBass = chordToneOnly && bassDecoration > 0 && rng.chance(bassDecoration);
 
   const repeats = [];
   const steps = [];
@@ -537,7 +555,35 @@ function pickWeighted(ctx) {
     if (semitones === 6) continue;
 
     const isChordTone = tones.includes(degreeOf(dstep, key));
-    if (chordToneOnly && !isChordTone) continue;
+    /*
+     * The bass used to be restricted to chord tones outright, and that single
+     * `continue` is what made its line read as arpeggio rubble rather than a
+     * bass part. Within one triad the smallest available move is a third, so
+     * stepwise motion was only ever reachable when the harmony changed and
+     * the two roots happened to sit a second apart. Measured before this:
+     * 100.0% of left-hand notes were chord tones at every grade from 2 up,
+     * and only 8-14% of its moves were steps -- against 21-36% and 41-73% in
+     * the melody, which has always been allowed to decorate. The two hands
+     * were speaking different languages, and the audit could not see it
+     * because it only ever asked what the bass did *at downbeats*.
+     *
+     * Real bass writing decorates exactly the way the melody already does,
+     * only more sparingly: a passing or neighbour tone, off the beat, stepped
+     * into and stepped out of. The conditions below are what hold it to that
+     * and nothing looser -- never on a beat (so every harmony arrival,
+     * including the second half of a split bar, is still a real chord tone),
+     * never leapt into, and never two running, so the harmony the bass is
+     * stating is never in doubt. `stackChordTones` already refuses to build a
+     * chord on a non-chord tone, so a decorated bass note stays a single
+     * note; `repairNonChordTones` already exempts a note that is both stepped
+     * into and stepped out of, so a well-behaved one survives to the page.
+     */
+    if (chordToneOnly && !isChordTone) {
+      if (onBeat || isDownbeat) continue;
+      if (distance !== 1) continue;
+      if (!previousWasChordTone) continue;
+      if (!decorateBass) continue;
+    }
     /*
      * In a minor key, stepping between the natural 6th and the raised 7th is
      * the melodic augmented 2nd this repertoire never writes. `fixAugmented-
@@ -867,6 +913,70 @@ function resolveClashes({ bars, key, window, against, barDuration, finalEvent })
 
 function clashesWith(midi, sounding) {
   return sounding.some((other) => NEVER_INTERVALS.has(Math.abs(midi - other) % 12));
+}
+
+/**
+ * Take back a bass decoration that the right hand turned out to clash with.
+ *
+ * The bass is written *first*, against nothing, so unlike every other pitch
+ * in the texture its notes are chosen with no vertical information at all.
+ * That was harmless while the bass could only take chord tones — a chord tone
+ * is consonant with the harmony by definition, and the right hand is then
+ * checked against it. An off-beat passing tone is not, and the right hand
+ * cannot always dodge it: its own final tonic is deliberately exempt from
+ * `resolveClashes` (better a clash than a cadence that misses the tonic), and
+ * `shapeCadence` pins the approach to it. A real case, caught by the false-
+ * relation test rather than reasoned about: grade 4 seed 245502 put a bass
+ * G#3 passing tone under the held A5 the melody ends on, a semitone apart
+ * with nothing downstream positioned to repair either note.
+ *
+ * A decoration is by nature the optional note in the texture, so it is the
+ * one that gives way: revert it to the nearest chord tone that clears the
+ * right hand, which is the note the bass would have taken before decoration
+ * existed. Runs once both hands are final, since that is the first moment the
+ * question can be asked at all.
+ */
+export function revertClashingBassDecorations(bars, key, barDuration, against) {
+  if (!against?.length) return;
+
+  bars.forEach((bar, barIndex) => {
+    let offset = 0;
+    for (const event of bar.events) {
+      const start = barIndex * barDuration + offset;
+      offset += event.dur;
+      if (event.rest || event.dstep === undefined) continue;
+      const tones = event.chordDegrees;
+      // Only a decoration is up for reverting: a chord tone that clashes is a
+      // harmony problem, not an ornament, and is not this pass's to solve.
+      if (!tones?.length || tones.includes(degreeOf(event.dstep, key))) continue;
+
+      const sounding = soundingAt(against, start, event.dur);
+      if (!clashesWith(event.pitch.midi, sounding)) continue;
+
+      let replacement = null;
+      let bestDistance = Infinity;
+      for (const tone of tones) {
+        for (let dstep = event.dstep - 3; dstep <= event.dstep + 3; dstep++) {
+          if (degreeOf(dstep, key) !== tone) continue;
+          const raiseSeventh = degreeOf(dstep, key) === 6;
+          const candidate = pitchAt(dstep, key, { raiseSeventh });
+          if (clashesWith(candidate.midi, sounding)) continue;
+          // Never double the other hand's leading note (see resolveClashes).
+          if (raiseSeventh && sounding.some((other) => (other % 12) === (candidate.midi % 12))) continue;
+          const distance = Math.abs(dstep - event.dstep);
+          if (distance < bestDistance) {
+            bestDistance = distance;
+            replacement = { dstep, pitch: candidate, raiseSeventh };
+          }
+        }
+      }
+      if (replacement) {
+        event.dstep = replacement.dstep;
+        event.raiseSeventh = replacement.raiseSeventh;
+        event.pitch = replacement.pitch;
+      }
+    }
+  });
 }
 
 /**

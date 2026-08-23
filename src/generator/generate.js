@@ -7,15 +7,16 @@
  *   articulation and tempo term.
  */
 
-import { createRandom, randomSeed } from './random.js?v=48';
-import { createKey, dstepRange, degreeOf, pitchAt, chordDegrees, LETTERS } from './theory.js?v=48';
-import { buildProgression, firstChord, lastChord, halfCadenceBar } from './harmony.js?v=48';
+import { createRandom, randomSeed } from './random.js?v=49';
+import { createKey, dstepRange, degreeOf, pitchAt, chordDegrees, LETTERS } from './theory.js?v=49';
+import { buildProgression, firstChord, lastChord, halfCadenceBar } from './harmony.js?v=49';
 import {
   assignPitches, stackChordTones, soundingTimeline, harmoniseLeadingNotes, harmoniseRepeatedLeadingNotes,
+  revertClashingBassDecorations,
   relaxParallels,
-} from './melody.js?v=48';
-import { DIVISIONS, cellsFor, fillBar, wholeBarRest } from './rhythm.js?v=48';
-import { meterInfo, rescaleCells } from './meter.js?v=48';
+} from './melody.js?v=49';
+import { DIVISIONS, cellsFor, fillBar, wholeBarRest } from './rhythm.js?v=49';
+import { meterInfo, rescaleCells } from './meter.js?v=49';
 
 const TEMPO_BPM = {
   Grave: 46, Largo: 52, Adagio: 60, Lento: 58, Andante: 76, Andantino: 84,
@@ -125,6 +126,13 @@ export function generateTest(rulesTable, options) {
     against: soundingTimeline(leftHand, meter.barDuration),
     above: leftSteps.length ? Math.max(...leftSteps) : null,
   });
+  /*
+   * The bass chose its decorations before the right hand existed, so this is
+   * the first point a clash between the two can even be asked about — and it
+   * has to be asked before the parallel/leading-note passes below, which
+   * assume both hands are already vertically sound.
+   */
+  revertClashingBassDecorations(leftHand, key, meter.barDuration, soundingTimeline(rightHand, meter.barDuration));
   // Consecutive fifths and octaves put back by the repair passes inside each
   // hand — only visible now that both hands are final.
   relaxParallels(rightHand, leftHand, key, meter.barDuration, rightHand.window);
@@ -258,11 +266,27 @@ function buildStaff({ rng, rules, meter, barCount, hand, progression, key, silen
    * enough tests some will always land badly — so it is a count, not a roll.
    */
   const ostinatoBudget = Math.max(2, Math.round(barCount * 0.4));
+  /*
+   * The antecedent's last bar. A period breathes here — the half cadence is
+   * an arrival, and real writing lands on it with a longer note and lets the
+   * accompaniment figure break, which is the whole reason the phrase reads as
+   * a question answered by the consequent rather than a run of bars.
+   * Measured before this: the half-cadence bar carried 0.97-1.04x the notes
+   * of an ordinary bar at every grade from 3 up, and its closing note was no
+   * longer than anywhere else, so nothing marked the phrase boundary at all
+   * and a test ran at flat density from bar 1 to the double bar. `buildStaff`
+   * already gives the *final* bar exactly this treatment; the half cadence is
+   * the same event one phrase earlier, only gentler — it is a comma, not a
+   * full stop, so the activity reduction is milder than the cadence bar's and
+   * rests stay available.
+   */
+  const phraseEnd = halfCadenceBar(barCount);
 
   for (let barIndex = 0; barIndex < barCount; barIndex++) {
     const isFinalBar = barIndex === barCount - 1;
     const isCadenceBar = isFinalBar || (silentBars.size && silentBars.has(barIndex + 1));
-    const isRegularBar = !silentBars.has(barIndex) && !isCadenceBar && !ostinato;
+    const isPhraseEndBar = phraseEnd !== null && barIndex === phraseEnd && !isCadenceBar;
+    const isRegularBar = !silentBars.has(barIndex) && !isCadenceBar && !isPhraseEndBar && !ostinato;
     let events;
     let motif = null;
     let usedOstinato = false;
@@ -275,6 +299,15 @@ function buildStaff({ rng, rules, meter, barCount, hand, progression, key, silen
       events = fillBar(rng, calm.length ? calm : cells, meter.cellBeats, {
         restBudget: 0,
         activity: activity * 0.4,
+      }).events;
+    } else if (isPhraseEndBar) {
+      // The phrase's arrival: calm cells so the bar ends long, but unlike the
+      // final bar it may still rest, and it is not driven all the way down to
+      // a single held note.
+      const calm = cells.filter((cell) => cell.calm);
+      events = fillBar(rng, calm.length ? calm : cells, meter.cellBeats, {
+        restBudget,
+        activity: activity * 0.55,
       }).events;
     } else if (ostinato && (ostinatoSource === null || (ostinatoRun < 2 && ostinatoBars < ostinatoBudget && rng.chance(0.55)))) {
       /*
@@ -376,6 +409,8 @@ function buildStaff({ rng, rules, meter, barCount, hand, progression, key, silen
         ? Math.min(rules.generatorHints.maxLeapSemitones, 12)
         : rules.generatorHints.maxLeapSemitones,
       chordToneOnly: isLeft,
+      // Only the bass is chord-tone-restricted, so only the bass reads this.
+      bassDecoration: isLeft ? (rules.generatorHints.bassDecorationPercent ?? 0) / 100 : 0,
       endOnTonic: true,
       barDuration: meter.barDuration,
       // The tune is shaped as an arch across the whole test; the bass that

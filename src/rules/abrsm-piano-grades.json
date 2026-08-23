@@ -190,7 +190,8 @@
           1,
           2
         ],
-        "restDensityPercent": 10
+        "restDensityPercent": 10,
+        "bassDecorationPercent": 55
       }
     },
     "2": {
@@ -366,7 +367,8 @@
           1,
           2
         ],
-        "restDensityPercent": 12
+        "restDensityPercent": 12,
+        "bassDecorationPercent": 60
       }
     },
     "3": {
@@ -580,7 +582,8 @@
           1,
           2
         ],
-        "restDensityPercent": 12
+        "restDensityPercent": 12,
+        "bassDecorationPercent": 62
       }
     },
     "4": {
@@ -799,7 +802,8 @@
           1,
           2
         ],
-        "restDensityPercent": 12
+        "restDensityPercent": 12,
+        "bassDecorationPercent": 65
       }
     },
     "5": {
@@ -1040,7 +1044,8 @@
           1,
           2
         ],
-        "restDensityPercent": 12
+        "restDensityPercent": 12,
+        "bassDecorationPercent": 65
       }
     },
     "6": {
@@ -1270,7 +1275,8 @@
           1,
           2
         ],
-        "restDensityPercent": 10
+        "restDensityPercent": 10,
+        "bassDecorationPercent": 68
       }
     },
     "7": {
@@ -1522,7 +1528,8 @@
           1,
           2
         ],
-        "restDensityPercent": 10
+        "restDensityPercent": 10,
+        "bassDecorationPercent": 68
       }
     },
     "8": {
@@ -1685,7 +1692,8 @@
           1,
           2
         ],
-        "restDensityPercent": 10
+        "restDensityPercent": 10,
+        "bassDecorationPercent": 70
       }
     }
   }
