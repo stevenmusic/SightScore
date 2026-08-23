@@ -12,7 +12,8 @@
     "devices": "node scripts/devices.js",
     "smoke": "node scripts/smoke.js",
     "loudness": "node scripts/loudness.js",
-    "staff": "node scripts/staff-metrics.js"
+    "staff": "node scripts/staff-metrics.js",
+    "engraving": "node scripts/engraving-check.js"
   },
   "dependencies": {
     "opensheetmusicdisplay": "^2.1.0"

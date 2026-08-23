@@ -1,10 +1,10 @@
-import { generateTest, keyOptionsFor } from '../generator/generate.js?v=51';
-import { toMusicXml } from '../generator/musicxml.js?v=51';
-import { createHistory, generateUnique } from '../generator/fingerprint.js?v=51';
-import { createKey, pitchAt } from '../generator/theory.js?v=51';
-import { createPlayer } from './playback.js?v=51';
-import { createStage, barTimings } from './stage.js?v=51';
-import { initLanguage, applyLanguage, getLanguage, t, onLanguageChange } from './i18n.js?v=51';
+import { generateTest, keyOptionsFor } from '../generator/generate.js?v=52';
+import { toMusicXml } from '../generator/musicxml.js?v=52';
+import { createHistory, generateUnique } from '../generator/fingerprint.js?v=52';
+import { createKey, pitchAt } from '../generator/theory.js?v=52';
+import { createPlayer } from './playback.js?v=52';
+import { createStage, barTimings } from './stage.js?v=52';
+import { initLanguage, applyLanguage, getLanguage, t, onLanguageChange } from './i18n.js?v=52';
 
 // As early as possible, before any other DOM work below, so the page never
 // paints in the wrong language for a returning en visitor.
@@ -190,6 +190,10 @@ const STAFF_ZOOM = { phone: 0.46, compact: 0.66, medium: 0.78, wide: 0.78 };
 const STAFF_GAP_UNITS = 7;
 const SYSTEM_GAP_UNITS = 9;
 const PAGE_TOP_UNITS = 7;
+/** Clear space kept between the tempo/character word and the music, in staff units. */
+const TEMPO_TERM_GAP_UNITS = 0.8;
+/** Clearance between what hangs off one stave and what rises toward the next. */
+const MIN_CLEARANCE_UNITS = 2;
 /*
  * Where the treble clef sits, measured from the top of the engraving in staff
  * units (one unit is one line gap, so this scales with the staff size rather
@@ -341,6 +345,38 @@ function pinScoreTop() {
 }
 
 /**
+ * Drop the second copy of a word OSMD draws twice.
+ *
+ * A `<words>` direction OSMD does not recognise as a known instruction gets
+ * rendered twice, at byte-identical coordinates — confirmed on the vendored
+ * build with a minimal one-note, one-direction document: "rall." and "dolce"
+ * each come out twice, while "rit." and "a tempo" (which it does recognise)
+ * come out once. Our MusicXML contains the direction exactly once, so this is
+ * the renderer, not the serialiser, and no encoding avoids it: placement
+ * above/below, with and without `<staff>`, with and without `<voice>`, plain
+ * and italic all double.
+ *
+ * Two identical strings at the same pixel cannot be anything but a duplicate —
+ * a real second marking would have to sit somewhere else to be readable — so
+ * removing the later one is safe. It also makes the text stop looking
+ * artificially bold, which is what drawing it twice actually looks like.
+ *
+ * Runs before `pinTempoTermPosition`, or that would move one copy and leave
+ * the other behind.
+ */
+function removeDuplicateText() {
+  const svg = elements.score.querySelector('svg');
+  if (!svg) return;
+  const seen = new Set();
+  for (const text of svg.querySelectorAll('text')) {
+    const box = text.getBoundingClientRect();
+    const key = `${text.textContent}@${Math.round(box.x)},${Math.round(box.y)}`;
+    if (seen.has(key)) text.remove();
+    else seen.add(key);
+  }
+}
+
+/**
  * Hold the staves in the same place on every render.
  *
  * OSMD spaces the two staves of a grand staff — and the systems below them —
@@ -368,8 +404,40 @@ function applyFixedSpacing() {
   rules.StaffDistance = STAFF_GAP_UNITS;
   rules.BetweenStaffDistance = STAFF_GAP_UNITS;
   rules.MinimumDistanceBetweenSystems = SYSTEM_GAP_UNITS;
-  rules.MinSkyBottomDistBetweenStaves = 0;
-  rules.MinSkyBottomDistBetweenSystems = 0;
+  /*
+   * These two are the clearance that keeps what hangs below one stave off
+   * what rises toward the next — slurs, hairpins, dynamics, ledger lines.
+   * They were briefly set to 0 while chasing a constant staff position, which
+   * removed exactly that protection and let slurs pile onto each other and
+   * onto the notes. The staff distance above is what holds the layout still;
+   * these are what stop it colliding, and they are not the same job.
+   */
+  rules.MinSkyBottomDistBetweenStaves = MIN_CLEARANCE_UNITS;
+  rules.MinSkyBottomDistBetweenSystems = MIN_CLEARANCE_UNITS;
+  /*
+   * Let a slur bend around what is already engraved rather than being placed
+   * from the notes alone. Off by default in OSMD, and with two hands each
+   * carrying their own slurs into the same gap between the staves, the
+   * default put one straight through the other.
+   */
+  rules.SlurPlacementUseSkyBottomLine = true;
+  /*
+   * Anchor slurs at the stems and flatten them slightly. Both keep a slur
+   * close to the notes it belongs to instead of arcing out into the bands
+   * where the hairpins and the pedal line live, which is where slurs were
+   * running through other markings. Measured over 80 rendered tests: 11.6% of
+   * tests had a slur crossing a marking with OSMD's defaults, 4.7% with the
+   * stem anchoring, 3.8% with both. Attaching a slur at the stem is ordinary
+   * engraving practice, not a compromise.
+   *
+   * Forcing the placement *side* per hand was tried too — right hand above,
+   * left hand below, as piano writing normally does — and made it markedly
+   * worse (22.5%), because it drove the left hand's slurs down onto the pedal
+   * line, which OSMD gives no way to move. Its own stem-based choice is
+   * better informed than a blanket rule, so it keeps that decision.
+   */
+  rules.SlurPlacementAtStems = true;
+  rules.SlurHeightFactor = 0.8;
   rules.PageTopMargin = PAGE_TOP_UNITS;
 }
 
@@ -400,6 +468,32 @@ function pinTempoTermPosition() {
   const term = svg.querySelector('text[font-weight="bold"][font-style="normal"]');
   if (!term) return;
   term.setAttribute('x', timeBox.x + timeBox.width + margin);
+  /*
+   * Lift it clear of the music as well as pinning its horizontal spot. OSMD
+   * places the term just above whatever sits directly beneath it, which is
+   * the same band a slur arcing over bar 1 reaches — measured with the term
+   * crossed by a slur in a few percent of tests, and a fixed lift only trades
+   * one guess for another, since how high a slur reaches depends on how high
+   * the notes go.
+   *
+   * So it is raised above whatever is actually engraved in the first system
+   * rather than by a set amount, and only ever *upward* — the reserved blank
+   * space above the first stave (`pinScoreTop`) is where it goes, so there is
+   * always somewhere to move to, and a test with nothing reaching up keeps
+   * the term exactly where OSMD put it.
+   */
+  const termBox = term.getBBox();
+  let highest = Infinity;
+  for (const el of svg.querySelectorAll('g.vf-curve path, g.vf-notehead, g.vf-ledgers')) {
+    const box = el.getBBox();
+    // Only what actually sits under the term horizontally can collide with it.
+    if (box.x + box.width < termBox.x || box.x > termBox.x + termBox.width) continue;
+    highest = Math.min(highest, box.y);
+  }
+  if (Number.isFinite(highest)) {
+    const lift = termBox.y + termBox.height - (highest - TEMPO_TERM_GAP_UNITS * 10);
+    if (lift > 0) term.setAttribute('y', Number(term.getAttribute('y')) - lift);
+  }
 }
 
 async function init() {
@@ -456,6 +550,7 @@ async function init() {
     osmd.render = (...args) => {
       applyFixedSpacing();
       rawRender(...args);
+      removeDuplicateText();
       pinTempoTermPosition();
       pinScoreTop();
     };

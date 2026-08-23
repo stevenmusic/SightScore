@@ -10,7 +10,7 @@
  *   - a tie needs <tie> (sound) *and* <notations><tied> (looks)
  */
 
-import { keyAlterations, LETTERS } from './theory.js?v=51';
+import { keyAlterations, LETTERS } from './theory.js?v=52';
 
 const ACCIDENTAL_NAMES = {
   '-2': 'flat-flat', '-1': 'flat', 0: 'natural', 1: 'sharp', 2: 'double-sharp',
@@ -116,7 +116,24 @@ export function toMusicXml(score, options = {}) {
 }
 
 function renderDirection(direction, staffNumber) {
-  const out = ['      <direction placement="below">'];
+  /*
+   * Where the marking sits relative to its own staff.
+   *
+   * Piano dynamics, hairpins and words belong *between* the two staves, which
+   * is `below` for the treble and `above` for the bass — not `below` for both.
+   * `applyExpression` attaches them to whichever hand is actually sounding, so
+   * a test whose bar 1 belongs to the left hand used to print its dynamics
+   * underneath the bass staff, where they read as belonging to nothing and
+   * collided with the left hand's own slurs (which curve below, see
+   * `renderNote`). Sending them to the middle in both cases puts every
+   * loudness marking in the one band the reader looks for it, and leaves that
+   * band to them alone.
+   *
+   * The pedal is the exception and keeps `below` on either staff: a pedal
+   * line belongs under the whole texture, not inside it.
+   */
+  const placement = direction.kind === 'pedal' || staffNumber === 1 ? 'below' : 'above';
+  const out = [`      <direction placement="${placement}">`];
   if (direction.kind === 'dynamics') {
     out.push(`        <direction-type><dynamics><${direction.value}/></dynamics></direction-type>`);
   } else if (direction.kind === 'wedge') {
