@@ -1,10 +1,10 @@
-import { generateTest, keyOptionsFor } from '../generator/generate.js?v=52';
-import { toMusicXml } from '../generator/musicxml.js?v=52';
-import { createHistory, generateUnique } from '../generator/fingerprint.js?v=52';
-import { createKey, pitchAt } from '../generator/theory.js?v=52';
-import { createPlayer } from './playback.js?v=52';
-import { createStage, barTimings } from './stage.js?v=52';
-import { initLanguage, applyLanguage, getLanguage, t, onLanguageChange } from './i18n.js?v=52';
+import { generateTest, keyOptionsFor } from '../generator/generate.js?v=53';
+import { toMusicXml } from '../generator/musicxml.js?v=53';
+import { createHistory, generateUnique } from '../generator/fingerprint.js?v=53';
+import { createKey, pitchAt } from '../generator/theory.js?v=53';
+import { createPlayer } from './playback.js?v=53';
+import { createStage, barTimings } from './stage.js?v=53';
+import { initLanguage, applyLanguage, getLanguage, t, onLanguageChange } from './i18n.js?v=53';
 
 // As early as possible, before any other DOM work below, so the page never
 // paints in the wrong language for a returning en visitor.

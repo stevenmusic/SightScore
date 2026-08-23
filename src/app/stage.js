@@ -16,14 +16,14 @@ export function createStage(elements) {
   const { score, playline, highlight } = elements;
 
   /** @type {{bars: Map<number, object>, systems: object[], scale: number}} */
-  let layout = { bars: new Map(), systems: [], scale: 1 };
+  let layout = { bars: new Map(), systems: [], scale: 1, origin: { x: 0, y: 0 } };
   let active = false;
   let currentSystem = -1;
 
   /** Read bar and system boxes out of the rendered SVG. */
   function measure() {
     const svg = score.querySelector('svg');
-    layout = { bars: new Map(), systems: [], scale: 1 };
+    layout = { bars: new Map(), systems: [], scale: 1, origin: { x: 0, y: 0 } };
     if (!svg) return layout;
 
     // getBBox is in SVG user units; the element may be laid out at another size.
@@ -95,7 +95,35 @@ export function createStage(elements) {
       system.bottom = Math.max(system.bottom, box.bottom);
     }
 
-    layout = { bars: boxes, systems, scale };
+    /*
+     * Where the SVG's own origin sits inside the box the highlight and the
+     * playhead are positioned against.
+     *
+     * Both are absolutely positioned siblings of `#score`, so their `top`/
+     * `left` are measured from `.score-frame`'s padding box — but the numbers
+     * fed to them come from `getBBox`, which is measured from the *SVG's*
+     * origin. Those two origins are not the same point: the frame carries its
+     * own padding (room for the grade selector and countdown pinned to its
+     * corners), and `#score` carries the padding `pinScoreTop` adds to hold
+     * the staff at a fixed height. Ignoring the difference put the highlight
+     * 78px above the bar it was meant to be tinting, with the block's lower
+     * edge cutting through the middle of the bass stave.
+     *
+     * `clientLeft`/`clientTop` are the frame's border widths, since an
+     * absolutely positioned offset starts at the padding box rather than the
+     * border box.
+     */
+    const frame = highlight.offsetParent ?? score.parentElement;
+    let origin = { x: 0, y: 0 };
+    if (frame) {
+      const frameRect = frame.getBoundingClientRect();
+      origin = {
+        x: rect.left - (frameRect.left + frame.clientLeft),
+        y: rect.top - (frameRect.top + frame.clientTop),
+      };
+    }
+
+    layout = { bars: boxes, systems, scale, origin };
     return layout;
   }
 
@@ -123,7 +151,7 @@ export function createStage(elements) {
     if (!active) return;
     const box = layout.bars.get(bar);
     if (!box) return;
-    const { scale } = layout;
+    const { scale, origin } = layout;
     const system = layout.systems[box.system];
 
     if (box.system !== currentSystem) {
@@ -133,9 +161,9 @@ export function createStage(elements) {
       highlight.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 
-    const left = box.contentLeft * scale;
+    const left = origin.x + box.contentLeft * scale;
     const width = (box.right - box.contentLeft) * scale;
-    const top = system.top * scale;
+    const top = origin.y + system.top * scale;
     const height = (system.bottom - system.top) * scale;
 
     highlight.style.left = `${left}px`;
