@@ -464,6 +464,9 @@ footer {
 
 .spacer { flex: 1; }
 
+.contact a { color: var(--muted); text-decoration: none; border-bottom: 1px solid var(--line); }
+.contact a:hover, .contact a:focus-visible { color: var(--gold); }
+
 .badge {
   border: 1px solid var(--gold);
   border-radius: var(--radius-pill);
